@@ -80,10 +80,11 @@ Installing **DeePTB** is straightforward. We recommend using a virtual environme
         ```
         b. **Install torch_scatter (optional, recommended)**
         ```bash
-        TORCH_VERSION=$(python -c "import torch; print('.'.join(torch.__version__.split('.')[:2]))")
-        pip install torch-scatter -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
+        pip install torch-scatter -f https://data.pyg.org/whl/torch-${version}+${CUDA}.html
         ```
-        For GPU version, replace 'cpu' with 'cu118', 'cu121', etc.
+        Where ${version} is the version of torch, e.g., 2.5.0, and ${CUDA} is the CUDA version, e.g., cpu, cu118, cu121, cu124. 
+        
+        See [torch_scatter](https://github.com/rusty1s/pytorch_scatter) for more details.   
 
         c. **Install DeePTB**
         ```bash
