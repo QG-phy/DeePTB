@@ -69,7 +69,7 @@ Installing **DeePTB** is straightforward. We recommend using a virtual environme
         ```bash
         pip install "torch>=2.0.0,<=2.5.0"
         ```
-        For GPU support, visit: https://pytorch.org/get-started/locally/
+        For GPU support, visit [torch](https://pytorch.org/get-started/locally/) for installation instructions.
 
   3. **Clone and install DeePTB**:
     
