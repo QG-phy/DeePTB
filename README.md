@@ -45,9 +45,50 @@ For more details, see our papers:
 Installing **DeePTB** is straightforward. We recommend using a virtual environment for dependency management.
 
 - **Requirements**
-  - Python 3.8 or later.
-  - Torch 1.13.0 or later ([PyTorch Installation](https://pytorch.org/get-started/locally)).
+  - python >=3.9,<=3.12
+  - torch >=2.0.0,<=2.5.0
   - ifermi (optional, for 3D fermi-surface plotting).
+  - TBPLaS (optional).
+
+- **From Source** Highly recommended to install DeePTB from source to get the latest features and bug fixes.
+  1. **Setup Python environment**:
+    
+        Using conda (recommended)
+        ```bash
+        conda create -n dptb_venv python=3.10
+        conda activate dptb_venv
+        ```
+        or using venv (make sure you have python >=3.9,<=3.12 installed)
+        ```bash
+        python -m venv dptb_venv
+        source dptb_venv/bin/activate
+        ```
+  2. **Install PyTorch**:
+        
+        For CPU-only
+        ```bash
+        pip install "torch>=2.0.0,<=2.5.0"
+        ```
+        For GPU support, visit: https://pytorch.org/get-started/locally/
+
+  3. **Clone and install DeePTB**:
+    
+        a. **Clone repository**
+        ```bash
+        git clone https://github.com/deepmodeling/DeePTB.git
+        cd DeePTB
+        ```
+        b. **Install torch_scatter (optional, recommended)**
+        ```bash
+        TORCH_VERSION=$(python -c "import torch; print('.'.join(torch.__version__.split('.')[:2]))")
+        pip install torch-scatter -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
+        ```
+        For GPU version, replace 'cpu' with 'cu118', 'cu121', etc.
+
+        c. **Install DeePTB**
+        ```bash
+        pip install .
+        ```
 
 - **Easy Installation**
   1. Using PyPi
@@ -57,16 +98,7 @@ Installing **DeePTB** is straightforward. We recommend using a virtual environme
         pip install dptb
         ```
 
-- **From Source**
-    1. Clone the repository:
-        ```bash
-        git clone https://github.com/deepmodeling/DeePTB.git
-        ```
-    2. Navigate to the root directory and install DeePTB:
-        ```bash
-        cd DeePTB
-        pip install .
-        ```
+
 
 ## 📚 Documentation
 
