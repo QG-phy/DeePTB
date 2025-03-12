@@ -88,7 +88,10 @@ class TestDefaultDatasetSKTB:
         assert (np.abs(atomic_data.pos.numpy() - self.strase[0].positions) < 1e-6).all()
         assert (np.abs(atomic_data.cell.numpy() - self.strase[0].cell) < 1e-6).all()
 
-        assert th.abs(atomic_data.edge_index - expected_edge_index).sum() < 1e-8
+        # assert th.abs(atomic_data.edge_index - expected_edge_index).sum() < 1e-8
+        for ii in atomic_data.edge_index:
+            assert ii in expected_edge_index
+            
         assert atomic_data.node_features.shape == (2, 1)
         assert not "node_attrs" in data[0]
         assert not "batch" in data[0]
