@@ -159,8 +159,10 @@ def test_nrl2json():
                 assert np.allclose(val, nrl2_flat[key], atol=1e-5)
             else:
                 assert val == nrl2_flat[key]
+                #assert np.isclose(val, nrl2_flat[key], atol=1e-5)
         else:
             assert val == nrl2_flat[key]
+            #assert np.isclose(val, nrl2_flat[key], atol=1e-5)
 
 def test_pth2json():
     init_model = f"{rootdir}/test_sktb/output/test_nrl/checkpoint/nnsk.best.pth"

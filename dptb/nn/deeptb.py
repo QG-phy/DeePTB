@@ -450,7 +450,7 @@ class MIX(nn.Module):
                 device = 'cpu'
                 log.warning("CUDA is not available. The model will be loaded on CPU.")
 
-        ckpt = torch.load(checkpoint, map_location=device)
+        ckpt = torch.load(checkpoint, map_location=device,weights_only=False)
         common_options = {
             "dtype": dtype,
             "device": device,

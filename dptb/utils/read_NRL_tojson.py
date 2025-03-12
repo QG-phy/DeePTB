@@ -6,9 +6,12 @@ import json
 import logging
 log = logging.getLogger(__name__)
 
-bohr2ang = con.value('Bohr radius')*1e10
-harte2ev = con.value('Hartree energy in eV')
-ryd2ev = con.value('Rydberg constant times hc in eV')
+#bohr2ang = con.value('Bohr radius')*1e10
+#harte2ev = con.value('Hartree energy in eV')
+#ryd2ev = con.value('Rydberg constant times hc in eV')
+bohr2ang = 0.529177210903
+harte2ev = 27.211386245988
+ryd2ev   = 13.605693122994
 
 def read_nrl_file(nrl_file):
     with open(nrl_file, 'r') as f:

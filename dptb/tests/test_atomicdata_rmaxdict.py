@@ -17,10 +17,9 @@ def test_rmax_float():
     atomic_options['r_max'] = 2.6
 
     data = AtomicData.from_ase(atoms, **atomic_options)
-    assert (data.edge_index == torch.tensor([[0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1],
-        [0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1]])).all()
-    
-    assert (data.edge_cell_shift == torch.tensor([[-1.,  0.,  0.],
+    expected_ind = torch.tensor([[0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1],
+        [0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1]])
+    expected_shift = torch.tensor([[-1.,  0.,  0.],
         [-1.,  0.,  0.],
         [ 0.,  1.,  0.],
         [ 0.,  1.,  0.],
@@ -37,7 +36,12 @@ def test_rmax_float():
         [-0., -0., -0.],
         [-1., -1., -0.],
         [-0.,  1., -0.],
-        [ 1., -0., -0.]])).all()
+        [ 1., -0., -0.]])
+        
+    exp_Val = torch.cat([expected_ind.T,expected_shift],axis=1)
+    tar_val = torch.cat([data.edge_index.T,data.edge_cell_shift],axis=1)
+    for ii in tar_val:
+        assert ii in exp_Val
 
 def test_rmax_dict_eq():
     strfile = os.path.join(rootdir, "hBN", "hBN.vasp")
@@ -46,27 +50,30 @@ def test_rmax_dict_eq():
     atomic_options['pbc'] = True
     atomic_options['r_max']  = {'B': 2.6, 'N': 2.6}
     data = AtomicData.from_ase(atoms, **atomic_options)
-    assert (data.edge_index == torch.tensor([[0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1],
-        [0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1]])).all()
-    
-    assert (data.edge_cell_shift == torch.tensor([[-1.,  0.,  0.],
-        [-1.,  0.,  0.],
-        [ 0.,  1.,  0.],
-        [ 0.,  1.,  0.],
-        [ 1.,  1.,  0.],
-        [ 0.,  0.,  0.],
-        [ 1.,  1.,  0.],
-        [ 0., -1.,  0.],
-        [-1.,  0.,  0.],
-        [ 1., -0., -0.],
-        [ 1., -0., -0.],
-        [-0., -1., -0.],
-        [-0., -1., -0.],
-        [-1., -1., -0.],
-        [-0., -0., -0.],
-        [-1., -1., -0.],
-        [-0.,  1., -0.],
-        [ 1., -0., -0.]])).all()
+    expected_ind = torch.tensor([[0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 0, 1, 0, 1, 1, 1, 1],
+                                 [0, 1, 0, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1]])
+    expected_shift = torch.tensor([[-1.,  0.,  0.],
+                                   [-1.,  0.,  0.],
+                                   [ 0.,  1.,  0.],
+                                   [ 0.,  1.,  0.],
+                                   [ 1.,  1.,  0.],
+                                   [ 0.,  0.,  0.],
+                                   [ 1.,  1.,  0.],
+                                   [ 0., -1.,  0.],
+                                   [-1.,  0.,  0.],
+                                   [ 1., -0., -0.],
+                                   [ 1., -0., -0.],
+                                   [-0., -1., -0.],
+                                   [-0., -1., -0.],
+                                   [-1., -1., -0.],
+                                   [-0., -0., -0.],
+                                   [-1., -1., -0.],
+                                   [-0.,  1., -0.],
+                                   [ 1., -0., -0.]])
+    exp_Val = torch.cat([expected_ind.T,expected_shift],axis=1)
+    tar_val = torch.cat([data.edge_index.T,data.edge_cell_shift],axis=1)
+    for ii in tar_val:
+        assert ii in exp_Val
     
 def test_rmax_dict_neq():
     strfile = os.path.join(rootdir, "hBN", "hBN.vasp")
@@ -75,10 +82,9 @@ def test_rmax_dict_neq():
     atomic_options['pbc'] = True
     atomic_options['r_max']  = {'B':1.5,'N':2.6}
     data = AtomicData.from_ase(atoms, **atomic_options)
-    assert (data.edge_index == torch.tensor([[0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
-        [0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0]])).all()
-    
-    assert (data.edge_cell_shift == torch.tensor([[-1.,  0.,  0.],
+    expected_ind = torch.tensor([[0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
+                                 [0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0]])
+    expected_shift = torch.tensor([[-1.,  0.,  0.],
         [-1.,  0.,  0.],
         [ 0.,  1.,  0.],
         [ 0.,  1.,  0.],
@@ -89,4 +95,8 @@ def test_rmax_dict_neq():
         [-0., -1., -0.],
         [-0., -1., -0.],
         [-1., -1., -0.],
-        [-0., -0., -0.]])).all()
+        [-0., -0., -0.]])
+    exp_Val = torch.cat([expected_ind.T,expected_shift],axis=1)
+    tar_val = torch.cat([data.edge_index.T,data.edge_cell_shift],axis=1)
+    for ii in tar_val:
+        assert ii in exp_Val

@@ -7,7 +7,6 @@ from dptb.nn.sktb import OnsiteFormula, bond_length_list
 from dptb.nn.sktb.cov_radiiDB import Covalent_radii
 from dptb.nn.sktb.bondlengthDB import atomic_radius_v1
 from dptb.utils.constants import atomic_num_dict
-from functorch import vmap
 import matplotlib.pyplot as plt
 from torch.optim import Adam, LBFGS, RMSprop, SGD
 from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingLR
@@ -19,6 +18,10 @@ from typing import Union
 import logging
 import os, sys
 from dptb.utils.tools import get_lr_scheduler, get_optimizer, setup_seed
+try:
+    from torch import vmap
+except ImportError:
+    from functorch import vmap
 
 log = logging.getLogger(__name__)
 
