@@ -1,3 +1,6 @@
+from dptb.nn.sktb.onsiteDB import onsite_energy_database
+from dptb.nn.sktb.electronic_configDB import electronic_config_dict
+
 skbasisDB={
     "H": [
         "1s"
@@ -271,11 +274,6 @@ skbasisDB={
         "6s",
         "6p"
     ],
-    "Lu": [
-        "5d",
-        "6s",
-        "6p"
-    ],
     "Hf": [
         "5d",
         "6s",
@@ -344,6 +342,14 @@ skbasisDB={
         "6s",
         "6p",
         "6d"
+    ]
+}
+
+"""
+    "Lu": [
+        "5d",
+        "6s",
+        "6p"
     ],
     "Ra": [
         "7s",
@@ -354,4 +360,35 @@ skbasisDB={
         "7s",
         "7p"
     ]
-}
+"""
+
+def onsite_e_builtin_basis(atom:str, basis:list):
+    """
+    atom: eg . Si
+    basis : eg. ['3s','3p']
+    """
+    assert atom in onsite_energy_database, f"{atom} not found in onsite energy database."
+    val_config = electronic_config_dict[atom]['valence']
+    
+    onsite_e = {atom:{}}
+    for ib in basis:
+        if ib in onsite_energy_database[atom]:
+            onsite_e[atom][ib] =  onsite_energy_database[atom][ib]
+        elif val_config[ib] == 0:
+            orb = ib[1] + '*'
+            if orb in onsite_energy_database[atom]:
+                onsite_e[atom][ib] =  onsite_energy_database[atom][orb]
+            else:
+                raise ValueError(f"{atom}-{ib} not found in onsite energy database.")
+        else:
+            raise ValueError(f"Wrong basis set for {atom}.")
+    return onsite_e
+
+
+def get_onsiteE_all_builtin_basis():
+    onsite_e = {}
+    for atom, basis in skbasisDB.items():
+        onsite_e_atom = onsite_e_builtin_basis(atom, basis)
+        onsite_e.update(onsite_e_atom)
+    
+    return onsite_e
