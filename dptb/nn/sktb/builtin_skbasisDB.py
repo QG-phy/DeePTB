@@ -362,6 +362,12 @@ skbasisDB={
     ]
 """
 
+def occupations_builtin_basis(atom:str, basis:list):
+    occupations = {atom:{}}
+    for ib in basis:
+        occupations[atom][ib] = electronic_config_dict[atom]['valence'][ib]
+    
+    return occupations
 
 def onsite_e_builtin_basis(atom:str, basis:list):
     ''' The function `onsite_e_builtin_basis` retrieves onsite energies for a given atom and basis set from
