@@ -362,11 +362,27 @@ skbasisDB={
     ]
 """
 
+
 def onsite_e_builtin_basis(atom:str, basis:list):
-    """
-    atom: eg . Si
-    basis : eg. ['3s','3p']
-    """
+    ''' The function `onsite_e_builtin_basis` retrieves onsite energies for a given atom and basis set from
+    a database, handling cases where basis orbitals are not directly found.
+    Parameters:
+    ----------
+        atom (str): The chemical symbol of the atom (e.g., 'Si').
+        basis (list): List of basis orbitals (e.g., ['3s', '3p']).
+    Returns:
+    --------
+        dict: A nested dictionary mapping the atom to its basis orbitals and their corresponding onsite energies.
+              Example: {'Si': {'3s': -10.877726996967032, '3p': -4.161972093023409}}
+    Raises:
+    -------
+        AssertionError: If the atom is not found in the onsite energy database.
+        ValueError: If a basis orbital is not found in the onsite energy database or if the basis set is invalid for the atom.
+    Notes:
+    -----
+        - If a basis orbital is not directly found but its valence configuration is zero, the function attempts to find a corresponding
+          orbital with a wildcard (e.g., 's*').
+    '''
     assert atom in onsite_energy_database, f"{atom} not found in onsite energy database."
     val_config = electronic_config_dict[atom]['valence']
     
@@ -392,3 +408,5 @@ def get_onsiteE_all_builtin_basis():
         onsite_e.update(onsite_e_atom)
     
     return onsite_e
+
+onsiteE_builtin_basis_dict = get_onsiteE_all_builtin_basis()
