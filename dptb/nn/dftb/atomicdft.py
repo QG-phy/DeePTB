@@ -67,7 +67,8 @@ class DFT2SKTable(object):
                 self.atomic_objs[ia] = {}
 
             atomic_config = electronic_config_dict[ia]
-            electronic_config = atomic_config['atomic_core'] + " " + " ".join(list(atomic_config['valence'].keys()))
+            val_occ = [iorb + str(occ) for iorb, occ in atomic_config['valence'].items()]
+            electronic_config = atomic_config['atomic_core'] + " " + " ".join(val_occ)
             valences = skbasisDB[ia]
             
             confinement_density = PowerConfinement(r0=rd[ia], s=pd[ia]) 
@@ -125,8 +126,8 @@ class DFT2SKTable(object):
                 self.atomic_objs[ia]['run_completed'] = True
         log.info(f'finished runing the atomicdfts ....')
 
-        off2c = Offsite2cTable(self.atomic_objs[atom_a]['atomdft'], self.atomic_objs[atom_b]['atomdft'])
-        off2c.run(rmin, dr, N, superposition=self.superposition,
+        self.off2c = Offsite2cTable(self.atomic_objs[atom_a]['atomdft'], self.atomic_objs[atom_b]['atomdft'])
+        self.off2c.run(rmin, dr, N, superposition=self.superposition,
                          xc=self.xc,stride=stride, smoothen_tails=True)
         log.info(f'finished runing sk tables calculations on r-grids....')
         # Write the SK tables without repulsion (only electronic part)
@@ -134,15 +135,28 @@ class DFT2SKTable(object):
         # but the spe as well as the (spin-polarization error) is set to 0.0.
     
         if atom_a == atom_b:    
-            sk.write(eigenvalues=self.atomic_objs[atom_a]['eigenvalues'],
+            self.off2c.write(eigenvalues=self.atomic_objs[atom_a]['eigenvalues'],
                      hubbardvalues=self.atomic_objs[atom_a]['hubbardvalues'],
                      occupations=self.atomic_objs[atom_a]['occupations'], 
                      spe=0.
                     )
         else:
-            sk.write()
+            self.off2c.write()
         log.info(f'finished writing sk tables....')
     
+    def get_full_pair(self, atom_a:str, atom_b:str=None, rmin=0.4, dr=0.02, N = 800, stride=1):
+        if atom_b is None:
+            atom_b = atom_a
+        log.info(f'getting {atom_a}-{atom_b} full sk table')
+        assert atom_a in self.atomic_objs and atom_b in self.atomic_objs
+
+        if atom_a == atom_b:
+            self.get_skf_pair(atom_a, atom_a, rmin, dr, N, stride)
+        else:
+            self.get_skf_pair(atom_a, atom_a, rmin, dr, N, stride) 
+            self.get_skf_pair(atom_b, atom_b, rmin, dr, N, stride) 
+            self.get_skf_pair(atom_a, atom_b, rmin, dr, N, stride)
+
     def get_skfs(self):
         #self.update_config(basis, rd, pw, rw, pd)
         self.run_atomic_dft()
