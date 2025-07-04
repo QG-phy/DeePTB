@@ -18,13 +18,33 @@ log = logging.getLogger(__name__)
 
 class DFT2SKTable(object):
     def __init__(self, xc: str, superposition: str = 'density', scalarrel=True, **kwargs):
+        '''This Python function initializes parameters for XC functional calculations, allowing for
+        customization of the functional, superposition scheme, and scalar relativistic corrections.
+        
+        Parameters
+        ----------
+        xc : str
+            The `xc` parameter in the `__init__` method is used to specify the name of the XC functional.
+        Depending on the value provided, different implementations will be used. If 'LDA' or 'PW92' are
+        provided, Hotcent's native LDA implementation will be used.
+        
+        superposition : str, optional
+            The `superposition` parameter in the `__init__` method is used to specify whether to use the
+        density superposition scheme ('density') or the potential superposition scheme ('potential') for the
+        Hamiltonian integrals. By default, the value is set to 'density'.
+        
+        scalarrel : bool, optional
+            The `scalarrel` parameter in the `__init__` method is a boolean flag that determines whether to use
+        scalar relativistic corrections. By default, it is set to `True`. When set to `True`, scalar
+        relativistic corrections are applied in the calculations. This is particularly important for all
+        '''
         self.xc = xc
         self.superposition = superposition
         self.scalarrel = scalarrel
         self.kwargs = kwargs
         self.atomic_objs = {}
             
-    def update_config(self, basis:Dict[List], rw: dict, pw:dict,  rd:dict=None, pd:dict=None):
+    def update_config(self, basis:Dict[str, List], rw: dict, pw:dict,  rd:dict=None, pd:dict=None):
         atomic_symbols = list(basis.keys())
         # check basis
         for ia in atomic_symbols:
@@ -123,8 +143,8 @@ class DFT2SKTable(object):
             sk.write()
         log.info(f'finished writing sk tables....')
     
-    def get_skfs(self, basis:Dict[List], rw: dict, pw:dict,  rd:dict=None, pd:dict=None):
-        self.update_config(basis, rd, pw, rw, pd)
+    def get_skfs(self):
+        #self.update_config(basis, rd, pw, rw, pd)
         self.run_atomic_dft()
         atom_symbols = list(self.atomic_objs.keys())
         for ia in range(len(atom_symbols)):
