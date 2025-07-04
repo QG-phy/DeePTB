@@ -1,5 +1,6 @@
 from dptb.nn.sktb.onsiteDB import onsite_energy_database
 from dptb.nn.sktb.electronic_configDB import electronic_config_dict
+from dptb.utils.constants import Harte2eV, Ryd2eV
 
 skbasisDB={
     "H": [
@@ -369,7 +370,7 @@ def occupations_builtin_basis(atom:str, basis:list):
     
     return occupations
 
-def onsite_e_builtin_basis(atom:str, basis:list):
+def onsite_e_builtin_basis(atom:str, basis:list, unit:str='Ha'):
     ''' The function `onsite_e_builtin_basis` retrieves onsite energies for a given atom and basis set from
     a database, handling cases where basis orbitals are not directly found.
     Parameters:
@@ -392,14 +393,23 @@ def onsite_e_builtin_basis(atom:str, basis:list):
     assert atom in onsite_energy_database, f"{atom} not found in onsite energy database."
     val_config = electronic_config_dict[atom]['valence']
     
+    if 'ev' in unit.lower():
+        factor = 1.0
+    elif 'ha' in unit.lower():
+        factor = 1.0/Harte2eV
+    elif 'ry' in unit.lower():
+        factor = 1.0/Ryd2eV
+    else:
+        raise ValueError(f"Unknown unit {unit}.")
+
     onsite_e = {atom:{}}
     for ib in basis:
         if ib in onsite_energy_database[atom]:
-            onsite_e[atom][ib] =  onsite_energy_database[atom][ib]
+            onsite_e[atom][ib] =  onsite_energy_database[atom][ib] * factor
         elif val_config[ib] == 0:
             orb = ib[1] + '*'
             if orb in onsite_energy_database[atom]:
-                onsite_e[atom][ib] =  onsite_energy_database[atom][orb]
+                onsite_e[atom][ib] =  onsite_energy_database[atom][orb] * factor
             else:
                 raise ValueError(f"{atom}-{ib} not found in onsite energy database.")
         else:
