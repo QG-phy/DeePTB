@@ -1,5 +1,6 @@
 from dptb.nn.sktb.onsiteDB import onsite_energy_database
 from dptb.nn.sktb.electronic_configDB import electronic_config_dict
+from dptb.nn.sktb.HubbardUDB import Hubbard_U_dict
 from dptb.utils.constants import Harte2eV, Ryd2eV
 
 skbasisDB={
@@ -362,6 +363,50 @@ skbasisDB={
         "7p"
     ]
 """
+
+def Hubbard_U_builtin_basis(atom:str, basis:list, unit:str='Ha'):
+    '''The function `Hubbard_U_builtin_basis` retrieves Hubbard U values for a given atom and basis set in
+    different energy units.
+    
+    Parameters
+    ----------
+    atom : str
+        The `atom` parameter in the `Hubbard_U_builtin_basis` function is a string representing the atomic
+    symbol for which you want to retrieve Hubbard U values.
+    basis : list
+        The `basis` parameter in the `Hubbard_U_builtin_basis` function is a list that contains the basis
+    functions for which you want to retrieve Hubbard U values for a specific atom. You can provide a
+    list of basis functions as input to the function to get the corresponding Hubbard U values for those
+    basis
+    unit : str, optional
+        The `unit` parameter in the `Hubbard_U_builtin_basis` function specifies the unit in which the
+    Hubbard U values will be returned. The function supports three units: 'Ha' (Hartree), 'eV' (electron
+    volts), and 'Ry' (Rydberg).
+    
+    Returns
+    -------
+        The function `Hubbard_U_builtin_basis` returns a dictionary containing Hubbard U values for the
+    specified atom and basis set, converted to the specified energy unit (Ha, eV, or Ry). The dictionary
+    has the following structure: `{atom: {basis_set: Hubbard_U_value}}`.
+    
+    '''
+    assert atom in Hubbard_U_dict, f"{atom} not found in Hubbard_U database."
+    if 'ha' in unit.lower():
+        factor = 1.0
+    elif 'ev' in unit.lower():
+        factor = Harte2eV
+    elif 'ry' in unit.lower():
+        factor = Harte2eV / Ryd2eV
+    else:
+        raise ValueError(f"Unknown unit {unit}.")
+    Hubbard_U = {atom:{}}
+    for ib in basis:
+        if ib in Hubbard_U_dict[atom]:
+            Hubbard_U[atom][ib] = Hubbard_U_dict[atom][ib] * factor
+        else:
+            print(f"{atom} {ib} not found in Hubbard_U database. and set to 0.0")
+            Hubbard_U[atom][ib] = 0.0
+    return Hubbard_U
 
 def occupations_builtin_basis(atom:str, basis:list):
     '''This function creates a dictionary of occupations for a given atom based on a provided basis.
