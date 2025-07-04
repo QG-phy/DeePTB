@@ -364,6 +364,26 @@ skbasisDB={
 """
 
 def occupations_builtin_basis(atom:str, basis:list):
+    '''This function creates a dictionary of occupations for a given atom based on a provided basis.
+    
+    Parameters
+    ----------
+    atom : str
+        The `atom` parameter in the `occupations_builtin_basis` function is a string that represents the
+    atomic symbol of an element. It is used to specify which element's electronic configuration should
+    be retrieved.
+    basis : list
+        It seems like you have not provided the `basis` parameter for the function
+    `occupations_builtin_basis(atom:str, basis:list)`. Could you please provide the list of basis
+    elements that you want to use in the function?
+    
+    Returns
+    -------
+        The function `occupations_builtin_basis` is returning a dictionary containing the occupations of
+    each basis function for the given atom. The dictionary is structured as follows: {atom:
+    {basis_function: occupation}}.
+    
+    '''
     occupations = {atom:{}}
     for ib in basis:
         occupations[atom][ib] = electronic_config_dict[atom]['valence'][ib]
