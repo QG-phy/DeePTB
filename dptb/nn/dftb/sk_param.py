@@ -245,13 +245,20 @@ class SKParam:
         assert skdict['Hopping'].keys() == skdict['Overlap'].keys()
 
         onsiteE_params = torch.zeros([self.idp_sk.num_types, self.idp_sk.n_onsite_Es])
+        # hubbard values and Occu_values have the same length of onsite e
+        Hubbard_values = torch.zeros([self.idp_sk.num_types, self.idp_sk.n_onsite_Es])
+        Occu_values = torch.zeros([self.idp_sk.num_types, self.idp_sk.n_onsite_Es])
         for asym, idx in self.idp_sk.chemical_symbol_to_type.items():
             for ot in self.idp_sk.basis[asym]:
                 fot = self.idp_sk.basis_to_full_basis[asym][ot]
                 indt = self.onsite_orb_map[fot]
                 onsiteE_params[idx][self.idp_sk.skonsite_maps[fot+"-"+fot]] = skdict['OnsiteE'][asym][indt]   
+                Hubbard_values[idx][self.idp_sk.skonsite_maps[fot+"-"+fot]] = skdict['HubdU'][asym][indt]
+                Occu_values[idx][self.idp_sk.skonsite_maps[fot+"-"+fot]] = skdict['Occu'][asym][indt]
         onsiteE_params = onsiteE_params.reshape([self.idp_sk.num_types, self.idp_sk.n_onsite_Es, 1])
-        
+        Hubbard_values = Hubbard_values.reshape([self.idp_sk.num_types, self.idp_sk.n_onsite_Es, 1])
+        Occu_values = Occu_values.reshape([self.idp_sk.num_types, self.idp_sk.n_onsite_Es, 1])
+
         hopping_params = torch.zeros([len(self.idp_sk.bond_types), self.idp_sk.reduced_matrix_element, len(xlist_all)])
         overlap_params = torch.zeros([len(self.idp_sk.bond_types), self.idp_sk.reduced_matrix_element, len(xlist_all)])
 
@@ -289,7 +296,26 @@ class SKParam:
         format_skdict['Hopping'] = hopping_params
         format_skdict['Overlap'] = overlap_params
         format_skdict['OnsiteE'] = onsiteE_params
+        format_skdict['HubdU'] = Hubbard_values
+        format_skdict['Occu'] = Occu_values
 
+        # get highest occpy Hubbard U
+        # 1. 创建一个 Occu 掩码，用于筛选出每个 ia 中 Occupation 大于 0 的位置  
+        mask = skp.skdict['Occu'] > 0
+        onsite_e_for_argmax = skp.skdict['OnsiteE'].clone()
+        # 3. 将不满足条件的位置设置为负无穷大  torch.where(condition, value_if_true, value_if_false) 这样在 argmax 中，这些被屏蔽的位置就永远不会是最大值
+        onsite_e_for_argmax = torch.where(mask, onsite_e_for_argmax, torch.tensor(float('-inf')))
+        # 4. 沿每个 ia (即每行) 查找最大值的索引 dim=1 表示在第二个维度 (轨道维度) 上操作 =True 保持输出维度为 (num_ia, 1)，方便后续 gather 操作
+        max_indices = torch.argmax(onsite_e_for_argmax, dim=1, keepdim=True)
+        # 5. 使用 gather 从 HubdU 中并行取出所有对应的值 torch.gather(input, dim, index) -> 根据 index 从 input 中取值
+        highest_occpy_hubbard_u = torch.gather(skp.skdict['HubdU'], 1, max_indices)
+        # 6. 处理没有任何元素满足条件的行 (这些行的最大值来自 -inf)  找到这些行，并将它们的 Hubbard U 值设为 0 mask.any(dim=1) 检查每一行是否至少有一个 True
+        valid_rows_mask = mask.any(dim=1, keepdim=True)
+        highest_occpy_hubbard_u = highest_occpy_hubbard_u * valid_rows_mask.float()
+        
+        # highest_occpy_hubbard_u shape [n_atom_symbol, 1, 1]
+        format_skdict['Highest_Occu_U'] = highest_occpy_hubbard_u
+        
         return format_skdict
     
 def find_first_false(arr):
