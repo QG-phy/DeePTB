@@ -13,11 +13,12 @@ from dptb.nn.sktb.electronic_configDB import electronic_config_dict
 from dptb.nn.sktb.builtin_skbasisDB import skbasisDB
 from dptb.nn.sktb.builtin_skbasisDB import onsite_e_builtin_basis, occupations_builtin_basis, Hubbard_U_builtin_basis
 import logging
+import os
 log = logging.getLogger(__name__)
 
 
 class DFT2SKTable(object):
-    def __init__(self, xc: str, superposition: str = 'density', scalarrel=True, **kwargs):
+    def __init__(self, xc: str, superposition: str = 'density', scalarrel:bool=True, output:str='./', **kwargs):
         '''This Python function initializes parameters for XC functional calculations, allowing for
         customization of the functional, superposition scheme, and scalar relativistic corrections.
         
@@ -43,7 +44,10 @@ class DFT2SKTable(object):
         self.scalarrel = scalarrel
         self.kwargs = kwargs
         self.atomic_objs = {}
-            
+        if not os.path.exists(output):
+            os.makedirs(output)
+        self.output = output
+        self.out_filename_template = output + '/{el1}-{el2}.skf'
     def update_config(self, basis:Dict[str, List], rw: dict, pw:dict,  rd:dict=None, pd:dict=None):
         atomic_symbols = list(basis.keys())
         # check basis
@@ -133,15 +137,16 @@ class DFT2SKTable(object):
         # Write the SK tables without repulsion (only electronic part)
         # for homo-case, the atomic eigenvalues, Hubbardvalues, occupations are also saved 
         # but the spe as well as the (spin-polarization error) is set to 0.0.
-    
+        
         if atom_a == atom_b:    
             self.off2c.write(eigenvalues=self.atomic_objs[atom_a]['eigenvalues'],
                      hubbardvalues=self.atomic_objs[atom_a]['hubbardvalues'],
                      occupations=self.atomic_objs[atom_a]['occupations'], 
-                     spe=0.
+                     spe=0.,
+                     filename_template=self.out_filename_template
                     )
         else:
-            self.off2c.write()
+            self.off2c.write(filename_template=self.out_filename_template)
         log.info(f'finished writing sk tables....')
     
     def get_full_pair(self, atom_a:str, atom_b:str=None, rmin=0.4, dr=0.02, N = 800, stride=1):
