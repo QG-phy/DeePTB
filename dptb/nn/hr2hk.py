@@ -77,6 +77,8 @@ class HR2HK(torch.nn.Module):
             assert kpoints.size(0) == 1
             kpoints = kpoints[0]
 
+        kpoints = kpoints.to(dtype=self.dtype, device=self.device)
+
         soc = data.get(AtomicDataDict.NODE_SOC_SWITCH_KEY, False)
         if isinstance(soc, torch.Tensor):
             soc = soc.all()
@@ -170,9 +172,10 @@ class HR2HK(torch.nn.Module):
             if self.gauge:
                 # phase factor according to convention II
                 # k and R are in fractional coordinates, need to convert to cartesian
-                edge_vec = data[AtomicDataDict.EDGE_VECTORS_KEY][i]  # Cartesian coordinates
+                edge_vec = data[AtomicDataDict.EDGE_VECTORS_KEY][i].to(dtype=self.dtype, device=self.device)  # Cartesian coordinates
+                cell = data[AtomicDataDict.CELL_KEY].to(dtype=self.dtype, device=self.device)
                 phase_factor = torch.exp(-1j * 2 * torch.pi * (
-                    kpoints @ data[AtomicDataDict.CELL_KEY].inverse().T @ edge_vec)).reshape(-1,1,1)
+                    kpoints @ cell.inverse().T @ edge_vec)).reshape(-1,1,1)
                 # Compute derivative: dH/dk_alpha = -i * R_alpha * H_R * exp(-i k·R)
                 # where R is edge_vec in Cartesian coordinates
                 if self.derivative:
@@ -180,8 +183,9 @@ class HR2HK(torch.nn.Module):
                     # - i * R * exp(-i k·R) = -i * R * phase_factor
                     derivative_factor = (-1.0j * edge_vec).reshape(1, 1, 1, 3) * phase_factor.unsqueeze(-1)
             else:
+                edge_shift = data[AtomicDataDict.EDGE_CELL_SHIFT_KEY][i].to(dtype=self.dtype, device=self.device)
                 phase_factor = torch.exp(-1j * 2 * torch.pi * (
-                    kpoints @ data[AtomicDataDict.EDGE_CELL_SHIFT_KEY][i])).reshape(-1,1,1)
+                    kpoints @ edge_shift)).reshape(-1,1,1)
                 
             block[:,iatom_indices,jatom_indices] += masked_hblock.squeeze(0).type_as(block) * phase_factor
             

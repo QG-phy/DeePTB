@@ -181,6 +181,14 @@ class DFTBSK(torch.nn.Module):
     def forward(self, data: AtomicDataDict.Type) -> AtomicDataDict.Type:
         
         data = AtomicDataDict.with_edge_vectors(data, with_lengths=True)
+        data[AtomicDataDict.EDGE_LENGTH_KEY] = data[AtomicDataDict.EDGE_LENGTH_KEY].to(
+            dtype=self.dtype,
+            device=self.device,
+        )
+        data[AtomicDataDict.EDGE_VECTORS_KEY] = data[AtomicDataDict.EDGE_VECTORS_KEY].to(
+            dtype=self.dtype,
+            device=self.device,
+        )
 
         edge_index = data[AtomicDataDict.EDGE_TYPE_KEY].flatten() # it is bond_type index, transform it to reduced bond index
         edge_number = self.idp_sk.untransform_bond(edge_index).T

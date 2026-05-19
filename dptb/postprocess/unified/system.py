@@ -14,6 +14,7 @@ from dptb.nn.build import build_model
 from dptb.postprocess.unified.properties.band import BandAccessor
 from dptb.postprocess.unified.properties.dos import DosAccessor
 from dptb.postprocess.unified.properties.optical_conductivity import ACAccessor
+from dptb.postprocess.unified.eph import EPhAccessor
 from dptb.utils.constants import atomic_num_dict_r, anglrMId
 from dptb.postprocess.unified.utils import calculate_fermi_level
 from dptb.utils.make_kpoints import kmesh_sampling
@@ -69,6 +70,7 @@ class TBSystem:
         self._bands = None
         self._dos = None
         self._export = None
+        self._eph = None
         self._total_electrons = None
         self._efermi = None
         self.has_bands = False
@@ -237,6 +239,13 @@ class TBSystem:
         if not hasattr(self, '_optical_conductivity') or self._optical_conductivity is None:
             self._optical_conductivity = ACAccessor(self)
         return self._optical_conductivity
+
+    @property
+    def eph(self) -> 'EPhAccessor':
+        """Access electron-phonon coupling functionality (Lazy initialization)."""
+        if self._eph is None:
+            self._eph = EPhAccessor(self)
+        return self._eph
 
     @property
     def scc(self):

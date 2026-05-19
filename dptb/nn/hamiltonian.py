@@ -323,8 +323,8 @@ class SKHamiltonian_old(torch.nn.Module):
             # when get the angle, the xyz vector should be transformed to yzx.
             angle = xyz_to_angles(data[AtomicDataDict.EDGE_VECTORS_KEY][:,[1,2,0]]) # (tensor(N), tensor(N))
             # The roataion matrix is SO3 rotation, therefore Irreps(l,1), is used here.
-            rot_mat_L = wigner_D(int(l1), angle[0], angle[1], torch.zeros_like(angle[0]))
-            rot_mat_R = wigner_D(int(l2), angle[0], angle[1], torch.zeros_like(angle[0]))
+            rot_mat_L = wigner_D(int(l1), angle[0], angle[1], torch.zeros_like(angle[0])).to(dtype=self.dtype, device=self.device)
+            rot_mat_R = wigner_D(int(l2), angle[0], angle[1], torch.zeros_like(angle[0])).to(dtype=self.dtype, device=self.device)
             # rot_mat_L = Irrep(int(l1), 1).D_from_angles(angle[0].cpu(), angle[1].cpu(), torch.tensor(0., dtype=self.dtype)).to(self.device) # tensor(N, 2l1+1, 2l1+1)
             # rot_mat_R = Irrep(int(l2), 1).D_from_angles(angle[0].cpu(), angle[1].cpu(), torch.tensor(0., dtype=self.dtype)).to(self.device) # tensor(N, 2l2+1, 2l2+1)
             
@@ -381,8 +381,8 @@ class SKHamiltonian_old(torch.nn.Module):
                     rme[:,None, None, :, :], dim=-2) # shape (N, 2l1+1, 2l2+1, n_pair)
                 
                 angle = xyz_to_angles(data[AtomicDataDict.ONSITENV_VECTORS_KEY][:,[1,2,0]]) # (tensor(N), tensor(N))
-                rot_mat_L = wigner_D(int(l1), angle[0], angle[1], torch.zeros_like(angle[0]))
-                rot_mat_R = wigner_D(int(l2), angle[0], angle[1], torch.zeros_like(angle[0]))
+                rot_mat_L = wigner_D(int(l1), angle[0], angle[1], torch.zeros_like(angle[0])).to(dtype=self.dtype, device=self.device)
+                rot_mat_R = wigner_D(int(l2), angle[0], angle[1], torch.zeros_like(angle[0])).to(dtype=self.dtype, device=self.device)
                 # rot_mat_L = Irrep(int(l1), 1).D_from_angles(angle[0].cpu(), angle[1].cpu(), torch.tensor(0., dtype=self.dtype)).to(self.device) # tensor(N, 2l1+1, 2l1+1)
                 # rot_mat_R = Irrep(int(l2), 1).D_from_angles(angle[0].cpu(), angle[1].cpu(), torch.tensor(0., dtype=self.dtype)).to(self.device) # tensor(N, 2l2+1, 2l2+1)
 

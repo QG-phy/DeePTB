@@ -51,6 +51,7 @@ tbtrans_init = ["sisl"]
 pybinding = ["pybinding"]
 pythtb = ["pythtb"]
 vbcsr = ["vbcsr>=0.2.2"]
+eph = ["phonopy>=2.12"]
 
 [project.scripts]
 dptb = "dptb.__main__:main"
