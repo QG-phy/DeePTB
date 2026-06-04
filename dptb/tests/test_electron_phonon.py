@@ -3426,6 +3426,56 @@ def test_electron_phonon_accessor_compute_mesh_q_chunked_matches_full_mesh():
     ]
 
 
+def test_electron_phonon_accessor_compute_mesh_qk_chunked_matches_full_mesh():
+    phonons = Phonons(
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        frequencies=np.array([[1.0], [2.0]]),
+        eigenvectors=np.array([[[[1.0, 0.0, 0.0]]], [[[1.0, 0.0, 0.0]]]], dtype=complex),
+        masses=np.array([1.0]),
+    )
+    accessor = EPhAccessor(_FakeSystem())
+
+    full = accessor.compute_mesh(
+        mesh_spec=EPCMeshSpec(k_mesh=[3, 1, 1]),
+        phonons=phonons,
+        bands=[0],
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+    chunked = accessor.compute_mesh(
+        mesh_spec=EPCMeshSpec(k_mesh=[3, 1, 1], chunk_size=1, q_chunk_size=1),
+        phonons=phonons,
+        bands=[0],
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+
+    np.testing.assert_allclose(chunked.kpoints, full.kpoints)
+    np.testing.assert_allclose(chunked.qpoints, full.qpoints)
+    np.testing.assert_allclose(chunked.eigenvalues_k, full.eigenvalues_k)
+    np.testing.assert_allclose(chunked.eigenvalues_kq, full.eigenvalues_kq)
+    np.testing.assert_allclose(chunked.coupling_matrix, full.coupling_matrix)
+    np.testing.assert_allclose(chunked.coupling_strength, full.coupling_strength)
+    assert chunked.metadata["execution"] == "serial_qk_chunked"
+    assert chunked.metadata["chunk_axis"] == "q,k"
+    assert chunked.metadata["chunks"] == [
+        {
+            "q_chunk": {"chunk_index": 0, "q_start": 0, "q_stop": 1},
+            "k_chunks": [
+                {"chunk_index": 0, "k_start": 0, "k_stop": 1},
+                {"chunk_index": 1, "k_start": 1, "k_stop": 2},
+                {"chunk_index": 2, "k_start": 2, "k_stop": 3},
+            ],
+        },
+        {
+            "q_chunk": {"chunk_index": 1, "q_start": 1, "q_stop": 2},
+            "k_chunks": [
+                {"chunk_index": 0, "k_start": 0, "k_stop": 1},
+                {"chunk_index": 1, "k_start": 1, "k_stop": 2},
+                {"chunk_index": 2, "k_start": 2, "k_stop": 3},
+            ],
+        },
+    ]
+
+
 def test_epc_k_chunk_specs_are_deterministic():
     full = build_k_chunk_specs(3, None)
     assert full == [EPCKChunkSpec(chunk_index=0, k_start=0, k_stop=3)]
@@ -4419,6 +4469,43 @@ def test_eph_entrypoint_writes_epc_mesh_npz_from_external_phonon_modes(tmp_path)
     assert loaded.metadata["execution"] == "serial_k_chunked"
     np.testing.assert_allclose(loaded.kpoint_weights, np.array([0.5, 0.5]))
     np.testing.assert_allclose(loaded.qpoint_weights, np.array([1.0]))
+    np.testing.assert_allclose(loaded.coupling_strength, result.coupling_strength)
+
+
+def test_eph_entrypoint_writes_q_chunked_epc_mesh_npz_from_external_phonon_modes(tmp_path):
+    phonons = Phonons(
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        frequencies=np.array([[1.0], [2.0]]),
+        eigenvectors=np.array([[[[1.0, 0.0, 0.0]]], [[[1.0, 0.0, 0.0]]]], dtype=complex),
+        masses=np.array([1.0]),
+    )
+    phonon_path = tmp_path / "phonons.npz"
+    phonons.save_npz(phonon_path)
+    output_path = tmp_path / "epc_mesh_data.npz"
+
+    result = eph(
+        task="mesh-coupling",
+        structure="unused.vasp",
+        init_model="unused.pth",
+        phonons=str(phonon_path),
+        k_mesh=[2, 1, 1],
+        q_chunk_size=1,
+        output=str(output_path),
+        bands=[0],
+        system=_FakeSystem(),
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+    loaded = EPCMeshData.load_npz(output_path)
+
+    assert output_path.exists()
+    assert loaded.metadata["mesh_spec"]["q_chunk_size"] == 1
+    assert loaded.metadata["execution"] == "serial_q_chunked"
+    assert loaded.metadata["chunk_axis"] == "q"
+    assert loaded.metadata["chunks"] == [
+        {"chunk_index": 0, "q_start": 0, "q_stop": 1},
+        {"chunk_index": 1, "q_start": 1, "q_stop": 2},
+    ]
+    np.testing.assert_allclose(loaded.qpoint_weights, np.array([0.5, 0.5]))
     np.testing.assert_allclose(loaded.coupling_strength, result.coupling_strength)
 
 
