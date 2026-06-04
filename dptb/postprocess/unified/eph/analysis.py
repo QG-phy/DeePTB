@@ -1632,6 +1632,72 @@ def find_degenerate_band_groups(eigenvalues: np.ndarray, tolerance: float = 1e-5
     return groups
 
 
+def compute_coupling_strength_summary(
+    epc_data: Union[EPCData, EPCMeshData, EPCPathData],
+    weighted: bool = True,
+) -> Dict[str, Any]:
+    """Summarize EPC coupling strength over q/k/mode/band axes.
+
+    The input is an existing DeePTB EPC data object; this helper does not
+    recompute coupling and does not introduce a persistent schema. For
+    ``EPCMeshData``, ``weighted=True`` applies normalized q-point and k-point
+    weights before aggregation. For ``EPCData`` and ``EPCPathData``, no weights
+    are available, so aggregation is an unweighted sum.
+    """
+    weighted = _validate_bool(weighted, "weighted")
+    if isinstance(epc_data, EPCMeshData):
+        source = "EPCMeshData.coupling_strength"
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        if weighted:
+            qpoint_weights = _normalize_weights(epc_data.qpoint_weights, "qpoint_weights")
+            kpoint_weights = _normalize_weights(epc_data.kpoint_weights, "kpoint_weights")
+            strength = strength * qpoint_weights[:, None, None, None, None] * kpoint_weights[None, :, None, None, None]
+            weight_convention = "normalized_qpoint_and_kpoint_weights"
+        else:
+            weight_convention = "unweighted_sum"
+    elif isinstance(epc_data, EPCPathData):
+        source = "EPCPathData.coupling_strength"
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        weight_convention = "unweighted_sum"
+    elif isinstance(epc_data, EPCData):
+        source = "EPCData.coupling_strength"
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        weight_convention = "unweighted_sum"
+    else:
+        raise ValueError("epc_data must be an EPCData, EPCMeshData, or EPCPathData object.")
+
+    if strength.ndim != 5:
+        raise ValueError("coupling_strength must have shape (nq, nk, nmodes, nfinal, ninitial).")
+    if strength.size == 0:
+        raise ValueError("coupling_strength must be non-empty.")
+    if not np.all(np.isfinite(strength)) or np.any(strength < 0.0):
+        raise ValueError("coupling_strength must contain finite non-negative values.")
+
+    metadata = {
+        "source": source,
+        "weighted": weighted,
+        "weight_convention": weight_convention,
+        "input_schema": epc_data.metadata.get("schema"),
+        "coupling_strength_unit": epc_data.metadata.get("coupling_strength_unit", "eV^2"),
+    }
+    if isinstance(epc_data, EPCPathData):
+        metadata["path_axis"] = epc_data.path_axis
+    if isinstance(epc_data, EPCMeshData):
+        metadata["mesh_spec"] = epc_data.metadata.get("mesh_spec")
+
+    return {
+        "total": np.asarray(strength.sum()),
+        "q_resolved": strength.sum(axis=(1, 2, 3, 4)),
+        "k_resolved": strength.sum(axis=(0, 2, 3, 4)),
+        "mode_resolved": strength.sum(axis=(0, 1, 3, 4)),
+        "final_band_resolved": strength.sum(axis=(0, 1, 2, 4)),
+        "initial_band_resolved": strength.sum(axis=(0, 1, 2, 3)),
+        "band_pair_resolved": strength.sum(axis=(0, 1, 2)),
+        "band_indices": epc_data.band_indices.copy(),
+        "metadata": metadata,
+    }
+
+
 def compute_subspace_coupling_strength(
     coupling_matrix: np.ndarray,
     final_groups: Sequence[Sequence[int]],

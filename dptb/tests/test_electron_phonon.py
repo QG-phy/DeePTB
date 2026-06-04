@@ -74,6 +74,7 @@ from dptb.postprocess.unified.eph import (
     compute_relaxation_time_path,
     compute_serta_conductivity,
     compute_serta_transport_from_epc,
+    compute_coupling_strength_summary,
     compute_subspace_coupling_data,
     compute_subspace_coupling_strength,
     concat_epc_k_chunks,
@@ -165,6 +166,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.compute_serta_mobility_scan_si is compute_serta_mobility_scan_si
     assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
     assert unified_postprocess.compute_serta_transport_from_epc is compute_serta_transport_from_epc
+    assert unified_postprocess.compute_coupling_strength_summary is compute_coupling_strength_summary
     assert unified_postprocess.compute_subspace_coupling_strength is compute_subspace_coupling_strength
     assert unified_postprocess.compute_subspace_coupling_data is compute_subspace_coupling_data
     assert unified_postprocess.find_degenerate_band_groups is find_degenerate_band_groups
@@ -1014,6 +1016,83 @@ def test_epc_mesh_data_npz_roundtrip(tmp_path):
         assert "el_kpoint_weights" in data
         assert "ph_qpoint_weights" in data
         assert "metadata_json" in data
+
+
+def test_compute_coupling_strength_summary_from_epc_data():
+    strength = np.arange(1, 33, dtype=float).reshape(2, 2, 2, 2, 2)
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        band_indices=np.array([3, 4]),
+        frequencies=np.ones((2, 2)),
+        eigenvalues_k=np.ones((2, 2)),
+        eigenvalues_kq=np.ones((2, 2, 2)),
+        coupling_matrix=np.sqrt(strength).astype(complex),
+        coupling_strength=strength,
+        metadata={"source": "unit-test"},
+    )
+
+    summary = compute_coupling_strength_summary(epc_data)
+
+    np.testing.assert_allclose(summary["total"], strength.sum())
+    np.testing.assert_allclose(summary["q_resolved"], strength.sum(axis=(1, 2, 3, 4)))
+    np.testing.assert_allclose(summary["k_resolved"], strength.sum(axis=(0, 2, 3, 4)))
+    np.testing.assert_allclose(summary["mode_resolved"], strength.sum(axis=(0, 1, 3, 4)))
+    np.testing.assert_allclose(summary["final_band_resolved"], strength.sum(axis=(0, 1, 2, 4)))
+    np.testing.assert_allclose(summary["initial_band_resolved"], strength.sum(axis=(0, 1, 2, 3)))
+    np.testing.assert_allclose(summary["band_pair_resolved"], strength.sum(axis=(0, 1, 2)))
+    np.testing.assert_array_equal(summary["band_indices"], np.array([3, 4]))
+    assert summary["metadata"]["source"] == "EPCData.coupling_strength"
+    assert summary["metadata"]["weight_convention"] == "unweighted_sum"
+
+
+def test_compute_coupling_strength_summary_uses_mesh_weights():
+    strength = np.ones((2, 2, 1, 1, 1), dtype=float)
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.ones((2, 1)),
+        eigenvalues_k=np.ones((2, 1)),
+        eigenvalues_kq=np.ones((2, 2, 1)),
+        coupling_matrix=np.ones((2, 2, 1, 1, 1), dtype=complex),
+        coupling_strength=strength,
+    )
+    mesh_data = EPCMeshData.from_epc_data(
+        epc_data,
+        kpoint_weights=np.array([1.0, 3.0]),
+        qpoint_weights=np.array([2.0, 6.0]),
+    )
+
+    weighted = compute_coupling_strength_summary(mesh_data)
+    unweighted = compute_coupling_strength_summary(mesh_data, weighted=False)
+
+    np.testing.assert_allclose(weighted["total"], 1.0)
+    np.testing.assert_allclose(weighted["q_resolved"], np.array([0.25, 0.75]))
+    np.testing.assert_allclose(weighted["k_resolved"], np.array([0.25, 0.75]))
+    np.testing.assert_allclose(unweighted["total"], 4.0)
+    assert weighted["metadata"]["source"] == "EPCMeshData.coupling_strength"
+    assert weighted["metadata"]["weight_convention"] == "normalized_qpoint_and_kpoint_weights"
+    assert unweighted["metadata"]["weight_convention"] == "unweighted_sum"
+
+
+def test_compute_coupling_strength_summary_rejects_invalid_inputs():
+    with pytest.raises(ValueError, match="EPCData"):
+        compute_coupling_strength_summary(object())
+    with pytest.raises(ValueError, match="weighted"):
+        compute_coupling_strength_summary(
+            EPCData(
+                kpoints=np.array([[0.0, 0.0, 0.0]]),
+                qpoints=np.array([[0.0, 0.0, 0.0]]),
+                band_indices=np.array([0]),
+                frequencies=np.ones((1, 1)),
+                eigenvalues_k=np.ones((1, 1)),
+                eigenvalues_kq=np.ones((1, 1, 1)),
+                coupling_matrix=np.ones((1, 1, 1, 1, 1), dtype=complex),
+                coupling_strength=np.ones((1, 1, 1, 1, 1)),
+            ),
+            weighted="yes",
+        )
 
 
 def test_epc_path_data_npz_roundtrip(tmp_path):

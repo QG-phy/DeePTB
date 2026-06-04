@@ -21,8 +21,9 @@ include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `compute_band_velocities_finite_difference`,
 `compute_band_velocities_hamiltonian_derivative`, `compute_serta_mobility_si`,
 `compute_serta_mobility_scan_si`, `compute_serta_transport_from_epc`,
-`find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
-`compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
+`compute_coupling_strength_summary`, `find_degenerate_band_groups`,
+`compute_subspace_coupling_strength`, `compute_subspace_coupling_data`,
+`FDProvider`, `SupercellFD`, and the
 benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
 `dptb.utils.constants` and re-exported from the EPC namespace.
 
