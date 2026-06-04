@@ -33,7 +33,9 @@ linewidth from those artifacts one chunk at a time.
 `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` computes SERTA
 transport from the chunked linewidth reduction plus the existing velocity
 providers. `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)`
-does the same for SI mobility. EPC unit constants are centralized in
+does the same for SI mobility, and
+`compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` extends it
+to chemical-potential/temperature scans. EPC unit constants are centralized in
 `dptb.utils.constants` and re-exported from the EPC namespace.
 
 ### Phonons NPZ
@@ -155,6 +157,12 @@ through the supplied `TBSystem`.
 uses the same chunked linewidth and velocity path, then applies the existing SI
 mobility conversion. It supports the same 2D/3D normalization and reciprocal
 cell conventions as `compute_serta_mobility_si(...)`.
+
+`compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` reuses the
+same chunked linewidth at the first requested chemical-potential/temperature
+point, then applies the existing mobility scan helper over the requested axes.
+This matches the current `compute_serta_mobility_scan_si(...)` convention where
+linewidth is supplied as a fixed scan input.
 
 ### Postprocess NPZ
 

@@ -84,6 +84,7 @@ from dptb.postprocess.unified.eph import (
     compute_serta_transport_from_epc_mesh_chunked_artifact,
     compute_serta_transport_from_epc,
     compute_coupling_strength_summary,
+    compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact,
     compute_subspace_coupling_data,
     compute_subspace_coupling_strength,
     concat_epc_k_chunks,
@@ -190,6 +191,10 @@ def test_unified_postprocess_exports_epc_v1_symbols():
         is compute_serta_mobility_si_from_epc_mesh_chunked_artifact
     )
     assert unified_postprocess.compute_serta_mobility_scan_si is compute_serta_mobility_scan_si
+    assert (
+        unified_postprocess.compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact
+        is compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact
+    )
     assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
     assert (
         unified_postprocess.compute_serta_transport_from_epc_mesh_chunked_artifact
@@ -3371,6 +3376,70 @@ def test_compute_serta_mobility_si_from_epc_mesh_chunked_artifact_matches_full_m
     assert result.metadata["artifact_axis"] == axis
     assert result.metadata["velocity_source"] == velocity_source
     assert result.metadata["source"] == "deeptb.eph.compute_serta_mobility_si_from_epc_mesh_chunked_artifact"
+
+
+@pytest.mark.parametrize(("axis", "velocity_source", "system_cls"), [
+    ("q", "finite_difference", _LinearBandSystem),
+    ("k", "hamiltonian_derivative", _DerivativeBandSystem),
+])
+def test_compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact_matches_full_mesh(
+    axis,
+    velocity_source,
+    system_cls,
+    tmp_path,
+):
+    system = system_cls()
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / f"{axis}_artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis=axis, chunk_size=1)
+    reciprocal_cell = 2.0 * np.pi * np.eye(3)
+    chemical_potentials = [0.2, 0.25]
+    temperatures = [0.03, 0.04]
+
+    result = compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(
+        system=system,
+        directory=artifact_dir,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        sigma=0.05,
+        spin_degeneracy=2,
+        volume=5.0,
+        velocity_source=velocity_source,
+    )
+    linewidth = compute_linewidth_mesh(
+        mesh_data,
+        chemical_potential=chemical_potentials[0],
+        temperature=temperatures[0],
+        sigma=0.05,
+    )
+    eigenvalues = (
+        system.band_offsets[None, mesh_data.band_indices]
+        + mesh_data.kpoints @ system.band_slopes[mesh_data.band_indices].T
+    )
+    expected = compute_serta_mobility_scan_si(
+        eigenvalues=eigenvalues,
+        velocities=np.repeat(system.band_slopes[mesh_data.band_indices][None, :, :], mesh_data.kpoints.shape[0], axis=0),
+        linewidth=linewidth.linewidth,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        kpoint_weights=mesh_data.kpoint_weights,
+        spin_degeneracy=2,
+        volume=5.0,
+    )
+
+    np.testing.assert_allclose(result.conductivity, expected.conductivity)
+    np.testing.assert_allclose(result.mobility, expected.mobility)
+    np.testing.assert_allclose(result.carrier_density, expected.carrier_density)
+    np.testing.assert_allclose(result.chemical_potentials, expected.chemical_potentials)
+    np.testing.assert_allclose(result.temperatures, expected.temperatures)
+    assert result.metadata["summary_first"] is True
+    assert result.metadata["artifact_axis"] == axis
+    assert result.metadata["velocity_source"] == velocity_source
+    assert result.metadata["linewidth_reference_chemical_potential"] == chemical_potentials[0]
+    assert result.metadata["linewidth_reference_temperature"] == temperatures[0]
+    assert result.metadata["source"] == "deeptb.eph.compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact"
 
 
 def test_compute_serta_transport_from_epc_rejects_invalid_velocity_delta():
