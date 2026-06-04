@@ -14,18 +14,22 @@ from dptb.postprocess.unified.eph import (
     LinewidthData,
     LinewidthMeshData,
     LinewidthPathData,
+    MobilityData,
     Phonons,
     RelaxationTimeData,
     RelaxationTimeMeshData,
     RelaxationTimePathData,
     SubspaceCouplingData,
     TransportData,
+    compute_band_velocities_finite_difference,
+    compute_band_velocities_hamiltonian_derivative,
     compute_linewidth,
     compute_linewidth_mesh,
     compute_linewidth_path,
     compute_relaxation_time,
     compute_relaxation_time_mesh,
     compute_relaxation_time_path,
+    compute_serta_mobility_si,
     compute_serta_transport_from_epc,
     compute_subspace_coupling_data,
 )
@@ -55,6 +59,8 @@ def eph(
     kpoint_weights: Optional[str] = None,
     spin_degeneracy: int = 1,
     volume: float = 1.0,
+    area: Optional[float] = None,
+    dimension: str = "3d",
     velocity_delta: float = 1e-4,
     velocity_source: str = "finite_difference",
     k_mesh: Optional[Sequence[int]] = None,
@@ -78,6 +84,7 @@ def eph(
     RelaxationTimeMeshData,
     RelaxationTimePathData,
     TransportData,
+    MobilityData,
     SubspaceCouplingData,
 ]:
     """Run an electron-phonon workflow task."""
@@ -86,7 +93,7 @@ def eph(
             "task must be one of 'coupling', 'path-coupling', 'mesh-coupling', 'linewidth', "
             "'path-linewidth', 'mesh-linewidth', 'relaxation-time', 'relaxation', "
             "'path-relaxation-time', 'path-relaxation', 'mesh-relaxation-time', "
-            "'mesh-relaxation', 'transport', or 'subspace'."
+            "'mesh-relaxation', 'transport', 'mobility', or 'subspace'."
         )
     task = task.lower()
     if use_scc:
@@ -202,6 +209,25 @@ def eph(
             use_scc=use_scc,
             system=system,
         )
+    if task == "mobility":
+        return eph_mobility(
+            structure=structure,
+            init_model=init_model,
+            epc_data=epc_data,
+            linewidth_data=linewidth_data,
+            output=output or "mobility.npz",
+            chemical_potential=chemical_potential,
+            temperature=temperature,
+            kpoint_weights=kpoint_weights,
+            spin_degeneracy=spin_degeneracy,
+            dimension=dimension,
+            volume=volume,
+            area=area,
+            velocity_delta=velocity_delta,
+            velocity_source=velocity_source,
+            use_scc=use_scc,
+            system=system,
+        )
     if task == "subspace":
         return eph_subspace(
             epc_data=epc_data,
@@ -213,7 +239,7 @@ def eph(
         "task must be one of 'coupling', 'path-coupling', 'mesh-coupling', 'linewidth', "
         "'path-linewidth', 'mesh-linewidth', 'relaxation-time', 'relaxation', "
         "'path-relaxation-time', 'path-relaxation', 'mesh-relaxation-time', "
-        "'mesh-relaxation', 'transport', or 'subspace'."
+        "'mesh-relaxation', 'transport', 'mobility', or 'subspace'."
     )
 
 
@@ -578,6 +604,100 @@ def eph_transport(
     return result
 
 
+def eph_mobility(
+    structure: Optional[str],
+    init_model: Optional[str],
+    epc_data: str,
+    linewidth_data: str,
+    output: str,
+    chemical_potential: float,
+    temperature: float,
+    kpoint_weights: Optional[str] = None,
+    spin_degeneracy: int = 1,
+    dimension: str = "3d",
+    volume: Optional[float] = 1.0,
+    area: Optional[float] = None,
+    velocity_delta: float = 1e-4,
+    velocity_source: str = "finite_difference",
+    use_scc: bool = False,
+    system=None,
+) -> MobilityData:
+    """Calculate SI SERTA mobility data from EPC and linewidth NPZ files."""
+    if use_scc:
+        _reject_scc_v1("mobility")
+    if epc_data is None:
+        raise ValueError("epc_data is required for dptb eph --task mobility.")
+    if linewidth_data is None:
+        raise ValueError("linewidth_data is required for dptb eph --task mobility.")
+    if chemical_potential is None:
+        raise ValueError("chemical_potential is required for dptb eph --task mobility.")
+    if temperature is None:
+        raise ValueError("temperature is required for dptb eph --task mobility.")
+    if system is None:
+        if structure is None:
+            raise ValueError("structure is required for dptb eph --task mobility.")
+        if init_model is None:
+            raise ValueError("init_model is required for dptb eph --task mobility.")
+        system = TBSystem(data=structure, calculator=init_model)
+
+    epc = EPCData.load_npz(epc_data)
+    linewidth_result = LinewidthData.load_npz(linewidth_data)
+    linewidth_input = linewidth_result.linewidth
+    if linewidth_input.ndim == 3:
+        linewidth_input = linewidth_input.sum(axis=-1)
+    if linewidth_input.shape != epc.eigenvalues_k.shape:
+        raise ValueError("linewidth_data.linewidth must match EPCData eigenvalues_k shape after mode summation.")
+
+    weights = _load_kpoint_weights(kpoint_weights) if kpoint_weights is not None else None
+    source = _normalize_velocity_source(velocity_source)
+    if source == "finite_difference":
+        velocities = compute_band_velocities_finite_difference(
+            system=system,
+            kpoints=epc.kpoints,
+            bands=epc.band_indices,
+            delta=velocity_delta,
+            use_scc=use_scc,
+        )
+    else:
+        velocities = compute_band_velocities_hamiltonian_derivative(
+            system=system,
+            kpoints=epc.kpoints,
+            bands=epc.band_indices,
+            use_scc=use_scc,
+        )
+
+    reciprocal_cell = _reciprocal_cell_from_system(system)
+    result = compute_serta_mobility_si(
+        eigenvalues=epc.eigenvalues_k,
+        velocities=velocities,
+        linewidth=linewidth_input,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potential=chemical_potential,
+        temperature=temperature,
+        kpoint_weights=weights,
+        spin_degeneracy=spin_degeneracy,
+        dimension=dimension,
+        volume=volume if str(dimension).lower() == "3d" else None,
+        area=area,
+    )
+    result.metadata.update(
+        {
+            "velocity_source": source,
+            "velocity_unit": "m/s",
+            "velocity_input_unit": "eV/fractional_reciprocal_coordinate",
+            "reciprocal_cell_source": "2pi_times_ase_cell_reciprocal",
+            "band_indices": epc.band_indices,
+            "epc_schema": epc.metadata.get("schema"),
+            "linewidth_schema": linewidth_result.metadata.get("schema"),
+        }
+    )
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.save_npz(output_path)
+    log.info("Electron-phonon mobility data written to %s", output_path)
+    return result
+
+
 def eph_subspace(
     epc_data: str,
     output: str,
@@ -619,6 +739,27 @@ def _load_kpoint_weights(path: str) -> np.ndarray:
     if weights.sum() <= 0.0:
         raise ValueError("kpoint_weights must have a positive sum.")
     return weights
+
+
+def _normalize_velocity_source(velocity_source: str) -> str:
+    if not isinstance(velocity_source, str):
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    source = velocity_source.replace("-", "_").lower()
+    if source not in {"finite_difference", "hamiltonian_derivative"}:
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    return source
+
+
+def _reciprocal_cell_from_system(system) -> np.ndarray:
+    atoms = getattr(system, "atoms", None)
+    if atoms is None:
+        raise ValueError("system must provide an ASE atoms object for mobility reciprocal cell conversion.")
+    reciprocal = 2.0 * np.pi * np.asarray(atoms.cell.reciprocal(), dtype=float)
+    if reciprocal.shape != (3, 3) or not np.all(np.isfinite(reciprocal)):
+        raise ValueError("system atoms cell must provide a finite 3x3 reciprocal cell.")
+    if abs(np.linalg.det(reciprocal)) <= 0.0:
+        raise ValueError("system atoms cell must be periodic with an invertible cell for mobility.")
+    return reciprocal
 
 
 def _load_array(path: str, npz_key: str) -> np.ndarray:

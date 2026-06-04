@@ -372,8 +372,9 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 ### CLI
 
 - `dptb eph --task transport` 已支持 `--velocity-source finite_difference|hamiltonian_derivative`。
-- 后续扩展 `dptb eph --task transport` 或新增 `--task mobility`。
-- 支持 `--chemical-potentials`、`--temperatures`、`--dimension 2d/3d`、`--area`、`--volume`。
+- `dptb eph --task mobility` 已支持单个 chemical potential / temperature 的 SI mobility 输出。
+- mobility CLI 已支持 `--dimension 2d/3d`、`--area`、`--volume`。
+- 后续支持 `--chemical-potentials`、`--temperatures` 的 vectorized scans。
 
 ### Current Implementation Status
 
@@ -387,6 +388,10 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - computes SI conductivity, carrier density, and mobility.
   - supports 3D volume normalization and 2D sheet normalization.
   - persists results through `MobilityData` NPZ.
+- Implemented `dptb eph --task mobility`:
+  - reuses finite-difference or Hamiltonian-derivative velocity providers.
+  - infers reciprocal cell from structure as `2*pi*atoms.cell.reciprocal()`.
+  - writes `MobilityData` NPZ.
 - SCC-corrected velocity remains unsupported in v1.
 
 ### Acceptance

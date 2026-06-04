@@ -359,6 +359,33 @@ Supported k-point weights file formats:
 Loaded k-point weights are validated immediately by the CLI: the array must be
 one-dimensional, non-empty, finite, non-negative, and have a positive sum.
 
+### Mobility
+
+```bash
+dptb eph \
+  --task mobility \
+  -i model.pth \
+  -stu structure.vasp \
+  --epc-data epc_data.npz \
+  --linewidth-data linewidth.npz \
+  --chemical-potential 0.15 \
+  --temperature 0.025 \
+  --dimension 3d \
+  --volume 1.0 \
+  --velocity-source hamiltonian_derivative \
+  -o mobility.npz
+```
+
+`--task mobility` writes a `MobilityData` NPZ with SI conductivity, carrier
+density, and mobility. It reuses the same velocity providers as transport.
+The reciprocal cell is inferred from the input structure as
+`2*pi*atoms.cell.reciprocal()` in Angstrom^-1, consistent with DeePTB's
+fractional k-point phase convention.
+
+For 3D systems, use `--dimension 3d --volume <Angstrom^3>`. For 2D sheet
+normalization, use `--dimension 2d --area <Angstrom^2>`. Temperature remains
+kBT in eV.
+
 ### Subspace Coupling
 
 ```bash
@@ -390,8 +417,8 @@ band subspaces. Groups use `start:stop` ranges and are stored in the NPZ as
 - Transport supports finite-difference and Hamiltonian-derivative velocity
   providers, but does not perform full SI unit conversion.
 - SI mobility is available through the Python helper
-  `compute_serta_mobility_si(...)`; a dedicated CLI mobility workflow and
-  multi-mu/multi-temperature scans are future work.
+  `compute_serta_mobility_si(...)` and `dptb eph --task mobility`; multi-mu /
+  multi-temperature scans are future work.
 
 ## Development Validation
 

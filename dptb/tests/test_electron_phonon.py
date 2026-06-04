@@ -2256,6 +2256,10 @@ class _LinearBandSystem:
         return {}, self.band_offsets[None, :] + kpoints @ self.band_slopes.T
 
 
+class _LinearBandSystemWithAtoms(_LinearBandSystem):
+    atoms = Atoms("C", positions=[[0.0, 0.0, 0.0]], cell=np.eye(3), pbc=True)
+
+
 class _NonfiniteBandSystem:
     def get_eigenvalues(self, k_points, use_scc=False, **kwargs):
         return {}, np.full((len(k_points), 2), np.nan)
@@ -3478,6 +3482,43 @@ def test_eph_cli_parser_accepts_transport_postprocess_inputs():
     assert args.velocity_source == "hamiltonian-derivative"
 
 
+def test_eph_cli_parser_accepts_mobility_postprocess_inputs():
+    args = parse_args(
+        [
+            "eph",
+            "--task",
+            "mobility",
+            "-i",
+            "model.pth",
+            "-stu",
+            "struct.vasp",
+            "--epc-data",
+            "epc_data.npz",
+            "--linewidth-data",
+            "linewidth.npz",
+            "--chemical-potential",
+            "0.15",
+            "--temperature",
+            "0.025",
+            "--dimension",
+            "2d",
+            "--area",
+            "12.0",
+            "--velocity-source",
+            "finite-difference",
+            "-o",
+            "mobility.npz",
+        ]
+    )
+
+    assert args.command == "eph"
+    assert args.task == "mobility"
+    assert args.dimension == "2d"
+    assert args.area == 12.0
+    assert args.velocity_source == "finite-difference"
+    assert args.output == "mobility.npz"
+
+
 def test_eph_cli_parser_accepts_subspace_postprocess_inputs():
     args = parse_args(
         [
@@ -3936,6 +3977,65 @@ def test_eph_entrypoint_writes_transport_npz_from_epc_and_linewidth_data(tmp_pat
     np.testing.assert_allclose(loaded.conductivity, expected.conductivity)
     assert loaded.metadata["schema"] == "deeptb.epc_transport"
     assert loaded.metadata["velocity_source"] == "finite_difference"
+
+
+def test_eph_entrypoint_writes_mobility_npz_from_epc_and_linewidth_data(tmp_path):
+    system = _LinearBandSystemWithAtoms()
+    kpoints = np.array([[0.0, 0.0, 0.0], [0.01, 0.01, 0.01]])
+    band_indices = np.array([0, 2])
+    eigenvalues = system.band_offsets[None, band_indices] + kpoints @ system.band_slopes[band_indices].T
+    epc_data = EPCData(
+        kpoints=kpoints,
+        qpoints=np.array([[0.0, 0.0, 0.0]]),
+        band_indices=band_indices,
+        frequencies=np.array([[1.0]]),
+        eigenvalues_k=eigenvalues,
+        eigenvalues_kq=eigenvalues[None, :, :],
+        coupling_matrix=np.ones((1, 2, 1, 2, 2), dtype=complex),
+        coupling_strength=np.ones((1, 2, 1, 2, 2)),
+    )
+    linewidth = LinewidthData(
+        linewidth=np.array([[0.01, 0.02], [0.03, 0.04]]),
+        absorption=np.zeros((2, 2)),
+        emission=np.array([[0.01, 0.02], [0.03, 0.04]]),
+    )
+    epc_path = tmp_path / "epc_data.npz"
+    linewidth_path = tmp_path / "linewidth.npz"
+    output_path = tmp_path / "mobility.npz"
+    epc_data.save_npz(epc_path)
+    linewidth.save_npz(linewidth_path)
+
+    result = eph(
+        task="mobility",
+        structure="unused.vasp",
+        init_model="unused.pth",
+        epc_data=str(epc_path),
+        linewidth_data=str(linewidth_path),
+        output=str(output_path),
+        chemical_potential=0.15,
+        temperature=0.03,
+        spin_degeneracy=2,
+        volume=5.0,
+        system=system,
+    )
+    loaded = MobilityData.load_npz(output_path)
+    expected = compute_serta_mobility_si(
+        eigenvalues=eigenvalues,
+        velocities=np.repeat(system.band_slopes[band_indices][None, :, :], kpoints.shape[0], axis=0),
+        linewidth=linewidth.linewidth,
+        reciprocal_cell=2.0 * np.pi * np.eye(3),
+        chemical_potential=0.15,
+        temperature=0.03,
+        spin_degeneracy=2,
+        volume=5.0,
+    )
+
+    assert output_path.exists()
+    np.testing.assert_allclose(result.conductivity, expected.conductivity)
+    np.testing.assert_allclose(loaded.mobility, expected.mobility)
+    assert loaded.metadata["schema"] == "deeptb.epc_mobility"
+    assert loaded.metadata["velocity_source"] == "finite_difference"
+    assert loaded.metadata["reciprocal_cell_source"] == "2pi_times_ase_cell_reciprocal"
 
 
 def test_eph_entrypoint_writes_subspace_npz_from_epc_data(tmp_path):

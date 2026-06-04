@@ -519,6 +519,7 @@ def main_parser() -> argparse.ArgumentParser:
             "mesh-relaxation-time",
             "mesh-relaxation",
             "transport",
+            "mobility",
             "subspace",
         ],
         default="coupling",
@@ -590,7 +591,7 @@ def main_parser() -> argparse.ArgumentParser:
             "Output NPZ path. Defaults by task: epc_data.npz, epc_path_data.npz, "
             "epc_mesh_data.npz, linewidth.npz, path_linewidth.npz, mesh_linewidth.npz, "
             "relaxation_time.npz, path_relaxation_time.npz, mesh_relaxation_time.npz, "
-            "transport.npz, or subspace_coupling.npz."
+            "transport.npz, mobility.npz, or subspace_coupling.npz."
         ),
     )
 
@@ -627,14 +628,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--epc-data",
         type=str,
         default=None,
-        help="Input EPCData NPZ for linewidth, transport, or subspace postprocess.",
+        help="Input EPCData NPZ for linewidth, transport, mobility, or subspace postprocess.",
     )
 
     parser_eph.add_argument(
         "--linewidth-data",
         type=str,
         default=None,
-        help="Input LinewidthData NPZ for relaxation-time or transport postprocess.",
+        help="Input LinewidthData NPZ for relaxation-time, transport, or mobility postprocess.",
     )
 
     parser_eph.add_argument(
@@ -655,14 +656,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--chemical-potential",
         type=float,
         default=None,
-        help="Chemical potential in eV for linewidth or transport postprocess.",
+        help="Chemical potential in eV for linewidth, transport, or mobility postprocess.",
     )
 
     parser_eph.add_argument(
         "--temperature",
         type=float,
         default=None,
-        help="Temperature as kBT in eV for linewidth or transport postprocess.",
+        help="Temperature as kBT in eV for linewidth, transport, or mobility postprocess.",
     )
 
     parser_eph.add_argument(
@@ -702,21 +703,34 @@ def main_parser() -> argparse.ArgumentParser:
         "--kpoint-weights",
         type=str,
         default=None,
-        help="Optional k-point weights file for transport. Supports JSON, NPY, NPZ with 'kpoint_weights', or text.",
+        help="Optional k-point weights file for transport or mobility. Supports JSON, NPY, NPZ with 'kpoint_weights', or text.",
     )
 
     parser_eph.add_argument(
         "--spin-degeneracy",
         type=int,
         default=1,
-        help="Spin degeneracy for transport postprocess.",
+        help="Spin degeneracy for transport or mobility postprocess.",
     )
 
     parser_eph.add_argument(
         "--volume",
         type=float,
         default=1.0,
-        help="Cell or normalization volume for transport postprocess.",
+        help="Cell or normalization volume in Angstrom^3 for transport or 3D mobility postprocess.",
+    )
+    parser_eph.add_argument(
+        "--area",
+        type=float,
+        default=None,
+        help="Normalization area in Angstrom^2 for 2D mobility postprocess.",
+    )
+    parser_eph.add_argument(
+        "--dimension",
+        type=str,
+        default="3d",
+        choices=["2d", "3d"],
+        help="Dimensional normalization for mobility postprocess.",
     )
 
     parser_eph.add_argument(
