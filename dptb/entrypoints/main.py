@@ -633,7 +633,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--epc-artifact",
         type=str,
         default=None,
-        help="Input EPC mesh chunked artifact directory for summary-first transport or mobility postprocess.",
+        help="Input EPC mesh chunked artifact directory for mesh-linewidth, transport, or mobility postprocess.",
     )
 
     parser_eph.add_argument(
@@ -769,14 +769,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--velocity-delta",
         type=float,
         default=1e-4,
-        help="Central finite-difference step in fractional reciprocal coordinates for transport velocity.",
+        help="Central finite-difference step in fractional reciprocal coordinates for transport or mobility velocity.",
     )
     parser_eph.add_argument(
         "--velocity-source",
         type=str,
         default="finite_difference",
         choices=["finite_difference", "finite-difference", "hamiltonian_derivative", "hamiltonian-derivative"],
-        help="Band velocity provider for transport postprocess.",
+        help="Band velocity provider for transport or mobility postprocess.",
     )
     parser_eph.add_argument(
         "--linewidth-scan-convention",

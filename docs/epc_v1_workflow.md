@@ -42,7 +42,10 @@ chunked artifacts.
 `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)` does the same
 for SI mobility, and
 `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` extends it
-to chemical-potential/temperature scans. EPC unit constants are centralized in
+to fixed-linewidth chemical-potential/temperature scans.
+`compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`
+exposes the SI mobility counterpart of the explicit per-scan-point linewidth
+recomputation convention. EPC unit constants are centralized in
 `dptb.utils.constants` and re-exported from the EPC namespace.
 
 ### Phonons NPZ
@@ -703,12 +706,12 @@ theory. For `EPCMeshData`, summaries use normalized k/q weights by default; add
   `NotImplementedError`.
 - Path workflows currently support fixed electronic k-points plus q-path only.
   k-path plus fixed-q is not implemented.
-- Mesh workflows currently use serial in-memory execution. K-point and q-point
-  chunking are available for `mesh-coupling`; chunked artifacts and
-  summary-first artifact consumers are available as Python APIs. A first serial
-  streaming artifact producer is available as `TBSystem.eph.compute_mesh_chunked_artifact(...)`.
-  Multiprocessing, MPI, CUDA backends, and multi-axis streaming artifact
-  production are future work.
+- Mesh workflows currently use serial execution. K-point and q-point chunking
+  are available for `mesh-coupling`; chunked artifacts are available through
+  `TBSystem.eph.compute_mesh_chunked_artifact(...)`, Python artifact helpers,
+  and `dptb eph --task mesh-artifact`. Summary-first artifact consumers are
+  available for mesh-linewidth, transport, and mobility. Multiprocessing, MPI,
+  CUDA backends, and multi-axis streaming artifact production are future work.
 - SOC/spinful EPC is not implemented.
 - Polar correction is not implemented.
 - Full degenerate-band gauge fixing and k/q-path continuous gauge tracking are
