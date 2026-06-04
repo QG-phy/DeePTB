@@ -361,12 +361,13 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - all physical constants and unit aliases sourced from `dptb.utils.constants` or `dptb.utils.units`
 - 新增 `MobilityData` 或扩展 `TransportData`：
   - `MobilityData` 已新增。
+  - `MobilityScanData` 已新增。
   - conductivity tensor 已支持。
   - mobility tensor 已支持。
   - carrier density 已支持。
-  - chemical potential / temperature metadata 已支持单点。
+  - chemical potential / temperature metadata 已支持单点和 scan axes。
   - unit metadata 已支持。
-- 支持多个 chemical potentials / temperatures 的 vectorized workflow。
+- 支持多个 chemical potentials / temperatures 的 Python scan workflow。
 - 明确 2D material 的 area normalization 与 3D volume normalization 区别。
 
 ### CLI
@@ -374,7 +375,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - `dptb eph --task transport` 已支持 `--velocity-source finite_difference|hamiltonian_derivative`。
 - `dptb eph --task mobility` 已支持单个 chemical potential / temperature 的 SI mobility 输出。
 - mobility CLI 已支持 `--dimension 2d/3d`、`--area`、`--volume`。
-- 后续支持 `--chemical-potentials`、`--temperatures` 的 vectorized scans。
+- 后续把 Python scan workflow 接到 CLI 的 `--chemical-potentials`、`--temperatures`。
 
 ### Current Implementation Status
 
@@ -392,6 +393,10 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - reuses finite-difference or Hamiltonian-derivative velocity providers.
   - infers reciprocal cell from structure as `2*pi*atoms.cell.reciprocal()`.
   - writes `MobilityData` NPZ.
+- Implemented `compute_serta_mobility_scan_si(...)` and `MobilityScanData`:
+  - scans chemical-potential and temperature axes.
+  - stores conductivity/mobility shape `(nmu, ntemperatures, 3, 3)`.
+  - stores carrier-density shape `(nmu, ntemperatures)`.
 - SCC-corrected velocity remains unsupported in v1.
 
 ### Acceptance

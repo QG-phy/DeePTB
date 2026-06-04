@@ -33,7 +33,9 @@ from dptb.postprocess.unified.eph import (
     LinewidthMeshData,
     LinewidthPathData,
     MOBILITY_NPZ_SCHEMA_VERSION,
+    MOBILITY_SCAN_NPZ_SCHEMA_VERSION,
     MobilityData,
+    MobilityScanData,
     RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION,
     RELAXATION_TIME_NPZ_SCHEMA_VERSION,
     RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION,
@@ -53,6 +55,7 @@ from dptb.postprocess.unified.eph import (
     compute_band_velocities_finite_difference,
     compute_band_velocities_hamiltonian_derivative,
     compute_serta_mobility_si,
+    compute_serta_mobility_scan_si,
     compute_linewidth,
     compute_linewidth_mesh,
     compute_linewidth_path,
@@ -120,7 +123,9 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.LinewidthMeshData is LinewidthMeshData
     assert unified_postprocess.LinewidthPathData is LinewidthPathData
     assert unified_postprocess.MobilityData is MobilityData
+    assert unified_postprocess.MobilityScanData is MobilityScanData
     assert unified_postprocess.MOBILITY_NPZ_SCHEMA_VERSION == MOBILITY_NPZ_SCHEMA_VERSION
+    assert unified_postprocess.MOBILITY_SCAN_NPZ_SCHEMA_VERSION == MOBILITY_SCAN_NPZ_SCHEMA_VERSION
     assert unified_postprocess.Phonons is Phonons
     assert unified_postprocess.RelaxationTimeData is RelaxationTimeData
     assert unified_postprocess.RelaxationTimeMeshData is RelaxationTimeMeshData
@@ -144,6 +149,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
         is compute_band_velocities_hamiltonian_derivative
     )
     assert unified_postprocess.compute_serta_mobility_si is compute_serta_mobility_si
+    assert unified_postprocess.compute_serta_mobility_scan_si is compute_serta_mobility_scan_si
     assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
     assert unified_postprocess.compute_serta_transport_from_epc is compute_serta_transport_from_epc
     assert unified_postprocess.compute_subspace_coupling_strength is compute_subspace_coupling_strength
@@ -2629,6 +2635,92 @@ def test_mobility_data_npz_roundtrip(tmp_path):
     np.testing.assert_allclose(loaded.carrier_density, mobility.carrier_density)
     assert loaded.metadata["schema"] == "deeptb.epc_mobility"
     assert loaded.metadata["schema_version"] == MOBILITY_NPZ_SCHEMA_VERSION
+
+
+def test_compute_serta_mobility_scan_si_matches_single_point_results():
+    eigenvalues = np.array([[0.0]])
+    velocities = np.array([[[1.0, 0.0, 0.0]]])
+    linewidth = np.array([[0.01]])
+    reciprocal_cell = np.eye(3)
+    chemical_potentials = np.array([-0.05, 0.0])
+    temperatures = np.array([0.05, 0.1])
+
+    scan = compute_serta_mobility_scan_si(
+        eigenvalues=eigenvalues,
+        velocities=velocities,
+        linewidth=linewidth,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        volume=10.0,
+    )
+    point = compute_serta_mobility_si(
+        eigenvalues=eigenvalues,
+        velocities=velocities,
+        linewidth=linewidth,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potential=chemical_potentials[1],
+        temperature=temperatures[0],
+        volume=10.0,
+    )
+
+    assert scan.conductivity.shape == (2, 2, 3, 3)
+    assert scan.mobility.shape == (2, 2, 3, 3)
+    assert scan.carrier_density.shape == (2, 2)
+    np.testing.assert_allclose(scan.conductivity[1, 0], point.conductivity)
+    np.testing.assert_allclose(scan.mobility[1, 0], point.mobility)
+    np.testing.assert_allclose(scan.carrier_density[1, 0], point.carrier_density)
+    np.testing.assert_allclose(scan.chemical_potentials, chemical_potentials)
+    np.testing.assert_allclose(scan.temperatures, temperatures)
+    assert scan.metadata["schema"] == "deeptb.epc_mobility_scan"
+    assert scan.metadata["chemical_potential_count"] == 2
+    assert scan.metadata["temperature_count"] == 2
+
+
+def test_mobility_scan_data_npz_roundtrip(tmp_path):
+    scan = MobilityScanData(
+        conductivity=np.ones((2, 1, 3, 3)),
+        mobility=np.ones((2, 1, 3, 3)) * 2.0,
+        carrier_density=np.ones((2, 1)) * 3.0,
+        chemical_potentials=np.array([0.0, 0.1]),
+        temperatures=np.array([0.05]),
+        metadata={"dimension": "3d"},
+    )
+    path = tmp_path / "mobility_scan.npz"
+    scan.save_npz(path)
+    loaded = MobilityScanData.load_npz(path)
+
+    np.testing.assert_allclose(loaded.conductivity, scan.conductivity)
+    np.testing.assert_allclose(loaded.mobility, scan.mobility)
+    np.testing.assert_allclose(loaded.carrier_density, scan.carrier_density)
+    np.testing.assert_allclose(loaded.chemical_potentials, scan.chemical_potentials)
+    np.testing.assert_allclose(loaded.temperatures, scan.temperatures)
+    assert loaded.metadata["schema"] == "deeptb.epc_mobility_scan"
+    assert loaded.metadata["schema_version"] == MOBILITY_SCAN_NPZ_SCHEMA_VERSION
+
+
+def test_compute_serta_mobility_scan_si_rejects_invalid_scan_axes():
+    kwargs = {
+        "eigenvalues": np.array([[0.0]]),
+        "velocities": np.array([[[1.0, 0.0, 0.0]]]),
+        "linewidth": np.array([[0.01]]),
+        "reciprocal_cell": np.eye(3),
+        "chemical_potentials": np.array([0.0]),
+        "temperatures": np.array([0.1]),
+        "volume": 10.0,
+    }
+    with pytest.raises(ValueError, match="chemical_potentials"):
+        compute_serta_mobility_scan_si(**{**kwargs, "chemical_potentials": np.array([])})
+    with pytest.raises(ValueError, match="temperatures"):
+        compute_serta_mobility_scan_si(**{**kwargs, "temperatures": np.array([0.0])})
+    with pytest.raises(ValueError, match="temperatures"):
+        MobilityScanData(
+            conductivity=np.ones((1, 1, 3, 3)),
+            mobility=np.ones((1, 1, 3, 3)),
+            carrier_density=np.ones((1, 1)),
+            chemical_potentials=np.array([0.0]),
+            temperatures=np.array([np.nan]),
+        )
 
 
 def test_compute_serta_mobility_si_rejects_invalid_inputs():

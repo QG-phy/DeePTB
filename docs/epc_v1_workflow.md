@@ -14,13 +14,13 @@ Python users can import the v1 EPC APIs from either
 include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `LinewidthData`, `LinewidthPathData`, `LinewidthMeshData`,
 `RelaxationTimeData`, `RelaxationTimePathData`, `RelaxationTimeMeshData`,
-`TransportData`, `MobilityData`, `SubspaceCouplingData`, `compute_coupling_matrix`,
+`TransportData`, `MobilityData`, `MobilityScanData`, `SubspaceCouplingData`, `compute_coupling_matrix`,
 `compute_linewidth`, `compute_linewidth_path`, `compute_linewidth_mesh`,
 `compute_relaxation_time`, `compute_relaxation_time_path`,
 `compute_relaxation_time_mesh`, `compute_serta_conductivity`,
 `compute_band_velocities_finite_difference`,
 `compute_band_velocities_hamiltonian_derivative`, `compute_serta_mobility_si`,
-`compute_serta_transport_from_epc`,
+`compute_serta_mobility_scan_si`, `compute_serta_transport_from_epc`,
 `find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
 `compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
 benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
@@ -119,6 +119,7 @@ Use the matching save/load APIs:
 - `RelaxationTimeMeshData.save_npz()` / `RelaxationTimeMeshData.load_npz()`.
 - `TransportData.save_npz()` / `TransportData.load_npz()`.
 - `MobilityData.save_npz()` / `MobilityData.load_npz()`.
+- `MobilityScanData.save_npz()` / `MobilityScanData.load_npz()`.
 - `SubspaceCouplingData.save_npz()` / `SubspaceCouplingData.load_npz()`.
 
 `RelaxationTimeData` stores `elph_relaxation_time` in seconds. The v1
@@ -164,6 +165,11 @@ reciprocal cell in Angstrom^-1. It supports 3D volume normalization
 normalization (`conductivity_unit="S"`, `carrier_density_unit="m^-2"`).
 `temperature` remains kBT in eV, matching the existing EPC postprocess
 convention.
+
+`MobilityScanData` stores the same SI quantities over chemical-potential and
+temperature axes. The Python helper `compute_serta_mobility_scan_si(...)`
+returns arrays with shape `(nmu, ntemperatures, 3, 3)` for conductivity and
+mobility, and `(nmu, ntemperatures)` for carrier density.
 
 ## CLI Tasks
 
@@ -418,7 +424,9 @@ band subspaces. Groups use `start:stop` ranges and are stored in the NPZ as
   providers, but does not perform full SI unit conversion.
 - SI mobility is available through the Python helper
   `compute_serta_mobility_si(...)` and `dptb eph --task mobility`; multi-mu /
-  multi-temperature scans are future work.
+  multi-temperature scans are available through the Python helper
+  `compute_serta_mobility_scan_si(...)`, with dedicated CLI scan arguments as
+  future work.
 
 ## Development Validation
 

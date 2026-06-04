@@ -33,6 +33,7 @@ RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION = 1
 RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION = 1
 TRANSPORT_NPZ_SCHEMA_VERSION = 1
 MOBILITY_NPZ_SCHEMA_VERSION = 1
+MOBILITY_SCAN_NPZ_SCHEMA_VERSION = 1
 SUBSPACE_COUPLING_NPZ_SCHEMA_VERSION = 1
 
 
@@ -548,6 +549,88 @@ class MobilityData:
                 conductivity=data["mobility_conductivity"],
                 mobility=data["mobility_tensor"],
                 carrier_density=data["mobility_carrier_density"],
+                metadata=metadata,
+            )
+
+
+@dataclass
+class MobilityScanData:
+    """SI SERTA mobility scan over chemical potentials and temperatures."""
+
+    conductivity: np.ndarray
+    mobility: np.ndarray
+    carrier_density: np.ndarray
+    chemical_potentials: np.ndarray
+    temperatures: np.ndarray
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.conductivity = np.asarray(self.conductivity, dtype=float)
+        self.mobility = np.asarray(self.mobility, dtype=float)
+        self.carrier_density = np.asarray(self.carrier_density, dtype=float)
+        self.chemical_potentials = np.asarray(self.chemical_potentials, dtype=float)
+        self.temperatures = np.asarray(self.temperatures, dtype=float)
+        if self.chemical_potentials.ndim != 1 or self.chemical_potentials.size == 0:
+            raise ValueError("chemical_potentials must be a one-dimensional non-empty array.")
+        if self.temperatures.ndim != 1 or self.temperatures.size == 0:
+            raise ValueError("temperatures must be a one-dimensional non-empty array.")
+        if not np.all(np.isfinite(self.chemical_potentials)):
+            raise ValueError("chemical_potentials must contain finite values.")
+        if not np.all(np.isfinite(self.temperatures)) or np.any(self.temperatures <= 0.0):
+            raise ValueError("temperatures must contain finite positive values.")
+        expected_tensor_shape = (self.chemical_potentials.shape[0], self.temperatures.shape[0], 3, 3)
+        expected_scalar_shape = (self.chemical_potentials.shape[0], self.temperatures.shape[0])
+        if self.conductivity.shape != expected_tensor_shape:
+            raise ValueError("conductivity must have shape (nmu, ntemperatures, 3, 3).")
+        if self.mobility.shape != expected_tensor_shape:
+            raise ValueError("mobility must have shape (nmu, ntemperatures, 3, 3).")
+        if self.carrier_density.shape != expected_scalar_shape:
+            raise ValueError("carrier_density must have shape (nmu, ntemperatures).")
+        if not np.all(np.isfinite(self.conductivity)):
+            raise ValueError("conductivity must contain finite values.")
+        if not np.all(np.isfinite(self.mobility)):
+            raise ValueError("mobility must contain finite values.")
+        if not np.all(np.isfinite(self.carrier_density)) or np.any(self.carrier_density <= 0.0):
+            raise ValueError("carrier_density must contain finite positive values.")
+        conductivity_unit = self.metadata.get("conductivity_unit", "S/m")
+        carrier_density_unit = self.metadata.get("carrier_density_unit", "m^-3")
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_mobility_scan",
+                "schema_version": MOBILITY_SCAN_NPZ_SCHEMA_VERSION,
+                "method": "SERTA",
+                "conductivity_unit": conductivity_unit,
+                "carrier_density_unit": carrier_density_unit,
+                "mobility_unit": "m^2/V/s",
+                "chemical_potential_unit": "eV",
+                "temperature_unit": "eV",
+            },
+            self.metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        """Save SI mobility scan postprocess data to NPZ."""
+        np.savez_compressed(
+            path,
+            mobility_scan_conductivity=self.conductivity,
+            mobility_scan_tensor=self.mobility,
+            mobility_scan_carrier_density=self.carrier_density,
+            chemical_potentials=self.chemical_potentials,
+            temperatures=self.temperatures,
+            metadata_json=np.array(_metadata_to_json(self.metadata)),
+        )
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "MobilityScanData":
+        """Load SI mobility scan postprocess data from NPZ."""
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            return cls(
+                conductivity=data["mobility_scan_conductivity"],
+                mobility=data["mobility_scan_tensor"],
+                carrier_density=data["mobility_scan_carrier_density"],
+                chemical_potentials=data["chemical_potentials"],
+                temperatures=data["temperatures"],
                 metadata=metadata,
             )
 
@@ -1268,6 +1351,80 @@ def compute_serta_mobility_si(
     }
     metadata.update(normalization_metadata)
     return MobilityData(conductivity=conductivity, mobility=mobility, carrier_density=np.asarray(carrier_density), metadata=metadata)
+
+
+def compute_serta_mobility_scan_si(
+    eigenvalues: np.ndarray,
+    velocities: np.ndarray,
+    linewidth: np.ndarray,
+    reciprocal_cell: np.ndarray,
+    chemical_potentials: Sequence[float],
+    temperatures: Sequence[float],
+    kpoint_weights: Optional[np.ndarray] = None,
+    spin_degeneracy: int = 1,
+    dimension: str = "3d",
+    volume: Optional[float] = None,
+    area: Optional[float] = None,
+) -> MobilityScanData:
+    """Compute SI SERTA mobility over chemical-potential and temperature grids."""
+    chemical_potentials = np.atleast_1d(np.asarray(chemical_potentials, dtype=float))
+    temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
+    if chemical_potentials.ndim != 1 or chemical_potentials.size == 0:
+        raise ValueError("chemical_potentials must be a one-dimensional non-empty array.")
+    if temperatures.ndim != 1 or temperatures.size == 0:
+        raise ValueError("temperatures must be a one-dimensional non-empty array.")
+    if not np.all(np.isfinite(chemical_potentials)):
+        raise ValueError("chemical_potentials must contain finite values.")
+    if not np.all(np.isfinite(temperatures)) or np.any(temperatures <= 0.0):
+        raise ValueError("temperatures must contain finite positive values.")
+
+    nmu = chemical_potentials.shape[0]
+    ntemperatures = temperatures.shape[0]
+    conductivity = np.zeros((nmu, ntemperatures, 3, 3), dtype=float)
+    mobility = np.zeros((nmu, ntemperatures, 3, 3), dtype=float)
+    carrier_density = np.zeros((nmu, ntemperatures), dtype=float)
+    metadata = None
+    for imu, chemical_potential in enumerate(chemical_potentials):
+        for itemperature, temperature in enumerate(temperatures):
+            point = compute_serta_mobility_si(
+                eigenvalues=eigenvalues,
+                velocities=velocities,
+                linewidth=linewidth,
+                reciprocal_cell=reciprocal_cell,
+                chemical_potential=float(chemical_potential),
+                temperature=float(temperature),
+                kpoint_weights=kpoint_weights,
+                spin_degeneracy=spin_degeneracy,
+                dimension=dimension,
+                volume=volume,
+                area=area,
+            )
+            conductivity[imu, itemperature] = point.conductivity
+            mobility[imu, itemperature] = point.mobility
+            carrier_density[imu, itemperature] = point.carrier_density
+            if metadata is None:
+                metadata = dict(point.metadata)
+
+    scan_metadata = dict(metadata or {})
+    scan_metadata.pop("schema", None)
+    scan_metadata.pop("schema_version", None)
+    scan_metadata.pop("chemical_potential", None)
+    scan_metadata.pop("temperature", None)
+    scan_metadata.update(
+        {
+            "chemical_potential_count": int(nmu),
+            "temperature_count": int(ntemperatures),
+            "scan_axes": ["chemical_potential", "temperature"],
+        }
+    )
+    return MobilityScanData(
+        conductivity=conductivity,
+        mobility=mobility,
+        carrier_density=carrier_density,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        metadata=scan_metadata,
+    )
 
 
 def compute_band_velocities_finite_difference(
