@@ -32,7 +32,7 @@
   - finite-difference and Hamiltonian-derivative velocity providers。
   - SI mobility, 2D/3D normalization, and multi-chemical-potential / multi-temperature mobility scans。
 - Still needs hardening before merge/release:
-  - default in-repo lightweight fixture replacing hardcoded development references。
+  - a minimal in-repo synthetic EPC fixture now covers default linewidth reference testing; broader coupling/FD fixtures still need release hardening。
   - opt-in full Graphene reference kept outside git for development and benchmark。
   - import/export smoke tests for all new public symbols。
   - docs/index integration and CLI examples verified against current parser。
@@ -60,7 +60,7 @@
 - Development reference:
   - 开发阶段可以继续使用完整 Graphene reference，并且可以不进入 git 追踪。
   - 当前阶段允许测试里临时硬编码 Graphene reference 路径或数据条件，但必须保留 `TODO(epc-fixture)` 标记。
-  - 合并/release 前需要把默认测试收敛成轻量、self-contained、可进入仓库的 fixture；完整 Graphene 只作为 opt-in benchmark。
+  - 当前已有最小 in-repo synthetic EPC fixture 覆盖默认 linewidth reference；合并/release 前还需要继续补齐 coupling/FD 相关轻量 fixture。完整 Graphene 只作为 opt-in benchmark。
 
 - Data contract:
   - DeePTB EPC 公共数据契约是 NPZ，不迁移到 dftbephy HDF5。
@@ -209,6 +209,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 ### Tasks
 
 - 设计轻量 in-repo EPC fixture，替代或补充外部 Graphene reference 在默认 CI 中的角色。
+- 当前已新增最小 synthetic EPC fixture，用于默认 linewidth reference regression。
 - 保留完整 Graphene reference 作为 opt-in benchmark，不进入 git 追踪。
 - 梳理 `docs/epc_v1_workflow.md`，确保所有 CLI 示例和 NPZ schema 与当前实现一致。
 - 增加 public API import smoke tests，避免未来导出路径断裂。

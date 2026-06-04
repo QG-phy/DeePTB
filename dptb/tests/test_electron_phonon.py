@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 from pathlib import Path
 
 import h5py
@@ -85,6 +86,7 @@ from dptb.utils import constants as dptb_constants
 # replace/supplement them with lightweight in-repo EPC fixtures before release.
 DEFAULT_EPH_REFERENCE_ROOT = Path("/Users/aisiqg/Desktop/work/github/dftbephy")
 DEFAULT_EPH_SKDATA_ROOT = Path("/Users/aisiqg/Desktop/work/github/matsci-0-3")
+MINIMAL_EPC_FIXTURE = Path(__file__).parent / "fixtures" / "eph" / "minimal_epc_reference.json"
 
 
 def _external_reference_root() -> Path:
@@ -167,6 +169,41 @@ def test_external_reference_path_helpers_use_environment_overrides(monkeypatch, 
 
     assert _external_reference_root() == reference_root
     assert _external_skdata_root() == skdata_root
+
+
+def test_minimal_in_repo_epc_fixture_matches_linewidth_reference():
+    with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
+        fixture = json.load(handle)
+
+    epc_payload = fixture["epc_data"]
+    coupling_matrix = np.asarray(epc_payload["coupling_matrix_real"], dtype=float) + 1j * np.asarray(
+        epc_payload["coupling_matrix_imag"],
+        dtype=float,
+    )
+    epc_data = EPCData(
+        kpoints=np.asarray(epc_payload["kpoints"], dtype=float),
+        qpoints=np.asarray(epc_payload["qpoints"], dtype=float),
+        band_indices=np.asarray(epc_payload["band_indices"], dtype=int),
+        frequencies=np.asarray(epc_payload["frequencies"], dtype=float),
+        eigenvalues_k=np.asarray(epc_payload["eigenvalues_k"], dtype=float),
+        eigenvalues_kq=np.asarray(epc_payload["eigenvalues_kq"], dtype=float),
+        coupling_matrix=coupling_matrix,
+        coupling_strength=np.asarray(epc_payload["coupling_strength"], dtype=float),
+        metadata={"source": "minimal_in_repo_fixture"},
+    )
+    params = fixture["linewidth_parameters"]
+    linewidth = compute_linewidth(
+        epc_data,
+        chemical_potential=params["chemical_potential"],
+        temperature=params["temperature"],
+        sigma=params["sigma"],
+        broadening=params["broadening"],
+    )
+
+    expected = fixture["expected_linewidth"]
+    np.testing.assert_allclose(linewidth.linewidth, np.asarray(expected["linewidth"]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(linewidth.absorption, np.asarray(expected["absorption"]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(linewidth.emission, np.asarray(expected["emission"]), rtol=1e-14, atol=1e-14)
 
 
 def test_compute_coupling_matrix_without_overlap():

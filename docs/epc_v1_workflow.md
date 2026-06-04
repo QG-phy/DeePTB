@@ -461,6 +461,10 @@ OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
 ./.venv/bin/python -m pytest dptb/tests/test_electron_phonon.py -q
 ```
 
+Default tests include a small in-repo synthetic EPC fixture at
+`dptb/tests/fixtures/eph/minimal_epc_reference.json` for linewidth reference
+regression. The full Graphene case remains opt-in.
+
 Graphene coupling reference:
 
 ```bash

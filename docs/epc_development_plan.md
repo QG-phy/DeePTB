@@ -11,7 +11,7 @@
 - EPC v1 core, NPZ data contracts, `dptb eph` workflow entrypoint, linewidth, relaxation-time, basic SERTA transport, finite-difference velocity bridge, and degenerate-subspace diagnostic are implemented in `dptb/postprocess/unified/eph/` and `dptb/entrypoints/eph.py`.
 - Public Python APIs are exported from both `dptb.postprocess.unified.eph` and `dptb.postprocess.unified`; CLI and NPZ loaders reject malformed or empty k/q-point inputs early.
 - Default EPC tests, Graphene coupling-strength reference, and slow Graphene supercell finite-difference reference are the current acceptance gates for v1 physics and workflow stability.
-- Development-stage Graphene reference remains external/untracked. TODO(epc-fixture): replace or supplement it with a lightweight in-repo fixture or a CI-specific reference strategy before merge/release.
+- Development-stage Graphene reference remains external/untracked. A minimal in-repo synthetic EPC fixture now supplements default linewidth regression; TODO(epc-fixture): add broader lightweight coupling/FD fixtures or a CI-specific reference strategy before merge/release.
 - SCC-corrected EPC, SOC/spinful EPC, polar correction, full degenerate-band gauge tracking, and full SI mobility/unit conversion remain future milestones, not v1 implementation claims.
 
 ## Current Wave: Stabilize EPC v1 Workflow
@@ -83,8 +83,8 @@
 - Milestone 2: Development validation
   - 开发阶段使用完整 dftbephy Graphene reference 做强验证，包括 reference matrices、finite-difference derivatives、phonon modes 和 EPC 输出。
   - Graphene reference 资产不进入 git 追踪；开发阶段通过 `DEEPTB_EPH_REFERENCE_ROOT` 和 `DEEPTB_EPH_SKDATA_ROOT` 指向本机 reference 资产。
-  - TODO(epc-fixture): 设计仓库内轻量 fixture 或 CI 专用 reference 策略，避免默认测试依赖外部 checkout。
-  - 功能稳定后再设计 DeePTB 仓库内自包含小 fixture，用于默认单元测试和 CI。
+  - 已新增最小 in-repo synthetic EPC fixture 覆盖默认 linewidth regression。
+  - TODO(epc-fixture): 继续设计 coupling/FD 轻量 fixture 或 CI 专用 reference 策略，避免默认测试依赖外部 checkout。
 
 - Milestone 3: CLI and workflow entrypoint
   - 新增 `dptb eph`。

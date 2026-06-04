@@ -1,0 +1,25 @@
+{
+  "description": "Minimal self-contained DeePTB EPC fixture for default CI hardening tests.",
+  "linewidth_parameters": {
+    "chemical_potential": 0.15,
+    "temperature": 0.025,
+    "sigma": 0.01,
+    "broadening": "gaussian"
+  },
+  "epc_data": {
+    "kpoints": [[0.0, 0.0, 0.0]],
+    "qpoints": [[0.0, 0.0, 0.0]],
+    "band_indices": [0, 1],
+    "frequencies": [[2.0]],
+    "eigenvalues_k": [[0.1, 0.2]],
+    "eigenvalues_kq": [[[0.12, 0.18]]],
+    "coupling_matrix_real": [[[[[0.1, 0.2], [0.3, 0.4]]]]],
+    "coupling_matrix_imag": [[[[[0.0, 0.0], [0.0, 0.0]]]]],
+    "coupling_strength": [[[[[0.01, 0.04], [0.09, 0.16]]]]]
+  },
+  "expected_linewidth": {
+    "linewidth": [[4.309597128601298, 68.95355405105505]],
+    "absorption": [[4.181429894905649, 2.050675739130361]],
+    "emission": [[0.1281672336956494, 66.9028783119247]]
+  }
+}
