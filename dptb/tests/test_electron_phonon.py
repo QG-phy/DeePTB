@@ -1755,33 +1755,50 @@ def test_compute_phonon_dos_rejects_invalid_inputs():
         compute_phonon_dos(phonons, frequency_grid=np.array([1.0]), sigma=0.1, qpoint_weights=np.array([0.5, 0.5]))
 
 
-def test_npz_metadata_json_must_be_scalar_json_object(tmp_path):
-    payload = {
-        "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
-        "ph_frequencies": np.array([[1.0, 2.0, 3.0]]),
-        "ph_eigenvectors": np.ones((1, 3, 1, 3), dtype=complex),
-        "ph_masses": np.array([1.0]),
-    }
+@pytest.mark.parametrize(
+    ("data_cls", "payload"),
+    [
+        pytest.param(
+            Phonons,
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
+                "ph_frequencies": np.array([[1.0, 2.0, 3.0]]),
+                "ph_eigenvectors": np.ones((1, 3, 1, 3), dtype=complex),
+                "ph_masses": np.array([1.0]),
+            },
+            id="phonons",
+        ),
+        pytest.param(
+            TransportData,
+            {
+                "transport_conductivity": np.eye(3),
+                "transport_carrier_density": np.array(1.0),
+            },
+            id="transport",
+        ),
+    ],
+)
+def test_npz_metadata_json_must_be_scalar_json_object(data_cls, payload, tmp_path):
 
     missing_metadata = tmp_path / "missing_metadata.npz"
     np.savez(missing_metadata, **payload)
     with pytest.raises(ValueError, match="metadata_json"):
-        Phonons.load_npz(missing_metadata)
+        data_cls.load_npz(missing_metadata)
 
     array_metadata = tmp_path / "array_metadata.npz"
     np.savez(array_metadata, **payload, metadata_json=np.array(["{}", "{}"]))
     with pytest.raises(ValueError, match="scalar JSON object"):
-        Phonons.load_npz(array_metadata)
+        data_cls.load_npz(array_metadata)
 
     invalid_json = tmp_path / "invalid_metadata.npz"
     np.savez(invalid_json, **payload, metadata_json=np.array("{not-json"))
     with pytest.raises(ValueError, match="valid JSON"):
-        Phonons.load_npz(invalid_json)
+        data_cls.load_npz(invalid_json)
 
     non_object_json = tmp_path / "non_object_metadata.npz"
     np.savez(non_object_json, **payload, metadata_json=np.array("[]"))
     with pytest.raises(ValueError, match="JSON object"):
-        Phonons.load_npz(non_object_json)
+        data_cls.load_npz(non_object_json)
 
 
 @pytest.mark.parametrize(
