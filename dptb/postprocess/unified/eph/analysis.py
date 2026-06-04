@@ -34,6 +34,7 @@ RELAXATION_TIME_NPZ_SCHEMA_VERSION = 1
 RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION = 1
 RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION = 1
 TRANSPORT_NPZ_SCHEMA_VERSION = 1
+TRANSPORT_SCAN_NPZ_SCHEMA_VERSION = 1
 MOBILITY_NPZ_SCHEMA_VERSION = 1
 MOBILITY_SCAN_NPZ_SCHEMA_VERSION = 1
 SUBSPACE_COUPLING_NPZ_SCHEMA_VERSION = 1
@@ -487,6 +488,75 @@ class TransportData:
             return cls(
                 conductivity=data["transport_conductivity"],
                 carrier_density=data["transport_carrier_density"],
+                metadata=metadata,
+            )
+
+
+@dataclass
+class TransportScanData:
+    """SERTA transport scan over chemical potentials and temperatures."""
+
+    conductivity: np.ndarray
+    carrier_density: np.ndarray
+    chemical_potentials: np.ndarray
+    temperatures: np.ndarray
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.conductivity = np.asarray(self.conductivity, dtype=float)
+        self.carrier_density = np.asarray(self.carrier_density, dtype=float)
+        self.chemical_potentials = np.asarray(self.chemical_potentials, dtype=float)
+        self.temperatures = np.asarray(self.temperatures, dtype=float)
+        if self.chemical_potentials.ndim != 1 or self.chemical_potentials.size == 0:
+            raise ValueError("chemical_potentials must be a one-dimensional non-empty array.")
+        if self.temperatures.ndim != 1 or self.temperatures.size == 0:
+            raise ValueError("temperatures must be a one-dimensional non-empty array.")
+        if not np.all(np.isfinite(self.chemical_potentials)):
+            raise ValueError("chemical_potentials must contain finite values.")
+        if not np.all(np.isfinite(self.temperatures)) or np.any(self.temperatures <= 0.0):
+            raise ValueError("temperatures must contain finite positive values.")
+        expected_tensor_shape = (self.chemical_potentials.shape[0], self.temperatures.shape[0], 3, 3)
+        expected_scalar_shape = (self.chemical_potentials.shape[0], self.temperatures.shape[0])
+        if self.conductivity.shape != expected_tensor_shape:
+            raise ValueError("conductivity must have shape (nmu, ntemperatures, 3, 3).")
+        if self.carrier_density.shape != expected_scalar_shape:
+            raise ValueError("carrier_density must have shape (nmu, ntemperatures).")
+        if not np.all(np.isfinite(self.conductivity)):
+            raise ValueError("conductivity must contain finite values.")
+        if not np.all(np.isfinite(self.carrier_density)) or np.any(self.carrier_density < 0.0):
+            raise ValueError("carrier_density must contain finite non-negative values.")
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_transport_scan",
+                "schema_version": TRANSPORT_SCAN_NPZ_SCHEMA_VERSION,
+                "method": "SERTA",
+                "chemical_potential_unit": "eV",
+                "temperature_unit": "eV",
+            },
+            self.metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        """Save SERTA transport scan postprocess data to NPZ."""
+        np.savez_compressed(
+            path,
+            transport_scan_conductivity=self.conductivity,
+            transport_scan_carrier_density=self.carrier_density,
+            chemical_potentials=self.chemical_potentials,
+            temperatures=self.temperatures,
+            metadata_json=np.array(_metadata_to_json(self.metadata)),
+        )
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "TransportScanData":
+        """Load SERTA transport scan postprocess data from NPZ."""
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            return cls(
+                conductivity=data["transport_scan_conductivity"],
+                carrier_density=data["transport_scan_carrier_density"],
+                chemical_potentials=data["chemical_potentials"],
+                temperatures=data["temperatures"],
                 metadata=metadata,
             )
 
@@ -1308,6 +1378,77 @@ def compute_serta_conductivity(
     )
 
 
+def compute_serta_transport_scan(
+    eigenvalues: np.ndarray,
+    velocities: np.ndarray,
+    linewidth: np.ndarray,
+    chemical_potentials: Sequence[float],
+    temperatures: Sequence[float],
+    kpoint_weights: Optional[np.ndarray] = None,
+    spin_degeneracy: int = 1,
+    volume: float = 1.0,
+) -> TransportScanData:
+    """Compute SERTA transport over chemical-potential and temperature grids.
+
+    The scan uses a fixed linewidth input, matching the current SI mobility
+    scan convention. Per-scan-point linewidth recomputation should use a
+    separate API to avoid changing this meaning.
+    """
+    chemical_potentials = np.atleast_1d(np.asarray(chemical_potentials, dtype=float))
+    temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
+    if chemical_potentials.ndim != 1 or chemical_potentials.size == 0:
+        raise ValueError("chemical_potentials must be a one-dimensional non-empty array.")
+    if temperatures.ndim != 1 or temperatures.size == 0:
+        raise ValueError("temperatures must be a one-dimensional non-empty array.")
+    if not np.all(np.isfinite(chemical_potentials)):
+        raise ValueError("chemical_potentials must contain finite values.")
+    if not np.all(np.isfinite(temperatures)) or np.any(temperatures <= 0.0):
+        raise ValueError("temperatures must contain finite positive values.")
+
+    nmu = chemical_potentials.shape[0]
+    ntemperatures = temperatures.shape[0]
+    conductivity = np.zeros((nmu, ntemperatures, 3, 3), dtype=float)
+    carrier_density = np.zeros((nmu, ntemperatures), dtype=float)
+    metadata = None
+    for imu, chemical_potential in enumerate(chemical_potentials):
+        for itemperature, temperature in enumerate(temperatures):
+            point = compute_serta_conductivity(
+                eigenvalues=eigenvalues,
+                velocities=velocities,
+                linewidth=linewidth,
+                chemical_potential=float(chemical_potential),
+                temperature=float(temperature),
+                kpoint_weights=kpoint_weights,
+                spin_degeneracy=spin_degeneracy,
+                volume=volume,
+            )
+            conductivity[imu, itemperature] = point.conductivity
+            carrier_density[imu, itemperature] = point.carrier_density
+            if metadata is None:
+                metadata = dict(point.metadata)
+
+    scan_metadata = dict(metadata or {})
+    scan_metadata.pop("schema", None)
+    scan_metadata.pop("schema_version", None)
+    scan_metadata.pop("chemical_potential", None)
+    scan_metadata.pop("temperature", None)
+    scan_metadata.update(
+        {
+            "chemical_potential_count": int(nmu),
+            "temperature_count": int(ntemperatures),
+            "scan_axes": ["chemical_potential", "temperature"],
+            "linewidth_scan_convention": "fixed_linewidth",
+        }
+    )
+    return TransportScanData(
+        conductivity=conductivity,
+        carrier_density=carrier_density,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        metadata=scan_metadata,
+    )
+
+
 def fractional_band_velocities_to_si(velocities: np.ndarray, reciprocal_cell: np.ndarray) -> np.ndarray:
     """Convert eV/fractional reciprocal-coordinate velocities to m/s.
 
@@ -1814,6 +1955,107 @@ def compute_serta_transport_from_epc_mesh_chunked_artifact(
             "artifact_axis": linewidth_data.metadata.get("artifact_axis"),
             "artifact_chunk_count": linewidth_data.metadata.get("artifact_chunk_count"),
             "summary_first": True,
+        }
+    )
+    result.metadata.update(velocity_metadata)
+    return result
+
+
+def compute_serta_transport_scan_from_epc_mesh_chunked_artifact(
+    system,
+    directory: Union[str, Path],
+    chemical_potentials: Sequence[float],
+    temperatures: Sequence[float],
+    sigma: float,
+    broadening: str = "gaussian",
+    frequency_floor: float = 1e-5,
+    spin_degeneracy: int = 1,
+    volume: float = 1.0,
+    velocity_delta: float = 1e-4,
+    velocity_source: str = "finite_difference",
+    use_scc: bool = False,
+    **solver_kwargs,
+) -> TransportScanData:
+    """Compute SERTA transport scan from an EPC mesh chunked artifact."""
+    chemical_potentials = np.atleast_1d(np.asarray(chemical_potentials, dtype=float))
+    temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
+    if chemical_potentials.ndim != 1 or chemical_potentials.size == 0:
+        raise ValueError("chemical_potentials must be a one-dimensional non-empty array.")
+    if temperatures.ndim != 1 or temperatures.size == 0:
+        raise ValueError("temperatures must be a one-dimensional non-empty array.")
+
+    linewidth_data = compute_linewidth_mesh_chunked_artifact(
+        directory,
+        chemical_potential=float(chemical_potentials[0]),
+        temperature=float(temperatures[0]),
+        sigma=sigma,
+        broadening=broadening,
+        mode_resolved=False,
+        frequency_floor=frequency_floor,
+    )
+    if not isinstance(velocity_source, str):
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = velocity_source.replace("-", "_").lower()
+    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+
+    if velocity_source == "finite_difference":
+        velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
+        velocities = compute_band_velocities_finite_difference(
+            system=system,
+            kpoints=linewidth_data.kpoints,
+            bands=linewidth_data.band_indices,
+            delta=velocity_delta,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "finite_difference",
+            "velocity_delta": velocity_delta,
+            "velocity_convention": "central_difference_band_energy",
+        }
+    else:
+        velocities = compute_band_velocities_hamiltonian_derivative(
+            system=system,
+            kpoints=linewidth_data.kpoints,
+            bands=linewidth_data.band_indices,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "hamiltonian_derivative",
+            "velocity_convention": "diag_Cdagger_dH_minus_EdS_C",
+            "overlap_correction": "dH_minus_E_dS_diagonal",
+        }
+
+    eigenvalues = _get_system_eigenvalues(
+        system,
+        linewidth_data.kpoints,
+        use_scc=use_scc,
+        **solver_kwargs,
+    )[:, linewidth_data.band_indices]
+    result = compute_serta_transport_scan(
+        eigenvalues=eigenvalues,
+        velocities=velocities,
+        linewidth=linewidth_data.linewidth,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        kpoint_weights=linewidth_data.kpoint_weights,
+        spin_degeneracy=spin_degeneracy,
+        volume=volume,
+    )
+    result.metadata.update(
+        {
+            "source": "deeptb.eph.compute_serta_transport_scan_from_epc_mesh_chunked_artifact",
+            "velocity_unit": "eV/fractional_reciprocal_coordinate",
+            "band_indices": linewidth_data.band_indices,
+            "linewidth_schema": linewidth_data.metadata.get("schema"),
+            "chunked_artifact": True,
+            "artifact_axis": linewidth_data.metadata.get("artifact_axis"),
+            "artifact_chunk_count": linewidth_data.metadata.get("artifact_chunk_count"),
+            "summary_first": True,
+            "linewidth_reference_chemical_potential": float(chemical_potentials[0]),
+            "linewidth_reference_temperature": float(temperatures[0]),
         }
     )
     result.metadata.update(velocity_metadata)

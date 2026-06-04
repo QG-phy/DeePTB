@@ -60,7 +60,9 @@ from dptb.postprocess.unified.eph import (
     Phonons,
     SupercellFD,
     TRANSPORT_NPZ_SCHEMA_VERSION,
+    TRANSPORT_SCAN_NPZ_SCHEMA_VERSION,
     TransportData,
+    TransportScanData,
     EPCKChunkSpec,
     EPCQChunkSpec,
     build_k_chunk_specs,
@@ -80,7 +82,9 @@ from dptb.postprocess.unified.eph import (
     compute_relaxation_time_path,
     compute_scattering_maps,
     compute_serta_conductivity,
+    compute_serta_transport_scan,
     compute_serta_mobility_si_from_epc_mesh_chunked_artifact,
+    compute_serta_transport_scan_from_epc_mesh_chunked_artifact,
     compute_serta_transport_from_epc_mesh_chunked_artifact,
     compute_serta_transport_from_epc,
     compute_coupling_strength_summary,
@@ -159,6 +163,8 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.RelaxationTimeMeshData is RelaxationTimeMeshData
     assert unified_postprocess.RelaxationTimePathData is RelaxationTimePathData
     assert unified_postprocess.TransportData is TransportData
+    assert unified_postprocess.TransportScanData is TransportScanData
+    assert unified_postprocess.TRANSPORT_SCAN_NPZ_SCHEMA_VERSION == TRANSPORT_SCAN_NPZ_SCHEMA_VERSION
     assert unified_postprocess.SubspaceCouplingData is SubspaceCouplingData
     assert unified_postprocess.EPCKChunkSpec is EPCKChunkSpec
     assert unified_postprocess.EPCQChunkSpec is EPCQChunkSpec
@@ -178,6 +184,11 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.compute_relaxation_time_mesh is compute_relaxation_time_mesh
     assert unified_postprocess.compute_relaxation_time_path is compute_relaxation_time_path
     assert unified_postprocess.compute_serta_conductivity is compute_serta_conductivity
+    assert unified_postprocess.compute_serta_transport_scan is compute_serta_transport_scan
+    assert (
+        unified_postprocess.compute_serta_transport_scan_from_epc_mesh_chunked_artifact
+        is compute_serta_transport_scan_from_epc_mesh_chunked_artifact
+    )
     assert unified_postprocess.compute_band_velocities_finite_difference is compute_band_velocities_finite_difference
     assert (
         unified_postprocess.compute_band_velocities_hamiltonian_derivative
@@ -1648,6 +1659,7 @@ def test_epc_npz_loaders_use_pickle_free_numpy_loading(monkeypatch, tmp_path):
         RelaxationTimeMeshData,
         RelaxationTimePathData,
         TransportData,
+        TransportScanData,
         MobilityData,
         MobilityScanData,
         SubspaceCouplingData,
@@ -1812,6 +1824,16 @@ def test_epc_npz_loader_rejects_object_arrays_without_pickle(tmp_path):
                 metadata=metadata,
             ),
             id="transport",
+        ),
+        pytest.param(
+            lambda metadata: TransportScanData(
+                conductivity=np.ones((1, 1, 3, 3)),
+                carrier_density=np.ones((1, 1)),
+                chemical_potentials=np.array([0.0]),
+                temperatures=np.array([0.1]),
+                metadata=metadata,
+            ),
+            id="transport_scan",
         ),
         pytest.param(
             lambda metadata: MobilityData(
@@ -3032,6 +3054,103 @@ def test_compute_serta_conductivity_rejects_invalid_inputs():
         )
 
 
+def test_compute_serta_transport_scan_matches_single_point_results():
+    eigenvalues = np.array([[0.1, 0.2], [0.3, 0.4]])
+    velocities = np.array(
+        [
+            [[1.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
+            [[0.0, 0.0, 3.0], [1.0, 1.0, 0.0]],
+        ]
+    )
+    linewidth = np.array([[0.01, 0.02], [0.03, 0.04]])
+    chemical_potentials = np.array([0.15, 0.25])
+    temperatures = np.array([0.03, 0.05])
+
+    scan = compute_serta_transport_scan(
+        eigenvalues=eigenvalues,
+        velocities=velocities,
+        linewidth=linewidth,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        kpoint_weights=np.array([2.0, 1.0]),
+        spin_degeneracy=2,
+        volume=5.0,
+    )
+    point = compute_serta_conductivity(
+        eigenvalues=eigenvalues,
+        velocities=velocities,
+        linewidth=linewidth,
+        chemical_potential=chemical_potentials[1],
+        temperature=temperatures[0],
+        kpoint_weights=np.array([2.0, 1.0]),
+        spin_degeneracy=2,
+        volume=5.0,
+    )
+
+    assert scan.conductivity.shape == (2, 2, 3, 3)
+    assert scan.carrier_density.shape == (2, 2)
+    np.testing.assert_allclose(scan.conductivity[1, 0], point.conductivity)
+    np.testing.assert_allclose(scan.carrier_density[1, 0], point.carrier_density)
+    np.testing.assert_allclose(scan.chemical_potentials, chemical_potentials)
+    np.testing.assert_allclose(scan.temperatures, temperatures)
+    assert scan.metadata["schema"] == "deeptb.epc_transport_scan"
+    assert scan.metadata["schema_version"] == TRANSPORT_SCAN_NPZ_SCHEMA_VERSION
+    assert scan.metadata["chemical_potential_count"] == 2
+    assert scan.metadata["temperature_count"] == 2
+    assert scan.metadata["linewidth_scan_convention"] == "fixed_linewidth"
+
+
+def test_transport_scan_data_npz_roundtrip(tmp_path):
+    scan = TransportScanData(
+        conductivity=np.ones((2, 1, 3, 3)),
+        carrier_density=np.ones((2, 1)) * 3.0,
+        chemical_potentials=np.array([0.0, 0.1]),
+        temperatures=np.array([0.05]),
+        metadata={"source": "unit-test"},
+    )
+    path = tmp_path / "transport_scan.npz"
+    scan.save_npz(path)
+    loaded = TransportScanData.load_npz(path)
+
+    np.testing.assert_allclose(loaded.conductivity, scan.conductivity)
+    np.testing.assert_allclose(loaded.carrier_density, scan.carrier_density)
+    np.testing.assert_allclose(loaded.chemical_potentials, scan.chemical_potentials)
+    np.testing.assert_allclose(loaded.temperatures, scan.temperatures)
+    assert loaded.metadata["schema"] == "deeptb.epc_transport_scan"
+    assert loaded.metadata["schema_version"] == TRANSPORT_SCAN_NPZ_SCHEMA_VERSION
+    assert loaded.metadata["source"] == "unit-test"
+
+
+def test_compute_serta_transport_scan_rejects_invalid_scan_axes():
+    kwargs = {
+        "eigenvalues": np.array([[0.0]]),
+        "velocities": np.array([[[1.0, 0.0, 0.0]]]),
+        "linewidth": np.array([[0.01]]),
+        "chemical_potentials": np.array([0.0]),
+        "temperatures": np.array([0.1]),
+    }
+    with pytest.raises(ValueError, match="chemical_potentials"):
+        compute_serta_transport_scan(**{**kwargs, "chemical_potentials": np.array([])})
+    with pytest.raises(ValueError, match="chemical_potentials"):
+        compute_serta_transport_scan(**{**kwargs, "chemical_potentials": np.array([np.nan])})
+    with pytest.raises(ValueError, match="temperatures"):
+        compute_serta_transport_scan(**{**kwargs, "temperatures": np.array([0.0])})
+    with pytest.raises(ValueError, match="temperatures"):
+        TransportScanData(
+            conductivity=np.ones((1, 1, 3, 3)),
+            carrier_density=np.ones((1, 1)),
+            chemical_potentials=np.array([0.0]),
+            temperatures=np.array([np.nan]),
+        )
+    with pytest.raises(ValueError, match="conductivity"):
+        TransportScanData(
+            conductivity=np.ones((1, 3, 3)),
+            carrier_density=np.ones((1, 1)),
+            chemical_potentials=np.array([0.0]),
+            temperatures=np.array([0.1]),
+        )
+
+
 class _LinearBandSystem:
     band_offsets = np.array([0.1, 0.2, 0.3])
     band_slopes = np.array(
@@ -3337,6 +3456,66 @@ def test_compute_serta_transport_from_epc_mesh_chunked_artifact_matches_full_mes
     assert result.metadata["artifact_axis"] == axis
     assert result.metadata["velocity_source"] == velocity_source
     assert result.metadata["source"] == "deeptb.eph.compute_serta_transport_from_epc_mesh_chunked_artifact"
+
+
+@pytest.mark.parametrize(("axis", "velocity_source", "system_cls"), [
+    ("q", "finite_difference", _LinearBandSystem),
+    ("k", "hamiltonian_derivative", _DerivativeBandSystem),
+])
+def test_compute_serta_transport_scan_from_epc_mesh_chunked_artifact_matches_full_mesh(
+    axis,
+    velocity_source,
+    system_cls,
+    tmp_path,
+):
+    system = system_cls()
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / f"{axis}_artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis=axis, chunk_size=1)
+    chemical_potentials = [0.2, 0.25]
+    temperatures = [0.03, 0.04]
+
+    result = compute_serta_transport_scan_from_epc_mesh_chunked_artifact(
+        system=system,
+        directory=artifact_dir,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        sigma=0.05,
+        spin_degeneracy=2,
+        volume=5.0,
+        velocity_source=velocity_source,
+    )
+    linewidth = compute_linewidth_mesh(
+        mesh_data,
+        chemical_potential=chemical_potentials[0],
+        temperature=temperatures[0],
+        sigma=0.05,
+    )
+    eigenvalues = (
+        system.band_offsets[None, mesh_data.band_indices]
+        + mesh_data.kpoints @ system.band_slopes[mesh_data.band_indices].T
+    )
+    expected = compute_serta_transport_scan(
+        eigenvalues=eigenvalues,
+        velocities=np.repeat(system.band_slopes[mesh_data.band_indices][None, :, :], mesh_data.kpoints.shape[0], axis=0),
+        linewidth=linewidth.linewidth,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        kpoint_weights=mesh_data.kpoint_weights,
+        spin_degeneracy=2,
+        volume=5.0,
+    )
+
+    np.testing.assert_allclose(result.conductivity, expected.conductivity)
+    np.testing.assert_allclose(result.carrier_density, expected.carrier_density)
+    np.testing.assert_allclose(result.chemical_potentials, expected.chemical_potentials)
+    np.testing.assert_allclose(result.temperatures, expected.temperatures)
+    assert result.metadata["summary_first"] is True
+    assert result.metadata["artifact_axis"] == axis
+    assert result.metadata["velocity_source"] == velocity_source
+    assert result.metadata["linewidth_reference_chemical_potential"] == chemical_potentials[0]
+    assert result.metadata["linewidth_reference_temperature"] == temperatures[0]
+    assert result.metadata["source"] == "deeptb.eph.compute_serta_transport_scan_from_epc_mesh_chunked_artifact"
 
 
 @pytest.mark.parametrize(

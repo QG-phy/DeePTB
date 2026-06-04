@@ -32,8 +32,10 @@ experiments. `compute_linewidth_mesh_chunked_artifact(...)` computes mesh
 linewidth from those artifacts one chunk at a time.
 `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` computes SERTA
 transport from the chunked linewidth reduction plus the existing velocity
-providers. `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)`
-does the same for SI mobility, and
+providers. `compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)`
+extends this to fixed-linewidth chemical-potential/temperature scans.
+`compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)` does the same
+for SI mobility, and
 `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` extends it
 to chemical-potential/temperature scans. EPC unit constants are centralized in
 `dptb.utils.constants` and re-exported from the EPC namespace.
@@ -152,6 +154,12 @@ artifact k-points through the existing finite-difference or Hamiltonian-
 derivative velocity providers, and returns `TransportData`. It avoids
 materializing the full mesh coupling tensor but still evaluates velocities
 through the supplied `TBSystem`.
+
+`compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)` reuses the
+same chunked linewidth at the first requested chemical-potential/temperature
+point, then applies the non-SI SERTA transport scan helper over the requested
+axes. This is a fixed-linewidth scan convention; per-scan-point linewidth
+recomputation is intentionally a future API.
 
 `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(system, directory, ...)`
 uses the same chunked linewidth and velocity path, then applies the existing SI

@@ -442,6 +442,11 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - `velocity_source="hamiltonian_derivative"` computes diagonal band velocities from analytic `dH/dk` and optional `dS/dk`.
 - The Hamiltonian-derivative convention is recorded as `diag_Cdagger_dH_minus_EdS_C`.
 - The `transport` workflow velocity unit remains `eV/fractional_reciprocal_coordinate`; SI conversion is currently exposed through the Python mobility helper.
+- Implemented `compute_serta_transport_scan(...)` and `TransportScanData`:
+  - scans chemical-potential and temperature axes.
+  - stores conductivity shape `(nmu, ntemperatures, 3, 3)`.
+  - stores carrier-density shape `(nmu, ntemperatures)`.
+  - uses the existing fixed-linewidth convention; per-scan-point linewidth recomputation remains a separate future API.
 - Implemented `compute_serta_mobility_si(...)` as a Python SI mobility helper:
   - converts fractional reciprocal-coordinate velocities to m/s through an explicit reciprocal cell.
   - computes SI conductivity, carrier density, and mobility.
@@ -461,6 +466,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - singular and plural chemical-potential/temperature arguments are mutually exclusive per axis.
 - Implemented chunked artifact consumers for transport/mobility:
   - `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` computes chunked linewidth first, then computes transport with the selected velocity provider.
+  - `compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)` computes chunked linewidth at the first scan point and reuses the fixed-linewidth transport scan convention.
   - `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)` computes single-point SI mobility from a chunked mesh artifact.
   - `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` computes chunked linewidth at the first scan point and reuses the fixed-linewidth scan convention.
 - SCC-corrected velocity remains unsupported in v1.
@@ -655,6 +661,8 @@ Current Phase 1 status:
   - `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` combines chunked linewidth reduction with existing velocity providers.
   - finite-difference and Hamiltonian-derivative velocity sources remain available.
   - the helper returns `TransportData` without materializing the full mesh coupling tensor.
+- Implemented first summary-first transport scan helper:
+  - `compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)` uses chunked linewidth at the first requested scan point and reuses the existing fixed-linewidth scan convention.
 - Implemented first summary-first SI mobility helper:
   - `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)` combines chunked linewidth reduction, existing velocity providers, and SI mobility conversion.
   - 2D/3D normalization and reciprocal-cell conventions are inherited from `compute_serta_mobility_si(...)`.
@@ -662,7 +670,7 @@ Current Phase 1 status:
   - `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` uses chunked linewidth at the first requested scan point and reuses the existing fixed-linewidth scan convention.
 - Current limitation:
   - this is not yet a streaming compute path; it chunks an already materialized `EPCMeshData`.
-  - transport scan accumulators and per-scan-point linewidth recomputation remain future Phase 1/transport hardening work.
+  - per-scan-point linewidth recomputation remains future Phase 1/transport hardening work.
   - no multiprocessing, MPI, or CUDA runtime has been added.
 
 Phase 2, CPU parallel execution:
@@ -767,7 +775,7 @@ For the next implementation wave, the correct preparation is interface-level:
    - tests required before enabling `use_scc=True`。
 4. Continue Phase 1 scaling:
    - continue hardening the chunked artifact contract as new artifact consumers are added.
-   - harden summary-first linewidth/transport/mobility helpers and consider transport scan/per-point-linewidth accumulators.
+   - harden summary-first linewidth/transport/mobility helpers and consider per-point-linewidth accumulators.
    - design true streaming mesh producer separately from the current materialized-mesh artifact splitter.
 5. Add optional plot helpers from existing NPZ objects.
 6. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.
