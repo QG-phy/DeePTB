@@ -573,7 +573,7 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Output path. Defaults by task: epc_data.npz, epc_path_data.npz, "
-            "epc_mesh_data.npz, linewidth.npz, path_linewidth.npz, mesh_linewidth.npz, "
+            "epc_mesh_data.npz, epc_mesh_artifact, linewidth.npz, path_linewidth.npz, mesh_linewidth.npz, "
             "relaxation_time.npz, path_relaxation_time.npz, mesh_relaxation_time.npz, "
             "transport.npz, mobility.npz, subspace_coupling.npz, coupling_summary.json, "
             "scattering_map.json, phonon_dos.json, or eliashberg.json."
@@ -613,6 +613,13 @@ def main_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Optional q-point chunk size for serial mesh-coupling execution.",
+    )
+    parser_eph.add_argument(
+        "--artifact-axis",
+        type=str,
+        default="q",
+        choices=["q", "k"],
+        help="Chunk axis for mesh-artifact directory output.",
     )
 
     parser_eph.add_argument(

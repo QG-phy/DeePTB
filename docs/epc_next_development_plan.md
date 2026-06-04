@@ -342,6 +342,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - q-point weights are normalized and used in the q summation; uniform q weights reproduce the existing total linewidth convention.
 - Implemented first CLI slice:
   - `dptb eph --task mesh-coupling`
+  - `dptb eph --task mesh-artifact`
   - `dptb eph --task mesh-linewidth`
   - `dptb eph --task mesh-relaxation-time`
   - `--k-mesh n1 n2 n3`
@@ -349,7 +350,8 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - optional `--time-reversal` for generated k-mesh reduction
   - optional `--chunk-size n` for serial k-point chunk execution
   - optional `--q-chunk-size n` for serial q-point chunk execution
-- Current limitation: serial chunked mesh coupling still returns a single in-memory `EPCMeshData`; the current artifact helpers split/reduce an already materialized mesh result rather than streaming directly from compute.
+  - optional `--artifact-axis q|k` for streaming chunked artifact output.
+- Current limitation: serial chunked `mesh-coupling` still returns a single in-memory `EPCMeshData`; `mesh-artifact` writes a one-axis q or k chunked artifact directly, while multi-axis q/k streaming remains future work.
 - Current executor boundary:
   - `EPCKChunkSpec` defines rank-independent k-axis chunk metadata.
   - `EPCQChunkSpec` defines rank-independent q-axis chunk metadata.
@@ -358,7 +360,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - `concat_epc_k_chunks(...)` performs deterministic k-axis concatenation and rejects inconsistent q-points, bands, frequencies, or coupling trailing shapes.
   - `concat_epc_q_chunks(...)` performs deterministic q-axis concatenation and rejects inconsistent k-points, bands, eigenvalues, or coupling trailing shapes.
   - This is an API boundary for future multiprocessing/MPI and for the current chunked artifact reducer.
-  - q-axis chunks are now wired into serial `compute_mesh(...)` execution through `EPCMeshSpec.q_chunk_size`, but still return one in-memory `EPCMeshData`; direct streaming artifact production remains future work.
+  - q-axis chunks are now wired into serial `compute_mesh(...)` execution through `EPCMeshSpec.q_chunk_size`, but still return one in-memory `EPCMeshData`; `compute_mesh_chunked_artifact(...)` is the first direct one-axis streaming producer.
   - Both k-axis and q-axis chunk execution are reference serial paths today; they are intentionally structured as future multiprocessing/MPI task specs, not as parallel execution yet.
   - `save_epc_mesh_chunked_artifact(...)` and `load_epc_mesh_chunked_artifact(...)` now provide a directory artifact contract for splitting/reducing materialized `EPCMeshData`.
   - `compute_linewidth_mesh_chunked_artifact(...)` supports summary-first linewidth reduction without loading the full coupling tensor at once.
@@ -368,6 +370,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 ### CLI
 
 - `dptb eph --task mesh-coupling` 已支持 serial full-mesh EPC。
+- `dptb eph --task mesh-artifact` 已支持 serial streaming chunked artifact 输出。
 - `dptb eph --task mesh-linewidth` 已支持从 `EPCMeshData` 计算 mesh linewidth。
 - `dptb eph --task mesh-relaxation-time` 已支持从 `LinewidthMeshData` 计算 mesh relaxation time。
 

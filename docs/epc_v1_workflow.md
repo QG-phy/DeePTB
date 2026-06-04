@@ -321,6 +321,28 @@ calculate phonons. `--chunk-size` enables serial k-point chunk execution and
 `--q-chunk-size` enables serial q-point chunk execution. Chunked mesh coupling
 still concatenates chunks deterministically into one `EPCMeshData` output.
 
+For direct directory artifacts instead of one in-memory mesh NPZ, use
+`--task mesh-artifact`:
+
+```bash
+dptb eph \
+  --task mesh-artifact \
+  -i model.pth \
+  -stu structure.vasp \
+  -ph phonons_mesh.npz \
+  --k-mesh 4 4 1 \
+  --q-mesh 4 4 1 \
+  --artifact-axis q \
+  --q-chunk-size 4 \
+  -b 0 1 \
+  -o epc_mesh_artifact
+```
+
+This task writes a chunked artifact directory containing `manifest.json`,
+`weights.npz`, and one `EPCData` NPZ per q or k chunk. `--artifact-axis q`
+uses `--q-chunk-size`; `--artifact-axis k` uses `--chunk-size`. The task is a
+serial streaming producer and does not require multiprocessing, MPI, or CUDA.
+
 ### Linewidth
 
 ```bash

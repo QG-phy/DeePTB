@@ -4770,6 +4770,39 @@ def test_eph_cli_parser_accepts_mesh_coupling_inputs():
     assert args.output == "epc_mesh_data.npz"
 
 
+def test_eph_cli_parser_accepts_mesh_artifact_inputs():
+    args = parse_args(
+        [
+            "eph",
+            "--task",
+            "mesh-artifact",
+            "-i",
+            "model.pth",
+            "-stu",
+            "struct.vasp",
+            "-ph",
+            "phonons.npz",
+            "--k-mesh",
+            "2",
+            "1",
+            "1",
+            "--q-chunk-size",
+            "1",
+            "--artifact-axis",
+            "q",
+            "-o",
+            "epc_mesh_artifact",
+        ]
+    )
+
+    assert args.command == "eph"
+    assert args.task == "mesh-artifact"
+    assert args.k_mesh == [2, 1, 1]
+    assert args.q_chunk_size == 1
+    assert args.artifact_axis == "q"
+    assert args.output == "epc_mesh_artifact"
+
+
 def test_eph_cli_parser_accepts_linewidth_postprocess_inputs():
     args = parse_args(
         [
@@ -5452,6 +5485,49 @@ def test_eph_entrypoint_writes_q_chunked_epc_mesh_npz_from_external_phonon_modes
     np.testing.assert_allclose(loaded.coupling_strength, result.coupling_strength)
 
 
+def test_eph_entrypoint_writes_epc_mesh_chunked_artifact_from_external_phonon_modes(tmp_path):
+    phonons = Phonons(
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        frequencies=np.array([[1.0], [2.0]]),
+        eigenvectors=np.array([[[[1.0, 0.0, 0.0]]], [[[1.0, 0.0, 0.0]]]], dtype=complex),
+        masses=np.array([1.0]),
+    )
+    phonon_path = tmp_path / "phonons.npz"
+    phonons.save_npz(phonon_path)
+    artifact_dir = tmp_path / "epc_mesh_artifact"
+
+    manifest = eph(
+        task="mesh-artifact",
+        structure="unused.vasp",
+        init_model="unused.pth",
+        phonons=str(phonon_path),
+        k_mesh=[2, 1, 1],
+        q_chunk_size=1,
+        artifact_axis="q",
+        output=str(artifact_dir),
+        bands=[0],
+        system=_FakeSystem(),
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+    loaded = load_epc_mesh_chunked_artifact(artifact_dir)
+    expected = EPhAccessor(_FakeSystem()).compute_mesh(
+        mesh_spec=EPCMeshSpec(k_mesh=[2, 1, 1]),
+        phonons=phonons,
+        bands=[0],
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+
+    assert manifest["schema"] == "deeptb.epc_mesh_chunked_artifact"
+    assert manifest["axis"] == "q"
+    assert (artifact_dir / "manifest.json").exists()
+    assert (artifact_dir / "weights.npz").exists()
+    np.testing.assert_allclose(loaded.kpoints, expected.kpoints)
+    np.testing.assert_allclose(loaded.qpoints, expected.qpoints)
+    np.testing.assert_allclose(loaded.coupling_strength, expected.coupling_strength)
+    assert loaded.metadata["streaming_artifact"] is True
+    assert loaded.metadata["artifact_axis"] == "q"
+
+
 def test_eph_entrypoint_writes_linewidth_npz_from_epc_data(tmp_path):
     epc_data = _small_linewidth_epc_data()
     epc_path = tmp_path / "epc_data.npz"
@@ -6121,6 +6197,8 @@ def test_eph_entrypoint_rejects_invalid_task_type():
         ({"task": "path-coupling", "phonons": "phonons.npz", "system": _FakeSystem()}, "kpoints"),
         ({"task": "mesh-coupling", "k_mesh": [1, 1, 1], "system": _FakeSystem()}, "phonons"),
         ({"task": "mesh-coupling", "phonons": "phonons.npz", "system": _FakeSystem()}, "kpoints or k_mesh"),
+        ({"task": "mesh-artifact", "k_mesh": [1, 1, 1], "system": _FakeSystem()}, "phonons"),
+        ({"task": "mesh-artifact", "phonons": "phonons.npz", "system": _FakeSystem()}, "kpoints or k_mesh"),
         ({"task": "linewidth", "chemical_potential": 0.0, "temperature": 0.01, "sigma": 0.01}, "epc_data"),
         ({"task": "linewidth", "epc_data": "epc.npz", "temperature": 0.01, "sigma": 0.01}, "chemical_potential"),
         ({"task": "linewidth", "epc_data": "epc.npz", "chemical_potential": 0.0, "sigma": 0.01}, "temperature"),

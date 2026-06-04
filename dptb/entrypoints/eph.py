@@ -49,6 +49,7 @@ EPH_PRIMARY_TASKS = (
     "coupling",
     "path-coupling",
     "mesh-coupling",
+    "mesh-artifact",
     "linewidth",
     "path-linewidth",
     "mesh-linewidth",
@@ -74,6 +75,7 @@ EPH_TASK_CHOICES = (
     "coupling",
     "path-coupling",
     "mesh-coupling",
+    "mesh-artifact",
     "linewidth",
     "path-linewidth",
     "mesh-linewidth",
@@ -131,6 +133,7 @@ def eph(
     displacement: float = 1e-3,
     use_scc: bool = False,
     summary_unweighted: bool = False,
+    artifact_axis: str = "q",
     dos_grid: Optional[Sequence[float]] = None,
     dos_sigma: Optional[float] = None,
     system=None,
@@ -197,6 +200,25 @@ def eph(
             q_chunk_size=q_chunk_size,
             time_reversal=time_reversal,
             output=output or "epc_mesh_data.npz",
+            bands=bands,
+            displacement=displacement,
+            use_scc=use_scc,
+            system=system,
+            derivative_provider=derivative_provider,
+        )
+    if task == "mesh-artifact":
+        return eph_mesh_artifact(
+            structure=structure,
+            init_model=init_model,
+            phonons=phonons,
+            kpoints=kpoints,
+            k_mesh=k_mesh,
+            q_mesh=q_mesh,
+            chunk_size=chunk_size,
+            q_chunk_size=q_chunk_size,
+            time_reversal=time_reversal,
+            output=output or "epc_mesh_artifact",
+            artifact_axis=artifact_axis,
             bands=bands,
             displacement=displacement,
             use_scc=use_scc,
@@ -479,6 +501,72 @@ def eph_mesh_coupling(
     )
     log.info("Electron-phonon mesh coupling data written to %s", output_path)
     return result
+
+
+def eph_mesh_artifact(
+    structure: Optional[str],
+    init_model: Optional[str],
+    phonons: str,
+    kpoints: Optional[str],
+    k_mesh: Optional[Sequence[int]],
+    q_mesh: Optional[Sequence[int]],
+    chunk_size: Optional[int],
+    q_chunk_size: Optional[int],
+    time_reversal: bool,
+    output: str,
+    artifact_axis: str = "q",
+    bands: Optional[Sequence[int]] = None,
+    displacement: float = 1e-3,
+    use_scc: bool = False,
+    system=None,
+    derivative_provider=None,
+) -> dict:
+    """Calculate serial EPC mesh chunks directly into a directory artifact."""
+    if use_scc:
+        _reject_scc_v1("mesh-artifact")
+    if phonons is None:
+        raise ValueError("phonons is required for dptb eph --task mesh-artifact.")
+    if kpoints is None and k_mesh is None:
+        raise ValueError("kpoints or k_mesh is required for dptb eph --task mesh-artifact.")
+    if system is None:
+        if structure is None:
+            raise ValueError("structure is required for dptb eph --task mesh-artifact.")
+        if init_model is None:
+            raise ValueError("init_model is required for dptb eph --task mesh-artifact.")
+        system = TBSystem(data=structure, calculator=init_model)
+
+    phonon_data = Phonons.load_npz(phonons)
+    explicit_kpoints = _load_kpoints(kpoints) if kpoints is not None else None
+    mesh_spec = EPCMeshSpec(
+        kpoints=explicit_kpoints,
+        k_mesh=k_mesh,
+        q_mesh=q_mesh,
+        chunk_size=chunk_size,
+        q_chunk_size=q_chunk_size,
+        time_reversal=time_reversal,
+    )
+    if not isinstance(artifact_axis, str):
+        raise ValueError("artifact_axis must be 'k' or 'q'.")
+    axis = artifact_axis.lower()
+    if axis not in {"k", "q"}:
+        raise ValueError("artifact_axis must be 'k' or 'q'.")
+    axis_chunk_size = chunk_size if axis == "k" else q_chunk_size
+
+    output_path = Path(output)
+    output_path.mkdir(parents=True, exist_ok=True)
+    manifest = system.eph.compute_mesh_chunked_artifact(
+        mesh_spec=mesh_spec,
+        phonons=phonon_data,
+        directory=output_path,
+        axis=axis,
+        chunk_size=axis_chunk_size,
+        bands=bands,
+        displacement=displacement,
+        use_scc=use_scc,
+        derivative_provider=derivative_provider,
+    )
+    log.info("Electron-phonon mesh chunked artifact written to %s", output_path)
+    return manifest
 
 
 def eph_linewidth(
