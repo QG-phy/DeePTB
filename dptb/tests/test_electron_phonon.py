@@ -1129,8 +1129,16 @@ def test_epc_mesh_chunked_artifact_rejects_bad_manifest_order(tmp_path):
 @pytest.mark.parametrize(
     ("mutator", "match"),
     [
+        (lambda manifest: manifest.update({"schema": "wrong.schema"}), "chunked artifact"),
+        (lambda manifest: manifest.update({"schema_version": -1}), "schema_version"),
+        (lambda manifest: manifest.update({"axis": "mode"}), "axis"),
         (lambda manifest: manifest.update({"chunk_count": manifest["chunk_count"] + 1}), "chunk_count"),
+        (lambda manifest: manifest.update({"chunk_size": 0}), "chunk_size"),
         (lambda manifest: manifest.update({"reducer": "concat_epc_mode_chunks"}), "reducer"),
+        (lambda manifest: manifest.update({"weights_filename": "../weights.npz"}), "weights_filename"),
+        (lambda manifest: manifest.update({"mesh_metadata": []}), "mesh_metadata"),
+        (lambda manifest: manifest.update({"chunks": []}), "at least one chunk"),
+        (lambda manifest: manifest["chunks"][0].update({"axis": "k"}), "axis"),
         (lambda manifest: manifest["chunks"][1]["spec"].update({"q_start": 3, "q_stop": 4}), "contiguous"),
         (lambda manifest: manifest["chunks"][0].update({"filename": "../escape.npz"}), "filename"),
     ],
@@ -1160,6 +1168,24 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata(tmp_path):
     )
 
     with pytest.raises(ValueError, match="weights.npz schema"):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
+def test_epc_mesh_chunked_artifact_rejects_bad_weights_schema_version(tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="k", chunk_size=1)
+    np.savez_compressed(
+        artifact_dir / "weights.npz",
+        el_kpoint_weights=mesh_data.kpoint_weights,
+        ph_qpoint_weights=mesh_data.qpoint_weights,
+        metadata_json=np.array(json.dumps({
+            "schema": "deeptb.epc_mesh_chunked_artifact.weights",
+            "schema_version": -1,
+        })),
+    )
+
+    with pytest.raises(ValueError, match="schema_version"):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
 
