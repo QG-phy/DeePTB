@@ -4087,6 +4087,12 @@ def test_compute_serta_mobility_scan_si_matches_single_point_results():
     assert scan.metadata["schema"] == "deeptb.epc_mobility_scan"
     assert scan.metadata["chemical_potential_count"] == 2
     assert scan.metadata["temperature_count"] == 2
+    assert scan.metadata["velocity_input_unit"] == "eV/fractional_reciprocal_coordinate"
+    assert scan.metadata["velocity_unit"] == "m/s"
+    assert scan.metadata["reciprocal_cell_unit"] == "Angstrom^-1"
+    assert scan.metadata["conductivity_unit"] == "S/m"
+    assert scan.metadata["carrier_density_unit"] == "m^-3"
+    assert scan.metadata["mobility_unit"] == "m^2/V/s"
 
 
 def test_mobility_scan_data_npz_roundtrip(tmp_path):
