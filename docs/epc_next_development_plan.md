@@ -635,9 +635,13 @@ Current Phase 1 status:
   - `compute_linewidth_mesh_chunked_artifact(...)` reads chunk NPZ files one at a time and returns `LinewidthMeshData`.
   - q-axis artifacts accumulate q contributions with global q weights.
   - k-axis artifacts compute each k chunk and concatenate reduced linewidth arrays.
+- Implemented first summary-first transport helper:
+  - `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` combines chunked linewidth reduction with existing velocity providers.
+  - finite-difference and Hamiltonian-derivative velocity sources remain available.
+  - the helper returns `TransportData` without materializing the full mesh coupling tensor.
 - Current limitation:
   - this is not yet a streaming compute path; it chunks an already materialized `EPCMeshData`.
-  - summary-first transport accumulators remain the next Phase 1 implementation step.
+  - SI mobility summary-first and transport scan accumulators remain future Phase 1/transport hardening work.
   - no multiprocessing, MPI, or CUDA runtime has been added.
 
 Phase 2, CPU parallel execution:
@@ -740,7 +744,7 @@ For the next implementation wave, the correct preparation is interface-level:
    - tests required before enabling `use_scc=True`。
 4. Continue Phase 1 scaling:
    - harden the first chunked artifact contract.
-   - implement summary-first transport accumulators for large mesh workflows.
+   - harden summary-first linewidth/transport helpers and consider SI mobility/scan accumulators.
 5. Add optional plot helpers from existing NPZ objects.
 6. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.
 7. Add optional `mpi4py` executor only after multiprocessing/serial reducer semantics are stable and default tests remain MPI-free.

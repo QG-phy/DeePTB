@@ -29,8 +29,11 @@ benchmark-only `DFTBPlusGauge` adapter. Mesh chunked artifact helpers
 `save_epc_mesh_chunked_artifact(...)` and
 `load_epc_mesh_chunked_artifact(...)` are exported for large-output storage
 experiments. `compute_linewidth_mesh_chunked_artifact(...)` computes mesh
-linewidth from those artifacts one chunk at a time. EPC unit constants are
-centralized in `dptb.utils.constants` and re-exported from the EPC namespace.
+linewidth from those artifacts one chunk at a time.
+`compute_serta_transport_from_epc_mesh_chunked_artifact(...)` computes SERTA
+transport from the chunked linewidth reduction plus the existing velocity
+providers. EPC unit constants are centralized in `dptb.utils.constants` and
+re-exported from the EPC namespace.
 
 ### Phonons NPZ
 
@@ -135,6 +138,13 @@ artifact and computes `LinewidthMeshData` without materializing the full
 `EPCMeshData`. For q-axis artifacts it accumulates q contributions using the
 global q weights; for k-axis artifacts it computes each k chunk and
 concatenates the reduced linewidth arrays.
+
+`compute_serta_transport_from_epc_mesh_chunked_artifact(system, directory, ...)`
+uses the chunked linewidth reduction, computes band velocities from the
+artifact k-points through the existing finite-difference or Hamiltonian-
+derivative velocity providers, and returns `TransportData`. It avoids
+materializing the full mesh coupling tensor but still evaluates velocities
+through the supplied `TBSystem`.
 
 ### Postprocess NPZ
 
