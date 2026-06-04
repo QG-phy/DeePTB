@@ -316,7 +316,10 @@ def read_epc_mesh_chunked_weights(directory: Union[str, Path], manifest: Optiona
         manifest = read_epc_mesh_chunked_manifest(directory)
     weights_filename = manifest.get("weights_filename", "weights.npz")
     _validate_artifact_filename(weights_filename, "weights_filename")
-    with np.load(directory / weights_filename, allow_pickle=False) as weights_payload:
+    weights_path = directory / weights_filename
+    if not weights_path.exists():
+        raise ValueError(f"{weights_filename} is required for EPC mesh chunked artifact weights.")
+    with np.load(weights_path, allow_pickle=False) as weights_payload:
         if "metadata_json" not in weights_payload:
             raise ValueError("weights.npz metadata_json is required.")
         metadata_json = weights_payload["metadata_json"]
@@ -351,7 +354,10 @@ def load_epc_mesh_chunked_artifact(directory: Union[str, Path]) -> EPCMeshData:
     chunks = []
     for entry in manifest["chunks"]:
         filename = entry["filename"]
-        chunks.append(EPCData.load_npz(directory / filename))
+        chunk_path = directory / filename
+        if not chunk_path.exists():
+            raise ValueError(f"Chunk file {filename!r} is required for EPC mesh chunked artifact.")
+        chunks.append(EPCData.load_npz(chunk_path))
 
     kpoint_weights, qpoint_weights = read_epc_mesh_chunked_weights(directory, manifest)
 

@@ -1246,6 +1246,28 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata(tmp_path):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
 
+def test_epc_mesh_chunked_artifact_rejects_missing_weights_file(tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="k", chunk_size=1)
+    (artifact_dir / "weights.npz").unlink()
+
+    with pytest.raises(ValueError, match="weights.npz"):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
+def test_epc_mesh_chunked_artifact_rejects_missing_chunk_file(tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="q", chunk_size=1)
+    manifest = json.loads((artifact_dir / "manifest.json").read_text(encoding="utf-8"))
+    first_chunk = artifact_dir / manifest["chunks"][0]["filename"]
+    first_chunk.unlink()
+
+    with pytest.raises(ValueError, match="Chunk file"):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
 @pytest.mark.parametrize(
     ("metadata_json", "match"),
     [
