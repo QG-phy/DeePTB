@@ -500,6 +500,9 @@ Transport v1 supports two band-velocity providers:
 Transport velocity metadata is stored as
 `eV/fractional_reciprocal_coordinate`; the `TransportData` task remains an
 intermediate SERTA conductivity workflow in DeePTB's fractional-k convention.
+Its persistent metadata records this as
+`conductivity_unit="internal_SERTA_fractional_k"` and
+`carrier_density_unit="1/input_volume"`.
 Use `--task mobility` for SI conductivity, carrier density, and mobility.
 
 For chemical-potential and temperature scans, use plural scan arguments:

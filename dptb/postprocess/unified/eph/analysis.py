@@ -41,6 +41,13 @@ MOBILITY_SCAN_NPZ_SCHEMA_VERSION = 1
 SUBSPACE_COUPLING_NPZ_SCHEMA_VERSION = 1
 
 
+def _metadata_unit(metadata: Dict[str, Any], key: str, default: str) -> str:
+    value = metadata.get(key, default)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"metadata[{key!r}] must be a non-empty unit string.")
+    return value
+
+
 @dataclass
 class LinewidthData:
     """Electron linewidths from electron-phonon coupling data."""
@@ -468,6 +475,8 @@ class TransportData:
                 "schema": "deeptb.epc_transport",
                 "schema_version": TRANSPORT_NPZ_SCHEMA_VERSION,
                 "method": "SERTA",
+                "conductivity_unit": "internal_SERTA_fractional_k",
+                "carrier_density_unit": "1/input_volume",
             },
             self.metadata,
         )
@@ -589,8 +598,8 @@ class MobilityData:
             raise ValueError("carrier_density must contain positive values.")
         if self.carrier_density.shape != ():
             raise ValueError("carrier_density must be a scalar.")
-        conductivity_unit = self.metadata.get("conductivity_unit", "S/m")
-        carrier_density_unit = self.metadata.get("carrier_density_unit", "m^-3")
+        conductivity_unit = _metadata_unit(self.metadata, "conductivity_unit", "S/m")
+        carrier_density_unit = _metadata_unit(self.metadata, "carrier_density_unit", "m^-3")
         self.metadata = _merge_metadata(
             {
                 "schema": "deeptb.epc_mobility",
@@ -665,8 +674,8 @@ class MobilityScanData:
             raise ValueError("mobility must contain finite values.")
         if not np.all(np.isfinite(self.carrier_density)) or np.any(self.carrier_density <= 0.0):
             raise ValueError("carrier_density must contain finite positive values.")
-        conductivity_unit = self.metadata.get("conductivity_unit", "S/m")
-        carrier_density_unit = self.metadata.get("carrier_density_unit", "m^-3")
+        conductivity_unit = _metadata_unit(self.metadata, "conductivity_unit", "S/m")
+        carrier_density_unit = _metadata_unit(self.metadata, "carrier_density_unit", "m^-3")
         self.metadata = _merge_metadata(
             {
                 "schema": "deeptb.epc_mobility_scan",

@@ -19,6 +19,8 @@
 6. 把单位、k/q sampling、occupation、velocity provider、executor/backend 等接口对齐到 DeePTB 现有代码，而不是在 EPC 层重复造一套平行体系。
 7. 按需推进 SOC/spinful、polar correction、full gauge tracking、mode-resolved analysis 和性能优化。
 
+本计划的当前执行策略是：先把 serial/chunked v1 做成稳定 reference，再谈并行和 GPU。MPI/multiprocessing 与 CUDA 不是二选一；MPI/multiprocessing 属于外层 executor，负责把独立 k/q/scan chunks 分发到进程或 rank，CUDA 属于内层 backend，负责单个 chunk 内的 batched linear algebra、velocity 和 EPC contraction。当前开发波次只允许预留接口和 metadata，不引入 `mpi4py` 或 CUDA 作为默认依赖。
+
 ## Current Roadmap Status
 
 截至当前分支，下一阶段计划已经不是从零开始，而是进入“已有能力稳定化 + 下一层能力设计”的状态：
@@ -42,7 +44,7 @@
   - opt-in full Graphene reference kept outside git for development and benchmark。
   - current public API export smoke coverage exists for the new EPC data objects/helpers, but any new public symbol added after this point must extend that smoke test immediately。
   - docs index now links the v1 workflow and SCC design docs; CLI task examples and chunk-executor public symbol docs now have drift checks, while remaining CLI examples still need a final parser/API drift pass before merge。
-  - unit metadata, mobility scan unit metadata, temperature convention, and reciprocal-cell convention now have focused regression coverage; keep a final physical-convention review before release。
+  - unit metadata, single-point/scan transport and mobility unit metadata, temperature convention, reciprocal-cell convention, and mobility persistent unit-string validation now have focused regression coverage; keep a final physical-convention review before release。
   - artifact metadata validation now covers weights metadata JSON, weights shape/finite/non-negative/positive-sum checks, missing chunk/weights files, fixed-vs-recomputed linewidth scan convention guards, missing required array diagnostics for core EPC NPZ loaders, CLI array-loader missing-field diagnostics, summary-loader metadata/schema rejection, and strict `EPCMeshSpec` chunk-size type validation; continue strict NPZ loader audit for remaining edge cases。
   - full repo test pass has been completed for the current missing-required-array, CLI array-loader, summary-loader, chunk-executor docs/export drift, minimal-fixture analysis, SCC task-gate, mesh-spec chunk-validation, and artifact missing-file diagnostics hardening slices; rerun before final merge after any further EPC changes。
 - Still design-only:
@@ -51,6 +53,12 @@
   - torch CUDA EPC backend。
   - multi-axis streaming artifact production and parallel artifact writers。
   - SOC/spinful EPC, polar correction, and full degenerate-band gauge tracking。
+
+Current sprint posture:
+
+- The branch is in release-hardening mode, not broad parity expansion mode.
+- Recent hardening checkpoints have validated required artifact files, strict mesh chunk-size typing, SCC task gating, default minimal-fixture analysis coverage, chunk-executor workflow docs/export drift, and core NPZ loader diagnostics.
+- Continue with narrow validation/docs/API-stability slices; do not start MPI, CUDA, SCC EPC, SOC, or polar-correction implementation until the relevant gate is explicitly opened.
 
 ## Design Position
 
@@ -92,6 +100,12 @@
   - 如果必须在下一波选择一个真实加速方向，优先实现 CPU-side chunked artifact 和 multiprocessing/MPI executor，因为 EPC mesh 的第一瓶颈通常是独立 k/q/chunk 任务数量和输出规模；CUDA 放在 backend/kernel 层，等 contraction/eigensolve/velocity kernel 的数据布局稳定后再做。
   - `mpi4py` 只能作为 optional dependency；默认安装、默认测试和 NPZ 文件格式不得依赖 MPI runtime。
   - CUDA device、torch dtype/device、rank id、process id 等 runtime 信息只能进入 debug metadata 或 benchmark log，不得成为持久化 schema 的必要字段。
+  - 后续若进入真实加速实现，优先顺序是：
+    1. serial/chunked artifact 和 summary-first reducer 稳定；
+    2. optional multiprocessing executor，复用 `dptb.utils.multiprocessing.num_tasks()`；
+    3. optional `mpi4py` executor，面向 cluster runs，默认 CI 不启用；
+    4. torch CUDA backend，只有 profiling 证明单 chunk kernel 是瓶颈后再实现。
+  - 不允许为了实现 MPI 而改变 EPC NPZ schema、data object shape 或 physics API；不允许为了实现 CUDA 而把 device/rank/process 信息变成加载 artifact 的必要条件。
 
 ## Stage Gates
 
@@ -127,6 +141,18 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - summary-first artifact consumers 先覆盖 linewidth/transport/mobility，再推进 true streaming producer。
   - backend/kernel 再决定是否使用 torch CUDA。
   - 本 gate 的完成标准不是“有并行代码”，而是 serial/chunk path 的 schema、metadata、reducer、测试和文档稳定到后续并行化不需要改公共 API。
+  - 进入 multiprocessing/MPI 前必须已有：
+    - immutable chunk spec；
+    - deterministic reducer；
+    - artifact metadata/weights validation；
+    - serial parity tests；
+    - worker 不共享可变 `TBSystem` state 的策略。
+  - 进入 CUDA backend 前必须已有：
+    - stable per-chunk array layout；
+    - explicit backend metadata；
+    - CPU reference for every accelerated kernel；
+    - artifact boundary 的 CPU/numpy conversion；
+    - profiling 证明 per-chunk compute 而非 I/O/reduction 是主要瓶颈。
 
 ## Repository Compatibility Checklist
 
@@ -181,6 +207,8 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - EPC 使用的 `THZ_TO_EV`、`HBAR_EV_S`、`EPC_PREFAC_AMU_THZ` 已集中到 `dptb.utils.constants`；后续新增 transport SI conversion constants 也应继续放在统一位置。
   - 如果 `constants.py` 已经过于混杂，可以新增 `dptb/utils/units.py` 专门放单位转换，并从 `constants.py` re-export 兼容旧用法；不要在 EPC 模块中重复从 `scipy.constants` 现场拼公式。
   - 所有 persistent metadata 里的单位字符串应使用统一常量或 helper 生成，避免 `"THz"`、`"eV"`、`"angstrom"`、`"Ang"` 多种拼写漂移。
+  - 当前测试可以用 `scipy.constants` 校验 DeePTB 常量来源，但生产代码不应在 EPC 模块里重复定义同一常量。
+  - transport/mobility metadata 必须明确 temperature convention；当前 EPC transport 使用 temperature as `kBT` in eV convention 时，应在参数名、metadata 或文档中持续显式化，避免和 Kelvin convention 混淆。
 
 - Batching and scaling:
   - Mesh/path EPC 的 chunking 应参考 `dptb.postprocess.unified.properties.optical_conductivity` 中按 k-point batch 调用 `TBSystem.get_eigenstates(...)` 的模式。
@@ -198,6 +226,8 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - `dptb.postprocess.unified.properties.optical_conductivity` 已经使用该路径计算 velocity-like matrix elements；transport/mobility 后续应优先复用或抽象这个 provider，而不是只依赖 finite-difference band velocity。
   - 在把该路径用于 EPC transport 前，必须先审查 gauge、`2*pi` 因子、fractional-vs-Cartesian k derivative、overlap velocity correction 和单位 metadata；不能默认把当前 finite-difference velocity 与 `dH/dk` velocity 混为同一单位。
   - 后续 velocity provider 应至少包含 `finite_difference` 和 `hamiltonian_derivative` 两种来源，并在 `TransportData` / `MobilityData` metadata 中记录来源、单位和 convention。
+  - `finite_difference` 是 fallback/reference，不应继续作为唯一生产路径；`hamiltonian_derivative` 是 DeePTB-native 优先方向，但必须保留 overlap correction 和 unit convention 的 guard tests。
+  - 任何 velocity provider 新增 backend 时，必须证明和 CPU reference 在小 fixture 上数值一致，并记录 provider/backend/convention metadata。
 
 - CLI compatibility:
   - `dptb/entrypoints/main.py` 已经集中注册 subcommands；新增 EPC task 应扩展现有 `dptb eph --task ...`，除非有明确理由新增顶层命令。
@@ -457,6 +487,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - `velocity_source="hamiltonian_derivative"` computes diagonal band velocities from analytic `dH/dk` and optional `dS/dk`.
 - The Hamiltonian-derivative convention is recorded as `diag_Cdagger_dH_minus_EdS_C`.
 - The `transport` workflow velocity unit remains `eV/fractional_reciprocal_coordinate`; SI conversion is currently exposed through the Python mobility helper.
+- Single-point `TransportData` now records explicit non-SI metadata (`conductivity_unit="internal_SERTA_fractional_k"` and `carrier_density_unit="1/input_volume"`) so persisted transport artifacts are not confused with SI mobility outputs.
 - Implemented `compute_serta_transport_scan(...)` and `TransportScanData`:
   - scans chemical-potential and temperature axes.
   - stores conductivity shape `(nmu, ntemperatures, 3, 3)`.
@@ -752,16 +783,20 @@ Phase 2, CPU parallel execution:
 - Add a multiprocessing executor first if it can reuse `dptb.utils.multiprocessing.num_tasks()` and avoid new required dependencies.
 - Add `mpi4py` executor only as an optional backend for cluster runs.
 - Both executors must consume the same immutable chunk specs and use the same reducers as serial execution.
+- Do not place `mpi4py` imports at module import time for default EPC workflows; MPI imports must be lazy and optional.
+- Worker ownership of `TBSystem` must be explicit: either each worker owns an isolated system/calculator instance, or the task is pure array postprocessing and does not mutate system state.
 
 Phase 3, GPU backend:
 
 - Add torch CUDA backend only after the per-chunk arrays, contraction order, velocity provider outputs, and reducer semantics are stable.
 - CUDA should accelerate batched eigensolve, velocity matrix elements, and EPC contraction inside one chunk.
 - CUDA must not own chunk scheduling, file writing, or persistent schema decisions.
+- CUDA backend must respect DeePTB model device/dtype conventions and convert tensors to CPU/numpy at NPZ artifact boundaries.
+- MPI and CUDA may be combined later as MPI-over-chunks plus CUDA-inside-rank; this combination must still load and reduce through the same NPZ/chunked artifact contract.
 
 Practical recommendation for this codebase: implement Phase 1 before MPI or CUDA. If the next wave must pick one acceleration feature after Phase 1, pick multiprocessing/MPI executor before CUDA unless profiling shows a single chunk's contraction/eigensolve dominates wall time.
 
-Current recommendation for the next coding sprint: do not add `mpi4py`, multiprocessing, or CUDA yet. Spend the sprint on release hardening the serial/chunked artifact path, because that is the contract future MPI and CUDA paths must preserve.
+Current recommendation for the next coding sprint: do not add `mpi4py`, multiprocessing, or CUDA yet. Spend the sprint on release hardening the serial/chunked artifact path, because that is the contract future MPI and CUDA paths must preserve. If profiling or user benchmarks later force one acceleration feature first, pick CPU-side multiprocessing/MPI executor before CUDA, unless profiling clearly shows one chunk's eigensolve/contraction dominates wall time.
 
 ### MPI and CUDA Position
 

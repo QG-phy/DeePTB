@@ -3308,6 +3308,26 @@ def test_transport_scan_data_npz_roundtrip(tmp_path):
     assert loaded.metadata["source"] == "unit-test"
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"chemical_potential_unit": ""},
+        {"chemical_potential_unit": "Ha"},
+        {"temperature_unit": ""},
+        {"temperature_unit": "K"},
+    ],
+)
+def test_transport_scan_data_rejects_conflicting_unit_metadata(metadata):
+    with pytest.raises(ValueError, match="metadata\\[.*unit.*\\]"):
+        TransportScanData(
+            conductivity=np.ones((1, 1, 3, 3)),
+            carrier_density=np.ones((1, 1)),
+            chemical_potentials=np.array([0.0]),
+            temperatures=np.array([0.1]),
+            metadata=metadata,
+        )
+
+
 def test_compute_serta_transport_scan_rejects_invalid_scan_axes():
     kwargs = {
         "eigenvalues": np.array([[0.0]]),
@@ -4096,6 +4116,8 @@ def test_transport_data_npz_roundtrip(tmp_path):
     assert loaded.metadata["schema"] == "deeptb.epc_transport"
     assert loaded.metadata["schema_version"] == TRANSPORT_NPZ_SCHEMA_VERSION
     assert loaded.metadata["method"] == "SERTA"
+    assert loaded.metadata["conductivity_unit"] == "internal_SERTA_fractional_k"
+    assert loaded.metadata["carrier_density_unit"] == "1/input_volume"
 
     with np.load(path, allow_pickle=False) as data:
         assert "transport_conductivity" in data
@@ -4195,6 +4217,26 @@ def test_mobility_data_npz_roundtrip(tmp_path):
     assert loaded.metadata["schema_version"] == MOBILITY_NPZ_SCHEMA_VERSION
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"conductivity_unit": ""},
+        {"conductivity_unit": "   "},
+        {"conductivity_unit": 1},
+        {"carrier_density_unit": ""},
+        {"carrier_density_unit": None},
+    ],
+)
+def test_mobility_data_rejects_invalid_unit_metadata(metadata):
+    with pytest.raises(ValueError, match="metadata\\[.*unit.*\\]"):
+        MobilityData(
+            conductivity=np.eye(3),
+            mobility=np.eye(3),
+            carrier_density=np.array(1.0),
+            metadata=metadata,
+        )
+
+
 def test_compute_serta_mobility_scan_si_matches_single_point_results():
     eigenvalues = np.array([[0.0]])
     velocities = np.array([[[1.0, 0.0, 0.0]]])
@@ -4263,6 +4305,27 @@ def test_mobility_scan_data_npz_roundtrip(tmp_path):
     assert loaded.metadata["schema_version"] == MOBILITY_SCAN_NPZ_SCHEMA_VERSION
 
 
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"conductivity_unit": ""},
+        {"conductivity_unit": []},
+        {"carrier_density_unit": ""},
+        {"carrier_density_unit": False},
+    ],
+)
+def test_mobility_scan_data_rejects_invalid_unit_metadata(metadata):
+    with pytest.raises(ValueError, match="metadata\\[.*unit.*\\]"):
+        MobilityScanData(
+            conductivity=np.ones((1, 1, 3, 3)),
+            mobility=np.ones((1, 1, 3, 3)),
+            carrier_density=np.ones((1, 1)),
+            chemical_potentials=np.array([0.0]),
+            temperatures=np.array([0.05]),
+            metadata=metadata,
+        )
+
+
 def test_compute_serta_mobility_scan_si_rejects_invalid_scan_axes():
     kwargs = {
         "eigenvalues": np.array([[0.0]]),
@@ -4324,6 +4387,18 @@ def test_transport_data_rejects_invalid_schema_and_shapes():
             conductivity=np.eye(3),
             carrier_density=np.array(1.0),
             metadata={"method": "RTA"},
+        )
+    with pytest.raises(ValueError, match="conductivity_unit"):
+        TransportData(
+            conductivity=np.eye(3),
+            carrier_density=np.array(1.0),
+            metadata={"conductivity_unit": "S/m"},
+        )
+    with pytest.raises(ValueError, match="carrier_density_unit"):
+        TransportData(
+            conductivity=np.eye(3),
+            carrier_density=np.array(1.0),
+            metadata={"carrier_density_unit": "m^-3"},
         )
     with pytest.raises(ValueError, match="finite"):
         TransportData(
@@ -5799,6 +5874,15 @@ def test_epc_workflow_doc_lists_chunk_executor_public_symbols():
         assert symbol in workflow_doc
 
 
+def test_epc_workflow_doc_lists_transport_non_si_unit_metadata():
+    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
+    transport = TransportData(conductivity=np.eye(3), carrier_density=np.array(1.0))
+
+    for key in ["conductivity_unit", "carrier_density_unit"]:
+        expected = f'{key}="{transport.metadata[key]}"'
+        assert expected in workflow_doc
+
+
 def test_load_kpoints_accepts_json_npy_npz_and_text(tmp_path):
     kpoints = np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]])
 
@@ -6349,6 +6433,8 @@ def test_eph_entrypoint_writes_transport_npz_from_epc_and_linewidth_data(tmp_pat
     np.testing.assert_allclose(result.conductivity, expected.conductivity)
     np.testing.assert_allclose(loaded.conductivity, expected.conductivity)
     assert loaded.metadata["schema"] == "deeptb.epc_transport"
+    assert loaded.metadata["conductivity_unit"] == "internal_SERTA_fractional_k"
+    assert loaded.metadata["carrier_density_unit"] == "1/input_volume"
     assert loaded.metadata["velocity_source"] == "finite_difference"
 
 
@@ -6388,6 +6474,8 @@ def test_eph_entrypoint_writes_artifact_transport_npz(tmp_path):
     np.testing.assert_allclose(loaded.conductivity, expected.conductivity)
     np.testing.assert_allclose(loaded.carrier_density, expected.carrier_density)
     assert loaded.metadata["schema"] == "deeptb.epc_transport"
+    assert loaded.metadata["conductivity_unit"] == "internal_SERTA_fractional_k"
+    assert loaded.metadata["carrier_density_unit"] == "1/input_volume"
     assert loaded.metadata["chunked_artifact"] is True
     assert loaded.metadata["summary_first"] is True
     assert loaded.metadata["artifact_axis"] == "q"
