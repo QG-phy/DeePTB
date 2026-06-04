@@ -33,6 +33,7 @@ from dptb.postprocess.unified.eph import (
     compute_relaxation_time,
     compute_relaxation_time_mesh,
     compute_relaxation_time_path,
+    compute_scattering_maps,
     compute_serta_mobility_si,
     compute_serta_mobility_scan_si,
     compute_serta_transport_from_epc,
@@ -56,6 +57,7 @@ EPH_PRIMARY_TASKS = (
     "mobility",
     "subspace",
     "coupling-summary",
+    "scattering-map",
     "phonon-dos",
     "eliashberg",
 )
@@ -83,6 +85,7 @@ EPH_TASK_CHOICES = (
     "mobility",
     "subspace",
     "coupling-summary",
+    "scattering-map",
     "phonon-dos",
     "eliashberg",
 )
@@ -297,6 +300,12 @@ def eph(
         return eph_coupling_summary(
             epc_data=epc_data,
             output=output or "coupling_summary.json",
+            weighted=not summary_unweighted,
+        )
+    if task == "scattering-map":
+        return eph_scattering_map(
+            epc_data=epc_data,
+            output=output or "scattering_map.json",
             weighted=not summary_unweighted,
         )
     if task == "phonon-dos":
@@ -843,6 +852,23 @@ def eph_coupling_summary(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(_jsonable(result), indent=2, sort_keys=True), encoding="utf-8")
     log.info("Electron-phonon coupling summary written to %s", output_path)
+    return result
+
+
+def eph_scattering_map(
+    epc_data: str,
+    output: str,
+    weighted: bool = True,
+) -> dict:
+    """Write q/k/band-resolved EPC scattering proxy maps as JSON."""
+    if epc_data is None:
+        raise ValueError("epc_data is required for dptb eph --task scattering-map.")
+
+    result = compute_scattering_maps(_load_epc_summary_data(epc_data), weighted=weighted)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(_jsonable(result), indent=2, sort_keys=True), encoding="utf-8")
+    log.info("Electron-phonon scattering proxy map written to %s", output_path)
     return result
 
 

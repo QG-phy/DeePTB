@@ -1699,6 +1699,75 @@ def compute_coupling_strength_summary(
     }
 
 
+def compute_scattering_maps(
+    epc_data: Union[EPCData, EPCMeshData, EPCPathData],
+    weighted: bool = True,
+) -> Dict[str, Any]:
+    """Compute q/k/band-resolved EPC scattering proxy maps.
+
+    The maps are aggregated from existing ``coupling_strength`` arrays. They
+    are diagnostics for locating strong EPC channels, not a full linewidth or
+    energy-conserving scattering-rate calculation.
+    """
+    weighted = _validate_bool(weighted, "weighted")
+    if isinstance(epc_data, EPCMeshData):
+        source = "EPCMeshData.coupling_strength"
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        if weighted:
+            qpoint_weights = _normalize_weights(epc_data.qpoint_weights, "qpoint_weights")
+            kpoint_weights = _normalize_weights(epc_data.kpoint_weights, "kpoint_weights")
+            strength = strength * qpoint_weights[:, None, None, None, None] * kpoint_weights[None, :, None, None, None]
+            weight_convention = "normalized_qpoint_and_kpoint_weights"
+        else:
+            weight_convention = "unweighted_sum"
+    elif isinstance(epc_data, EPCPathData):
+        source = "EPCPathData.coupling_strength"
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        weight_convention = "unweighted_sum"
+    elif isinstance(epc_data, EPCData):
+        source = "EPCData.coupling_strength"
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        weight_convention = "unweighted_sum"
+    else:
+        raise ValueError("epc_data must be an EPCData, EPCMeshData, or EPCPathData object.")
+
+    if strength.ndim != 5:
+        raise ValueError("coupling_strength must have shape (nq, nk, nmodes, nfinal, ninitial).")
+    if strength.size == 0:
+        raise ValueError("coupling_strength must be non-empty.")
+    if not np.all(np.isfinite(strength)) or np.any(strength < 0.0):
+        raise ValueError("coupling_strength must contain finite non-negative values.")
+
+    metadata = {
+        "source": source,
+        "weighted": weighted,
+        "weight_convention": weight_convention,
+        "input_schema": epc_data.metadata.get("schema"),
+        "coupling_strength_unit": epc_data.metadata.get("coupling_strength_unit", "eV^2"),
+        "convention": "coupling_strength_scattering_proxy",
+    }
+    if isinstance(epc_data, EPCPathData):
+        metadata["path_axis"] = epc_data.path_axis
+    if isinstance(epc_data, EPCMeshData):
+        metadata["mesh_spec"] = epc_data.metadata.get("mesh_spec")
+
+    return {
+        "qpoints": epc_data.qpoints.copy(),
+        "kpoints": epc_data.kpoints.copy(),
+        "frequencies": epc_data.frequencies.copy(),
+        "band_indices": epc_data.band_indices.copy(),
+        "q_mode_resolved": strength.sum(axis=(1, 3, 4)),
+        "k_mode_resolved": strength.sum(axis=(0, 3, 4)),
+        "q_final_band_resolved": strength.sum(axis=(1, 2, 4)),
+        "q_initial_band_resolved": strength.sum(axis=(1, 2, 3)),
+        "q_band_pair_resolved": strength.sum(axis=(1, 2)),
+        "k_final_band_resolved": strength.sum(axis=(0, 2, 4)),
+        "k_initial_band_resolved": strength.sum(axis=(0, 2, 3)),
+        "k_band_pair_resolved": strength.sum(axis=(0, 2)),
+        "metadata": metadata,
+    }
+
+
 def compute_phonon_dos(
     phonons: Phonons,
     frequency_grid: np.ndarray,

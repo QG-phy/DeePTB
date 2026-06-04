@@ -22,9 +22,9 @@ include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `compute_band_velocities_hamiltonian_derivative`, `compute_serta_mobility_si`,
 `compute_serta_mobility_scan_si`, `compute_serta_transport_from_epc`,
 `compute_coupling_strength_summary`, `compute_phonon_dos`,
-`compute_eliashberg_spectral_function`, `find_degenerate_band_groups`,
-`compute_subspace_coupling_strength`, `compute_subspace_coupling_data`,
-`FDProvider`, `SupercellFD`, and the
+`compute_eliashberg_spectral_function`, `compute_scattering_maps`,
+`find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
+`compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
 benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
 `dptb.utils.constants` and re-exported from the EPC namespace.
 
@@ -450,6 +450,21 @@ and does not introduce a new persistent NPZ schema.
 For `EPCMeshData`, summaries use normalized k/q weights by default. Add
 `--summary-unweighted` to report raw sums.
 
+### Scattering Map
+
+```bash
+dptb eph \
+  --task scattering-map \
+  --epc-data epc_mesh_data.npz \
+  -o scattering_map.json
+```
+
+This task reads an existing `EPCData`, `EPCPathData`, or `EPCMeshData` NPZ and
+writes JSON q/k/mode/band-resolved coupling-strength maps. These maps are
+diagnostics for locating strong EPC channels; they are not energy-conserving
+linewidths or full scattering rates. For `EPCMeshData`, maps use normalized
+k/q weights by default. Add `--summary-unweighted` to report raw sums.
+
 ### Phonon DOS
 
 ```bash
@@ -491,9 +506,9 @@ theory. For `EPCMeshData`, summaries use normalized k/q weights by default; add
   `NotImplementedError`.
 - Path workflows currently support fixed electronic k-points plus q-path only.
   k-path plus fixed-q is not implemented.
-- Mesh workflows currently use serial in-memory execution. K-point chunking is
-  available for `mesh-coupling`, but chunked artifacts, multiprocessing, MPI,
-  and CUDA backends are future work.
+- Mesh workflows currently use serial in-memory execution. K-point and q-point
+  chunking are available for `mesh-coupling`, but chunked artifacts,
+  multiprocessing, MPI, and CUDA backends are future work.
 - SOC/spinful EPC is not implemented.
 - Polar correction is not implemented.
 - Full degenerate-band gauge fixing and k/q-path continuous gauge tracking are

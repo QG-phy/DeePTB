@@ -76,6 +76,7 @@ from dptb.postprocess.unified.eph import (
     compute_relaxation_time,
     compute_relaxation_time_mesh,
     compute_relaxation_time_path,
+    compute_scattering_maps,
     compute_serta_conductivity,
     compute_serta_transport_from_epc,
     compute_coupling_strength_summary,
@@ -172,6 +173,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
         is compute_band_velocities_hamiltonian_derivative
     )
     assert unified_postprocess.compute_eliashberg_spectral_function is compute_eliashberg_spectral_function
+    assert unified_postprocess.compute_scattering_maps is compute_scattering_maps
     assert unified_postprocess.compute_serta_mobility_si is compute_serta_mobility_si
     assert unified_postprocess.compute_serta_mobility_scan_si is compute_serta_mobility_scan_si
     assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
@@ -1105,6 +1107,79 @@ def test_compute_coupling_strength_summary_rejects_invalid_inputs():
             ),
             weighted="yes",
         )
+
+
+def test_compute_scattering_maps_matches_manual_reference():
+    strength = np.arange(1, 1 + 2 * 2 * 2 * 2 * 2, dtype=float).reshape(2, 2, 2, 2, 2)
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        band_indices=np.array([3, 4]),
+        frequencies=np.array([[1.0, 2.0], [3.0, 4.0]]),
+        eigenvalues_k=np.ones((2, 2)),
+        eigenvalues_kq=np.ones((2, 2, 2)),
+        coupling_matrix=np.sqrt(strength).astype(complex),
+        coupling_strength=strength,
+    )
+
+    result = compute_scattering_maps(epc_data)
+
+    np.testing.assert_allclose(result["q_mode_resolved"], strength.sum(axis=(1, 3, 4)))
+    np.testing.assert_allclose(result["k_mode_resolved"], strength.sum(axis=(0, 3, 4)))
+    np.testing.assert_allclose(result["q_final_band_resolved"], strength.sum(axis=(1, 2, 4)))
+    np.testing.assert_allclose(result["q_initial_band_resolved"], strength.sum(axis=(1, 2, 3)))
+    np.testing.assert_allclose(result["q_band_pair_resolved"], strength.sum(axis=(1, 2)))
+    np.testing.assert_allclose(result["k_final_band_resolved"], strength.sum(axis=(0, 2, 4)))
+    np.testing.assert_allclose(result["k_initial_band_resolved"], strength.sum(axis=(0, 2, 3)))
+    np.testing.assert_allclose(result["k_band_pair_resolved"], strength.sum(axis=(0, 2)))
+    np.testing.assert_allclose(result["qpoints"], epc_data.qpoints)
+    np.testing.assert_allclose(result["kpoints"], epc_data.kpoints)
+    assert result["metadata"]["convention"] == "coupling_strength_scattering_proxy"
+    assert result["metadata"]["weight_convention"] == "unweighted_sum"
+
+
+def test_compute_scattering_maps_uses_mesh_weights():
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.ones((2, 1)),
+        eigenvalues_k=np.ones((2, 1)),
+        eigenvalues_kq=np.ones((2, 2, 1)),
+        coupling_matrix=np.ones((2, 2, 1, 1, 1), dtype=complex),
+        coupling_strength=np.ones((2, 2, 1, 1, 1)),
+    )
+    mesh_data = EPCMeshData.from_epc_data(
+        epc_data,
+        kpoint_weights=np.array([1.0, 3.0]),
+        qpoint_weights=np.array([2.0, 6.0]),
+    )
+
+    weighted = compute_scattering_maps(mesh_data)
+    unweighted = compute_scattering_maps(mesh_data, weighted=False)
+
+    np.testing.assert_allclose(weighted["q_initial_band_resolved"], [[0.25], [0.75]])
+    np.testing.assert_allclose(weighted["k_initial_band_resolved"], [[0.25], [0.75]])
+    np.testing.assert_allclose(unweighted["q_initial_band_resolved"], [[2.0], [2.0]])
+    assert weighted["metadata"]["weight_convention"] == "normalized_qpoint_and_kpoint_weights"
+    assert unweighted["metadata"]["weight_convention"] == "unweighted_sum"
+
+
+def test_compute_scattering_maps_rejects_invalid_inputs():
+    with pytest.raises(ValueError, match="EPCData"):
+        compute_scattering_maps(object())
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.ones((1, 1)),
+        eigenvalues_k=np.ones((1, 1)),
+        eigenvalues_kq=np.ones((1, 1, 1)),
+        coupling_matrix=np.ones((1, 1, 1, 1, 1), dtype=complex),
+        coupling_strength=np.ones((1, 1, 1, 1, 1)),
+    )
+    with pytest.raises(ValueError, match="weighted"):
+        compute_scattering_maps(epc_data, weighted="yes")
 
 
 def test_compute_eliashberg_spectral_function_matches_manual_reference():
@@ -4421,6 +4496,27 @@ def test_eph_cli_parser_accepts_phonon_dos_inputs():
     assert args.output == "phonon_dos.json"
 
 
+def test_eph_cli_parser_accepts_scattering_map_inputs():
+    args = parse_args(
+        [
+            "eph",
+            "--task",
+            "scattering-map",
+            "--epc-data",
+            "epc_mesh_data.npz",
+            "--summary-unweighted",
+            "-o",
+            "scattering_map.json",
+        ]
+    )
+
+    assert args.command == "eph"
+    assert args.task == "scattering-map"
+    assert args.epc_data == "epc_mesh_data.npz"
+    assert args.summary_unweighted is True
+    assert args.output == "scattering_map.json"
+
+
 def test_eph_cli_parser_accepts_eliashberg_inputs():
     args = parse_args(
         [
@@ -5134,6 +5230,35 @@ def test_eph_entrypoint_writes_coupling_summary_json_from_mesh_data(tmp_path):
     assert unweighted_payload["metadata"]["weight_convention"] == "unweighted_sum"
 
 
+def test_eph_entrypoint_writes_scattering_map_json_from_epc_data(tmp_path):
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.ones((2, 1)),
+        eigenvalues_k=np.ones((1, 1)),
+        eigenvalues_kq=np.ones((2, 1, 1)),
+        coupling_matrix=np.ones((2, 1, 1, 1, 1), dtype=complex),
+        coupling_strength=np.array([[[[[2.0]]]], [[[[4.0]]]]]),
+    )
+    epc_path = tmp_path / "epc_data.npz"
+    output_path = tmp_path / "scattering_map.json"
+    epc_data.save_npz(epc_path)
+
+    result = eph(
+        task="scattering-map",
+        epc_data=str(epc_path),
+        output=str(output_path),
+    )
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert output_path.exists()
+    np.testing.assert_allclose(payload["q_initial_band_resolved"], [[2.0], [4.0]])
+    np.testing.assert_allclose(payload["q_initial_band_resolved"], result["q_initial_band_resolved"])
+    assert payload["metadata"]["source"] == "EPCData.coupling_strength"
+    assert payload["metadata"]["convention"] == "coupling_strength_scattering_proxy"
+
+
 def test_eph_entrypoint_writes_phonon_dos_json_from_external_phonon_modes(tmp_path):
     phonons = Phonons(
         qpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -5336,6 +5461,7 @@ def test_eph_entrypoint_rejects_invalid_task_type():
         ({"task": "subspace", "final_groups": ["0:1"]}, "epc_data"),
         ({"task": "subspace", "epc_data": "epc.npz"}, "final_groups"),
         ({"task": "coupling-summary"}, "epc_data"),
+        ({"task": "scattering-map"}, "epc_data"),
         ({"task": "phonon-dos", "dos_grid": [1.0], "dos_sigma": 0.1}, "phonons"),
         ({"task": "phonon-dos", "phonons": "phonons.npz", "dos_sigma": 0.1}, "dos_grid"),
         ({"task": "phonon-dos", "phonons": "phonons.npz", "dos_grid": [1.0]}, "dos_sigma"),

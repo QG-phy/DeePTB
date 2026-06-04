@@ -2,7 +2,7 @@
 
 ## Summary
 
-当前 EPC v1 已经完成核心 coupling、NPZ 数据契约、`dptb eph` 基础 CLI、linewidth、relaxation time、基础 SERTA transport、有限差分 velocity bridge、Hamiltonian-derivative velocity bridge、SI mobility、mobility scan 和 degenerate-subspace diagnostic。本轮扩展已经进一步补上 DeePTB-native path workflow、mesh workflow、mesh/path linewidth、mesh/path relaxation-time、serial k/q chunk execution 第一版，以及 coupling-summary、phonon-DOS 和 Eliashberg-like diagnostic analysis。
+当前 EPC v1 已经完成核心 coupling、NPZ 数据契约、`dptb eph` 基础 CLI、linewidth、relaxation time、基础 SERTA transport、有限差分 velocity bridge、Hamiltonian-derivative velocity bridge、SI mobility、mobility scan 和 degenerate-subspace diagnostic。本轮扩展已经进一步补上 DeePTB-native path workflow、mesh workflow、mesh/path linewidth、mesh/path relaxation-time、serial k/q chunk execution 第一版，以及 coupling-summary、scattering-map、phonon-DOS 和 Eliashberg-like diagnostic analysis。
 
 下一阶段的目标不是复刻 dftbephy 的 DFTB+ workflow 外壳，而是把 EPC 能力扩展成 DeePTB-native 的稳定工作流。开发节奏应分成两个层次：
 
@@ -32,7 +32,7 @@
   - serial q-chunk task specs and deterministic q-axis reducer。
   - finite-difference and Hamiltonian-derivative velocity providers。
   - SI mobility, 2D/3D normalization, and multi-chemical-potential / multi-temperature mobility scans。
-  - coupling-strength summary, phonon DOS, and Eliashberg-like spectral diagnostic from existing NPZ data。
+  - coupling-strength summary, scattering proxy maps, phonon DOS, and Eliashberg-like spectral diagnostic from existing NPZ data。
 - Still needs hardening before merge/release:
   - a minimal in-repo synthetic EPC fixture now covers default linewidth reference testing; broader coupling/FD fixtures still need release hardening。
   - opt-in full Graphene reference kept outside git for development and benchmark。
@@ -111,7 +111,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - Gate D: parity and advanced physics
   - 只吸收 dftbephy 中对 DeePTB 用户有价值的能力切片，例如 mode-resolved scattering、path/mesh summaries、mobility scans、reference benchmarks。
   - workflow parity 不是目标；如果某个 dftbephy workflow 外壳只是包装 DFTB+ 文件、目录和 HDF5 字段，则不复刻。
-  - analysis parity 只按物理问题吸收：先从 NPZ 对象提供 summary/DOS/Eliashberg-like diagnostic，再考虑 q/band-resolved scattering maps。
+  - analysis parity 只按物理问题吸收：先从 NPZ 对象提供 summary/scattering-map/DOS/Eliashberg-like diagnostic，再考虑 plot helper。
   - 不复刻 DFTB+ 生态、目录工作流或 HDF5 字段级 contract。
 
 - Gate E: scaling
@@ -557,6 +557,11 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - reads `EPCData`, `EPCPathData`, or `EPCMeshData`;
   - emits JSON-friendly total, q-resolved, mode-resolved, band-resolved, and metadata summary fields;
   - supports weighted and unweighted mesh behavior.
+- Implemented `compute_scattering_maps(...)` and `dptb eph --task scattering-map`:
+  - reads `EPCData`, `EPCPathData`, or `EPCMeshData`;
+  - emits JSON-friendly q/k/mode/band-resolved coupling-strength proxy maps;
+  - supports weighted and unweighted mesh behavior;
+  - does not claim to compute energy-conserving linewidths or full scattering rates.
 - Implemented `compute_phonon_dos(...)` and `dptb eph --task phonon-dos`:
   - reads external `Phonons`;
   - uses explicit frequency grid, sigma, and broadening;
@@ -706,7 +711,7 @@ For the next implementation wave, the correct preparation is interface-level:
    - serial k/q chunk executor boundary。
    - Hamiltonian-derivative velocity。
    - SI mobility and mobility scan。
-   - coupling-summary / phonon-DOS / Eliashberg-like diagnostic analysis。
+   - coupling-summary / scattering-map / phonon-DOS / Eliashberg-like diagnostic analysis。
 2. Release hardening:
    - lightweight default EPC fixture。
    - public export smoke tests。
@@ -718,7 +723,7 @@ For the next implementation wave, the correct preparation is interface-level:
    - reference strategy。
    - tests required before enabling `use_scc=True`。
 4. Implement chunked summary/artifact design for large mesh workflows.
-5. Add q/band-resolved scattering maps and optional plot helpers from existing NPZ objects.
+5. Add optional plot helpers from existing NPZ objects.
 6. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.
 7. Add optional `mpi4py` executor only after multiprocessing/serial reducer semantics are stable and default tests remain MPI-free.
 8. Add torch CUDA backend only after serial and CPU/MPI executor semantics are fixed and profiling shows per-chunk kernels dominate.
