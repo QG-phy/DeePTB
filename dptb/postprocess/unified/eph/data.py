@@ -9,7 +9,6 @@ from dptb.kpoints.mesh import kmesh_sampling, time_symmetry_reduce
 from dptb.postprocess.unified.eph.utils import (
     as_array,
     normalize_integer_indices,
-    validate_finite_positive_scalar,
     normalize_kpoints,
     reshape_phonopy_eigenvectors,
 )
@@ -306,9 +305,9 @@ class EPCMeshSpec:
         if self.qpoint_weights is not None:
             self.qpoint_weights = _normalize_weights(self.qpoint_weights, "qpoint_weights")
         if self.chunk_size is not None:
-            self.chunk_size = int(validate_finite_positive_scalar(self.chunk_size, "chunk_size"))
+            self.chunk_size = _normalize_chunk_size(self.chunk_size, "chunk_size")
         if self.q_chunk_size is not None:
-            self.q_chunk_size = int(validate_finite_positive_scalar(self.q_chunk_size, "q_chunk_size"))
+            self.q_chunk_size = _normalize_chunk_size(self.q_chunk_size, "q_chunk_size")
 
     def resolve_kpoints_and_weights(self) -> tuple:
         if self.kpoints is not None:
@@ -721,6 +720,15 @@ def _normalize_weights(weights: np.ndarray, name: str) -> np.ndarray:
     if total <= 0.0:
         raise ValueError(f"{name} must have a positive sum.")
     return weights / total
+
+
+def _normalize_chunk_size(chunk_size, name: str) -> int:
+    if isinstance(chunk_size, (bool, np.bool_)) or not isinstance(chunk_size, (int, np.integer)):
+        raise ValueError(f"{name} must be a positive integer.")
+    chunk_size = int(chunk_size)
+    if chunk_size <= 0:
+        raise ValueError(f"{name} must be a positive integer.")
+    return chunk_size
 
 
 def _json_default(value):

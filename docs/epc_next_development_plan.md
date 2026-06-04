@@ -43,8 +43,8 @@
   - current public API export smoke coverage exists for the new EPC data objects/helpers, but any new public symbol added after this point must extend that smoke test immediately。
   - docs index now links the v1 workflow and SCC design docs; CLI task examples and chunk-executor public symbol docs now have drift checks, while remaining CLI examples still need a final parser/API drift pass before merge。
   - unit metadata, mobility scan unit metadata, temperature convention, and reciprocal-cell convention now have focused regression coverage; keep a final physical-convention review before release。
-  - artifact metadata validation now covers weights metadata JSON, weights shape/finite/non-negative/positive-sum checks, fixed-vs-recomputed linewidth scan convention guards, missing required array diagnostics for core EPC NPZ loaders, CLI array-loader missing-field diagnostics, and summary-loader metadata/schema rejection; continue strict NPZ loader audit for remaining edge cases。
-  - full repo test pass has been completed for the current missing-required-array, CLI array-loader, summary-loader, chunk-executor docs/export drift, minimal-fixture analysis, and SCC task-gate hardening slices; rerun before final merge after any further EPC changes。
+  - artifact metadata validation now covers weights metadata JSON, weights shape/finite/non-negative/positive-sum checks, fixed-vs-recomputed linewidth scan convention guards, missing required array diagnostics for core EPC NPZ loaders, CLI array-loader missing-field diagnostics, summary-loader metadata/schema rejection, and strict `EPCMeshSpec` chunk-size type validation; continue strict NPZ loader audit for remaining edge cases。
+  - full repo test pass has been completed for the current missing-required-array, CLI array-loader, summary-loader, chunk-executor docs/export drift, minimal-fixture analysis, SCC task-gate, and mesh-spec chunk-validation hardening slices; rerun before final merge after any further EPC changes。
 - Still design-only:
   - SCC EPC implementation; the design document now lives in `docs/epc_scc_design.md`。
   - multiprocessing/MPI executors。

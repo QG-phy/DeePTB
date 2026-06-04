@@ -1076,6 +1076,24 @@ def test_epc_mesh_spec_generates_kmesh_and_validates_phonon_qmesh():
         EPCMeshSpec(k_mesh=[1, 1, 1], q_chunk_size=0)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("chunk_size", 0),
+        ("chunk_size", True),
+        ("chunk_size", 1.5),
+        ("chunk_size", "2"),
+        ("q_chunk_size", 0),
+        ("q_chunk_size", True),
+        ("q_chunk_size", 1.5),
+        ("q_chunk_size", "2"),
+    ],
+)
+def test_epc_mesh_spec_rejects_invalid_chunk_sizes(field, value):
+    with pytest.raises(ValueError, match=field):
+        EPCMeshSpec(k_mesh=[1, 1, 1], **{field: value})
+
+
 def test_epc_mesh_data_npz_roundtrip(tmp_path):
     epc_data = EPCData(
         kpoints=np.array([[0.0, 0.0, 0.0], [-0.5, 0.0, 0.0]]),
