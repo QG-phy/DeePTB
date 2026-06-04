@@ -71,6 +71,7 @@ from dptb.postprocess.unified.eph import (
     compute_serta_mobility_si,
     compute_serta_mobility_scan_si,
     compute_linewidth,
+    compute_linewidth_mesh_chunked_artifact,
     compute_linewidth_mesh,
     compute_linewidth_path,
     compute_phonon_dos,
@@ -166,6 +167,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.save_epc_mesh_chunked_artifact is save_epc_mesh_chunked_artifact
     assert unified_postprocess.compute_coupling_matrix is compute_coupling_matrix
     assert unified_postprocess.compute_linewidth is compute_linewidth
+    assert unified_postprocess.compute_linewidth_mesh_chunked_artifact is compute_linewidth_mesh_chunked_artifact
     assert unified_postprocess.compute_linewidth_mesh is compute_linewidth_mesh
     assert unified_postprocess.compute_linewidth_path is compute_linewidth_path
     assert unified_postprocess.compute_phonon_dos is compute_phonon_dos
@@ -1107,6 +1109,49 @@ def test_epc_mesh_chunked_artifact_rejects_bad_manifest_order(tmp_path):
 
     with pytest.raises(ValueError, match="chunk_index"):
         load_epc_mesh_chunked_artifact(artifact_dir)
+
+
+@pytest.mark.parametrize("axis", ["q", "k"])
+@pytest.mark.parametrize("mode_resolved", [False, True])
+def test_compute_linewidth_mesh_chunked_artifact_matches_full_mesh(axis, mode_resolved, tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / f"{axis}_artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis=axis, chunk_size=1)
+
+    expected = compute_linewidth_mesh(
+        mesh_data,
+        chemical_potential=0.2,
+        temperature=0.03,
+        sigma=0.05,
+        mode_resolved=mode_resolved,
+    )
+    actual = compute_linewidth_mesh_chunked_artifact(
+        artifact_dir,
+        chemical_potential=0.2,
+        temperature=0.03,
+        sigma=0.05,
+        mode_resolved=mode_resolved,
+    )
+
+    np.testing.assert_allclose(actual.linewidth, expected.linewidth)
+    np.testing.assert_allclose(actual.absorption, expected.absorption)
+    np.testing.assert_allclose(actual.emission, expected.emission)
+    np.testing.assert_allclose(actual.kpoints, expected.kpoints)
+    np.testing.assert_allclose(actual.kpoint_weights, expected.kpoint_weights)
+    np.testing.assert_array_equal(actual.band_indices, expected.band_indices)
+    assert actual.metadata["summary_first"] is True
+    assert actual.metadata["artifact_axis"] == axis
+    assert actual.metadata["artifact_chunk_count"] == (2 if axis == "q" else 3)
+
+
+def test_compute_linewidth_mesh_chunked_artifact_rejects_missing_manifest(tmp_path):
+    with pytest.raises(ValueError, match="manifest"):
+        compute_linewidth_mesh_chunked_artifact(
+            tmp_path / "missing",
+            chemical_potential=0.0,
+            temperature=0.01,
+            sigma=0.01,
+        )
 
 
 def test_compute_coupling_strength_summary_from_epc_data():

@@ -28,8 +28,9 @@ include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 benchmark-only `DFTBPlusGauge` adapter. Mesh chunked artifact helpers
 `save_epc_mesh_chunked_artifact(...)` and
 `load_epc_mesh_chunked_artifact(...)` are exported for large-output storage
-experiments. EPC unit constants are centralized in `dptb.utils.constants` and
-re-exported from the EPC namespace.
+experiments. `compute_linewidth_mesh_chunked_artifact(...)` computes mesh
+linewidth from those artifacts one chunk at a time. EPC unit constants are
+centralized in `dptb.utils.constants` and re-exported from the EPC namespace.
 
 ### Phonons NPZ
 
@@ -128,6 +129,12 @@ Loading validates the manifest, reduces chunk NPZ files with deterministic k/q
 reducers, and returns an `EPCMeshData`. This is a storage/reducer contract for
 large mesh workflows. It is not a parallel executor, does not require `mpi4py`,
 and does not change the public `EPCMeshData` NPZ schema.
+
+`compute_linewidth_mesh_chunked_artifact(directory, ...)` reads the same
+artifact and computes `LinewidthMeshData` without materializing the full
+`EPCMeshData`. For q-axis artifacts it accumulates q contributions using the
+global q weights; for k-axis artifacts it computes each k chunk and
+concatenates the reduced linewidth arrays.
 
 ### Postprocess NPZ
 
