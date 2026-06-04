@@ -26,6 +26,7 @@ from dptb.entrypoints.eph import (
 from dptb.entrypoints.main import main_parser, parse_args
 from dptb.postprocess.unified.eph import (
     EPCData,
+    EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION,
     EPCMeshData,
     EPCMeshSpec,
     EPCPathData,
@@ -86,6 +87,8 @@ from dptb.postprocess.unified.eph import (
     concat_epc_q_chunks,
     cumulative_path_coordinates,
     find_degenerate_band_groups,
+    load_epc_mesh_chunked_artifact,
+    save_epc_mesh_chunked_artifact,
 )
 from dptb.postprocess.unified.eph.contraction import EPC_PREFAC_AMU_THZ, compute_coupling_matrix
 from dptb.postprocess.unified.eph.utils import (
@@ -137,6 +140,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.EPCData is EPCData
     assert unified_postprocess.EPCMeshData is EPCMeshData
     assert unified_postprocess.EPCMeshSpec is EPCMeshSpec
+    assert unified_postprocess.EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION == EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION
     assert unified_postprocess.EPC_MESH_NPZ_SCHEMA_VERSION == EPC_MESH_NPZ_SCHEMA_VERSION
     assert unified_postprocess.EPCPathData is EPCPathData
     assert unified_postprocess.LinewidthData is LinewidthData
@@ -158,6 +162,8 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.build_q_chunk_specs is build_q_chunk_specs
     assert unified_postprocess.concat_epc_k_chunks is concat_epc_k_chunks
     assert unified_postprocess.concat_epc_q_chunks is concat_epc_q_chunks
+    assert unified_postprocess.load_epc_mesh_chunked_artifact is load_epc_mesh_chunked_artifact
+    assert unified_postprocess.save_epc_mesh_chunked_artifact is save_epc_mesh_chunked_artifact
     assert unified_postprocess.compute_coupling_matrix is compute_coupling_matrix
     assert unified_postprocess.compute_linewidth is compute_linewidth
     assert unified_postprocess.compute_linewidth_mesh is compute_linewidth_mesh
@@ -1030,6 +1036,77 @@ def test_epc_mesh_data_npz_roundtrip(tmp_path):
         assert "el_kpoint_weights" in data
         assert "ph_qpoint_weights" in data
         assert "metadata_json" in data
+
+
+def _chunk_artifact_mesh_data():
+    strength = np.arange(1, 1 + 2 * 3 * 2 * 2 * 2, dtype=float).reshape(2, 3, 2, 2, 2)
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        band_indices=np.array([0, 1]),
+        frequencies=np.array([[1.0, 2.0], [3.0, 4.0]]),
+        eigenvalues_k=np.array([[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]]),
+        eigenvalues_kq=np.ones((2, 3, 2)),
+        coupling_matrix=np.sqrt(strength).astype(complex),
+        coupling_strength=strength,
+        metadata={"source": "chunk-artifact-test"},
+    )
+    return EPCMeshData.from_epc_data(
+        epc_data,
+        kpoint_weights=np.array([1.0, 2.0, 3.0]),
+        qpoint_weights=np.array([3.0, 1.0]),
+        metadata={"mesh_spec": {"k_mesh": [3, 1, 1], "q_mesh": [2, 1, 1]}},
+    )
+
+
+@pytest.mark.parametrize(("axis", "chunk_size", "expected_chunks"), [("k", 2, 2), ("q", 1, 2)])
+def test_epc_mesh_chunked_artifact_roundtrip(axis, chunk_size, expected_chunks, tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / f"{axis}_artifact"
+
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis=axis, chunk_size=chunk_size)
+    loaded = load_epc_mesh_chunked_artifact(artifact_dir)
+    manifest = json.loads((artifact_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert manifest["schema"] == "deeptb.epc_mesh_chunked_artifact"
+    assert manifest["schema_version"] == EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION
+    assert manifest["axis"] == axis
+    assert manifest["chunk_count"] == expected_chunks
+    assert (artifact_dir / "weights.npz").exists()
+    np.testing.assert_allclose(loaded.kpoints, mesh_data.kpoints)
+    np.testing.assert_allclose(loaded.qpoints, mesh_data.qpoints)
+    np.testing.assert_allclose(loaded.kpoint_weights, mesh_data.kpoint_weights)
+    np.testing.assert_allclose(loaded.qpoint_weights, mesh_data.qpoint_weights)
+    np.testing.assert_allclose(loaded.eigenvalues_k, mesh_data.eigenvalues_k)
+    np.testing.assert_allclose(loaded.eigenvalues_kq, mesh_data.eigenvalues_kq)
+    np.testing.assert_allclose(loaded.coupling_matrix, mesh_data.coupling_matrix)
+    np.testing.assert_allclose(loaded.coupling_strength, mesh_data.coupling_strength)
+    assert loaded.metadata["chunked_artifact"] is True
+    assert loaded.metadata["artifact_axis"] == axis
+    assert loaded.metadata["artifact_chunk_count"] == expected_chunks
+
+
+def test_epc_mesh_chunked_artifact_rejects_invalid_inputs(tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    with pytest.raises(ValueError, match="axis"):
+        save_epc_mesh_chunked_artifact(mesh_data, tmp_path / "bad_axis", axis="mode", chunk_size=1)
+    with pytest.raises(ValueError, match="chunk_size"):
+        save_epc_mesh_chunked_artifact(mesh_data, tmp_path / "bad_chunk", axis="q", chunk_size=0)
+    with pytest.raises(ValueError, match="manifest"):
+        load_epc_mesh_chunked_artifact(tmp_path / "missing")
+
+
+def test_epc_mesh_chunked_artifact_rejects_bad_manifest_order(tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="q", chunk_size=1)
+    manifest_path = artifact_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["chunks"] = list(reversed(manifest["chunks"]))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="chunk_index"):
+        load_epc_mesh_chunked_artifact(artifact_dir)
 
 
 def test_compute_coupling_strength_summary_from_epc_data():

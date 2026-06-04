@@ -25,8 +25,11 @@ include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `compute_eliashberg_spectral_function`, `compute_scattering_maps`,
 `find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
 `compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
-benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
-`dptb.utils.constants` and re-exported from the EPC namespace.
+benchmark-only `DFTBPlusGauge` adapter. Mesh chunked artifact helpers
+`save_epc_mesh_chunked_artifact(...)` and
+`load_epc_mesh_chunked_artifact(...)` are exported for large-output storage
+experiments. EPC unit constants are centralized in `dptb.utils.constants` and
+re-exported from the EPC namespace.
 
 ### Phonons NPZ
 
@@ -108,6 +111,23 @@ Use `EPCMeshData.save_npz()` / `EPCMeshData.load_npz()`.
 mesh helpers, or accept explicit k-points. The phonon side remains external:
 `q_mesh` is only used to validate that the supplied `Phonons.qpoints` match the
 expected mesh. DeePTB does not generate phonons for mesh workflows.
+
+### EPCMeshData Chunked Artifact
+
+Use `save_epc_mesh_chunked_artifact(mesh_data, directory, axis=..., chunk_size=...)`
+and `load_epc_mesh_chunked_artifact(directory)`.
+
+The artifact is a directory with:
+
+- `manifest.json`: schema/version, chunk axis, chunk specs, reducer, and mesh
+  metadata.
+- `weights.npz`: global normalized k/q weights.
+- one `EPCData` NPZ per q or k chunk.
+
+Loading validates the manifest, reduces chunk NPZ files with deterministic k/q
+reducers, and returns an `EPCMeshData`. This is a storage/reducer contract for
+large mesh workflows. It is not a parallel executor, does not require `mpi4py`,
+and does not change the public `EPCMeshData` NPZ schema.
 
 ### Postprocess NPZ
 

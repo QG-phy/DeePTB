@@ -1,9 +1,14 @@
+import json
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from pathlib import Path
+from typing import Optional, Sequence, Union
 
 import numpy as np
 
-from dptb.postprocess.unified.eph.data import EPCData
+from dptb.postprocess.unified.eph.data import EPCData, EPCMeshData, _metadata_to_json
+
+
+EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -176,3 +181,201 @@ def concat_epc_q_chunks(chunks: Sequence[EPCData]) -> EPCData:
             "chunk_sources": [chunk.metadata for chunk in chunks],
         },
     )
+
+
+def save_epc_mesh_chunked_artifact(
+    mesh_data: EPCMeshData,
+    directory: Union[str, Path],
+    axis: str,
+    chunk_size: int,
+) -> None:
+    """Save an ``EPCMeshData`` object as deterministic chunked NPZ artifacts.
+
+    This is a storage/reducer boundary for large mesh workflows. It does not
+    introduce parallel execution and does not change the public EPC NPZ schema.
+    """
+    if not isinstance(mesh_data, EPCMeshData):
+        raise ValueError("mesh_data must be an EPCMeshData object.")
+    axis = _normalize_chunk_axis(axis)
+    chunk_size = _validate_chunk_size(chunk_size)
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    if axis == "k":
+        specs = build_k_chunk_specs(mesh_data.kpoints.shape[0], chunk_size)
+    else:
+        specs = build_q_chunk_specs(mesh_data.qpoints.shape[0], chunk_size)
+
+    chunks = []
+    for spec in specs:
+        chunk_data = _slice_mesh_epc_data(mesh_data, axis, spec.slice, spec.metadata())
+        filename = f"{axis}_chunk_{spec.chunk_index:06d}.npz"
+        chunk_data.save_npz(directory / filename)
+        chunks.append(
+            {
+                "filename": filename,
+                "axis": axis,
+                "spec": spec.metadata(),
+            }
+        )
+
+    np.savez_compressed(
+        directory / "weights.npz",
+        el_kpoint_weights=mesh_data.kpoint_weights,
+        ph_qpoint_weights=mesh_data.qpoint_weights,
+        metadata_json=np.array(
+            json.dumps(
+                {
+                    "schema": "deeptb.epc_mesh_chunked_artifact.weights",
+                    "schema_version": EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION,
+                },
+                sort_keys=True,
+            )
+        ),
+    )
+    manifest = {
+        "schema": "deeptb.epc_mesh_chunked_artifact",
+        "schema_version": EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION,
+        "axis": axis,
+        "chunk_size": chunk_size,
+        "chunk_count": len(chunks),
+        "chunks": chunks,
+        "weights_filename": "weights.npz",
+        "mesh_metadata": mesh_data.metadata,
+        "reducer": f"concat_epc_{axis}_chunks",
+    }
+    (directory / "manifest.json").write_text(
+        json.dumps(json.loads(_metadata_to_json(manifest)), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
+def load_epc_mesh_chunked_artifact(directory: Union[str, Path]) -> EPCMeshData:
+    """Load a chunked EPC mesh artifact and reduce it to ``EPCMeshData``."""
+    directory = Path(directory)
+    manifest_path = directory / "manifest.json"
+    if not manifest_path.exists():
+        raise ValueError("manifest.json is required for EPC mesh chunked artifact.")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        raise ValueError("manifest.json must be valid JSON.") from None
+    if not isinstance(manifest, dict):
+        raise ValueError("manifest.json must contain a JSON object.")
+    if manifest.get("schema") != "deeptb.epc_mesh_chunked_artifact":
+        raise ValueError("manifest.json must describe a DeePTB EPC mesh chunked artifact.")
+    if manifest.get("schema_version") != EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION:
+        raise ValueError("Unsupported EPC mesh chunked artifact schema_version.")
+    axis = _normalize_chunk_axis(manifest.get("axis"))
+    chunk_entries = manifest.get("chunks")
+    if not isinstance(chunk_entries, list) or len(chunk_entries) == 0:
+        raise ValueError("EPC mesh chunked artifact must contain at least one chunk.")
+
+    chunks = []
+    expected_indices = []
+    for entry in chunk_entries:
+        if not isinstance(entry, dict):
+            raise ValueError("Each chunk manifest entry must be a JSON object.")
+        if entry.get("axis") != axis:
+            raise ValueError("Chunk manifest axis must match artifact axis.")
+        filename = entry.get("filename")
+        if not isinstance(filename, str) or not filename:
+            raise ValueError("Chunk manifest entry requires a filename.")
+        spec = entry.get("spec")
+        if not isinstance(spec, dict):
+            raise ValueError("Chunk manifest entry requires a spec object.")
+        expected_indices.append(_chunk_index_from_spec(axis, spec))
+        chunks.append(EPCData.load_npz(directory / filename))
+    if expected_indices != list(range(len(expected_indices))):
+        raise ValueError("Chunk manifest entries must be ordered by contiguous chunk_index.")
+
+    weights_filename = manifest.get("weights_filename", "weights.npz")
+    with np.load(directory / weights_filename, allow_pickle=False) as weights_payload:
+        kpoint_weights = weights_payload["el_kpoint_weights"]
+        qpoint_weights = weights_payload["ph_qpoint_weights"]
+
+    epc_data = concat_epc_k_chunks(chunks) if axis == "k" else concat_epc_q_chunks(chunks)
+    metadata = dict(manifest.get("mesh_metadata") or {})
+    metadata.update(
+        {
+            "source": "deeptb.eph.epc_mesh_chunked_artifact",
+            "chunked_artifact": True,
+            "artifact_axis": axis,
+            "artifact_chunk_count": len(chunks),
+            "artifact_reducer": manifest.get("reducer"),
+        }
+    )
+    return EPCMeshData.from_epc_data(
+        epc_data,
+        kpoint_weights=kpoint_weights,
+        qpoint_weights=qpoint_weights,
+        metadata=metadata,
+    )
+
+
+def _slice_mesh_epc_data(mesh_data: EPCMeshData, axis: str, chunk_slice: slice, chunk_metadata: dict) -> EPCData:
+    if axis == "k":
+        return EPCData(
+            kpoints=mesh_data.kpoints[chunk_slice],
+            qpoints=mesh_data.qpoints,
+            band_indices=mesh_data.band_indices,
+            frequencies=mesh_data.frequencies,
+            eigenvalues_k=mesh_data.eigenvalues_k[chunk_slice],
+            eigenvalues_kq=mesh_data.eigenvalues_kq[:, chunk_slice, :],
+            coupling_matrix=mesh_data.coupling_matrix[:, chunk_slice, :, :, :],
+            coupling_strength=mesh_data.coupling_strength[:, chunk_slice, :, :, :],
+            metadata=_chunk_metadata(mesh_data, axis, chunk_metadata),
+        )
+    return EPCData(
+        kpoints=mesh_data.kpoints,
+        qpoints=mesh_data.qpoints[chunk_slice],
+        band_indices=mesh_data.band_indices,
+        frequencies=mesh_data.frequencies[chunk_slice],
+        eigenvalues_k=mesh_data.eigenvalues_k,
+        eigenvalues_kq=mesh_data.eigenvalues_kq[chunk_slice, :, :],
+        coupling_matrix=mesh_data.coupling_matrix[chunk_slice, :, :, :, :],
+        coupling_strength=mesh_data.coupling_strength[chunk_slice, :, :, :, :],
+        metadata=_chunk_metadata(mesh_data, axis, chunk_metadata),
+    )
+
+
+def _chunk_metadata(mesh_data: EPCMeshData, axis: str, chunk_metadata: dict) -> dict:
+    return {
+        "source": "deeptb.eph.epc_mesh_chunked_artifact.chunk",
+        "frequency_unit": mesh_data.metadata.get("frequency_unit", "THz"),
+        "energy_unit": mesh_data.metadata.get("energy_unit", "eV"),
+        "coupling_unit": mesh_data.metadata.get("coupling_unit", "eV"),
+        "coupling_strength_unit": mesh_data.metadata.get("coupling_strength_unit", "eV^2"),
+        "artifact_axis": axis,
+        "artifact_chunk": chunk_metadata,
+        "base_mesh_schema": mesh_data.metadata.get("schema"),
+    }
+
+
+def _normalize_chunk_axis(axis: str) -> str:
+    if not isinstance(axis, str):
+        raise ValueError("axis must be 'k' or 'q'.")
+    axis = axis.lower()
+    if axis not in {"k", "q"}:
+        raise ValueError("axis must be 'k' or 'q'.")
+    return axis
+
+
+def _validate_chunk_size(chunk_size: int) -> int:
+    if isinstance(chunk_size, bool) or not isinstance(chunk_size, (int, np.integer)) or chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer.")
+    return int(chunk_size)
+
+
+def _chunk_index_from_spec(axis: str, spec: dict) -> int:
+    try:
+        chunk_index = spec["chunk_index"]
+    except KeyError:
+        raise ValueError("Chunk spec requires chunk_index.") from None
+    if isinstance(chunk_index, bool) or not isinstance(chunk_index, int) or chunk_index < 0:
+        raise ValueError("Chunk spec chunk_index must be a non-negative integer.")
+    if axis == "k":
+        EPCKChunkSpec(chunk_index=chunk_index, k_start=spec.get("k_start"), k_stop=spec.get("k_stop"))
+    else:
+        EPCQChunkSpec(chunk_index=chunk_index, q_start=spec.get("q_start"), q_stop=spec.get("q_stop"))
+    return chunk_index

@@ -624,6 +624,18 @@ Phase 1, next practical scaling step:
 - Support summary-first workflows that compute linewidth/transport accumulators without persisting the full `nq * nk * nmodes * nbands^2` coupling matrix when the user does not need it.
 - Add direct tests proving chunked artifact load/reduce gives the same result as in-memory small cases.
 
+Current Phase 1 status:
+
+- Implemented first Python storage/reducer contract:
+  - `save_epc_mesh_chunked_artifact(...)` writes an existing `EPCMeshData` into a directory artifact.
+  - `load_epc_mesh_chunked_artifact(...)` validates the manifest and reduces q/k chunks back to `EPCMeshData`.
+  - chunks are stored as pickle-free `EPCData` NPZ files plus global k/q weights.
+  - artifact reducers reuse the existing deterministic `concat_epc_k_chunks(...)` / `concat_epc_q_chunks(...)` helpers.
+- Current limitation:
+  - this is not yet a streaming compute path; it chunks an already materialized `EPCMeshData`.
+  - summary-first linewidth/transport accumulators remain the next Phase 1 implementation step.
+  - no multiprocessing, MPI, or CUDA runtime has been added.
+
 Phase 2, CPU parallel execution:
 
 - Add a multiprocessing executor first if it can reuse `dptb.utils.multiprocessing.num_tasks()` and avoid new required dependencies.
@@ -722,7 +734,9 @@ For the next implementation wave, the correct preparation is interface-level:
    - provider boundary。
    - reference strategy。
    - tests required before enabling `use_scc=True`。
-4. Implement chunked summary/artifact design for large mesh workflows.
+4. Continue Phase 1 scaling:
+   - harden the first chunked artifact contract.
+   - implement summary-first linewidth/transport accumulators for large mesh workflows.
 5. Add optional plot helpers from existing NPZ objects.
 6. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.
 7. Add optional `mpi4py` executor only after multiprocessing/serial reducer semantics are stable and default tests remain MPI-free.

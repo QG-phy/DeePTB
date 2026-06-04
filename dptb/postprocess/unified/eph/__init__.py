@@ -57,12 +57,15 @@ from dptb.postprocess.unified.eph.data import (
     cumulative_path_coordinates,
 )
 from dptb.postprocess.unified.eph.executor import (
+    EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION,
     EPCKChunkSpec,
     EPCQChunkSpec,
     build_k_chunk_specs,
     build_q_chunk_specs,
     concat_epc_k_chunks,
     concat_epc_q_chunks,
+    load_epc_mesh_chunked_artifact,
+    save_epc_mesh_chunked_artifact,
 )
 from dptb.postprocess.unified.eph.providers import FDProvider, SupercellFD
 
@@ -76,6 +79,7 @@ __all__ = [
     "FDProvider",
     "EPC_PREFAC_AMU_THZ",
     "EPC_MESH_NPZ_SCHEMA_VERSION",
+    "EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION",
     "EPC_NPZ_SCHEMA_VERSION",
     "EPC_PATH_NPZ_SCHEMA_VERSION",
     "EPCKChunkSpec",
@@ -113,6 +117,8 @@ __all__ = [
     "compute_coupling_matrix",
     "concat_epc_k_chunks",
     "concat_epc_q_chunks",
+    "load_epc_mesh_chunked_artifact",
+    "save_epc_mesh_chunked_artifact",
     "cumulative_path_coordinates",
     "compute_linewidth",
     "compute_linewidth_mesh",
