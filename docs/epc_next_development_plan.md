@@ -38,13 +38,13 @@
   - explicit per-scan-point linewidth recomputation helpers for chunked-artifact transport and SI mobility scans, with CLI exposure through `--linewidth-scan-convention recompute`。
   - first serial streaming mesh artifact producer through `TBSystem.eph.compute_mesh_chunked_artifact(...)`。
 - Still needs hardening before merge/release:
-  - a minimal in-repo synthetic EPC fixture now covers default linewidth reference testing; broader coupling/FD fixtures still need release hardening。
+  - a minimal in-repo synthetic EPC fixture now covers default linewidth, coupling-contraction, coupling-summary, and scattering-map reference testing; broader FD fixtures still need release hardening。
   - opt-in full Graphene reference kept outside git for development and benchmark。
   - current public API export smoke coverage exists for the new EPC data objects/helpers, but any new public symbol added after this point must extend that smoke test immediately。
   - docs index now links the v1 workflow and SCC design docs; CLI task examples and chunk-executor public symbol docs now have drift checks, while remaining CLI examples still need a final parser/API drift pass before merge。
   - unit metadata, mobility scan unit metadata, temperature convention, and reciprocal-cell convention now have focused regression coverage; keep a final physical-convention review before release。
   - artifact metadata validation now covers weights metadata JSON, weights shape/finite/non-negative/positive-sum checks, fixed-vs-recomputed linewidth scan convention guards, missing required array diagnostics for core EPC NPZ loaders, CLI array-loader missing-field diagnostics, and summary-loader metadata/schema rejection; continue strict NPZ loader audit for remaining edge cases。
-  - full repo test pass has been completed for the current missing-required-array, CLI array-loader, summary-loader, and chunk-executor docs/export drift hardening slices; rerun before final merge after any further EPC changes。
+  - full repo test pass has been completed for the current missing-required-array, CLI array-loader, summary-loader, chunk-executor docs/export drift, and minimal-fixture analysis hardening slices; rerun before final merge after any further EPC changes。
 - Still design-only:
   - SCC EPC implementation; the design document now lives in `docs/epc_scc_design.md`。
   - multiprocessing/MPI executors。
@@ -226,7 +226,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 ### Tasks
 
 - 设计轻量 in-repo EPC fixture，替代或补充外部 Graphene reference 在默认 CI 中的角色。
-- 当前已新增最小 synthetic EPC fixture，用于默认 linewidth reference regression。
+- 当前已新增最小 synthetic EPC fixture，用于默认 linewidth、coupling-contraction、coupling-summary 和 scattering-map reference regression。
 - 保留完整 Graphene reference 作为 opt-in benchmark，不进入 git 追踪。
 - 梳理 `docs/epc_v1_workflow.md`，确保所有 CLI 示例和 NPZ schema 与当前实现一致。
 - 当前 public API import smoke tests 已覆盖主要 EPC data objects、analysis helpers、transport/mobility helpers、velocity helper 和 chunked artifact helpers；新增 public API 时必须同步更新。

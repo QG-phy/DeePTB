@@ -128,6 +128,28 @@ def _external_skdata_root() -> Path:
     return Path(os.environ.get("DEEPTB_EPH_SKDATA_ROOT", DEFAULT_EPH_SKDATA_ROOT))
 
 
+def _minimal_fixture_epc_data() -> EPCData:
+    with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
+        fixture = json.load(handle)
+
+    epc_payload = fixture["epc_data"]
+    coupling_matrix = np.asarray(epc_payload["coupling_matrix_real"], dtype=float) + 1j * np.asarray(
+        epc_payload["coupling_matrix_imag"],
+        dtype=float,
+    )
+    return EPCData(
+        kpoints=np.asarray(epc_payload["kpoints"], dtype=float),
+        qpoints=np.asarray(epc_payload["qpoints"], dtype=float),
+        band_indices=np.asarray(epc_payload["band_indices"], dtype=int),
+        frequencies=np.asarray(epc_payload["frequencies"], dtype=float),
+        eigenvalues_k=np.asarray(epc_payload["eigenvalues_k"], dtype=float),
+        eigenvalues_kq=np.asarray(epc_payload["eigenvalues_kq"], dtype=float),
+        coupling_matrix=coupling_matrix,
+        coupling_strength=np.asarray(epc_payload["coupling_strength"], dtype=float),
+        metadata={"source": "minimal_in_repo_fixture"},
+    )
+
+
 def test_epc_prefactor_from_standard_constants():
     expected = (
         scipy_constants.hbar
@@ -245,22 +267,7 @@ def test_minimal_in_repo_epc_fixture_matches_linewidth_reference():
     with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
         fixture = json.load(handle)
 
-    epc_payload = fixture["epc_data"]
-    coupling_matrix = np.asarray(epc_payload["coupling_matrix_real"], dtype=float) + 1j * np.asarray(
-        epc_payload["coupling_matrix_imag"],
-        dtype=float,
-    )
-    epc_data = EPCData(
-        kpoints=np.asarray(epc_payload["kpoints"], dtype=float),
-        qpoints=np.asarray(epc_payload["qpoints"], dtype=float),
-        band_indices=np.asarray(epc_payload["band_indices"], dtype=int),
-        frequencies=np.asarray(epc_payload["frequencies"], dtype=float),
-        eigenvalues_k=np.asarray(epc_payload["eigenvalues_k"], dtype=float),
-        eigenvalues_kq=np.asarray(epc_payload["eigenvalues_kq"], dtype=float),
-        coupling_matrix=coupling_matrix,
-        coupling_strength=np.asarray(epc_payload["coupling_strength"], dtype=float),
-        metadata={"source": "minimal_in_repo_fixture"},
-    )
+    epc_data = _minimal_fixture_epc_data()
     params = fixture["linewidth_parameters"]
     linewidth = compute_linewidth(
         epc_data,
@@ -274,6 +281,32 @@ def test_minimal_in_repo_epc_fixture_matches_linewidth_reference():
     np.testing.assert_allclose(linewidth.linewidth, np.asarray(expected["linewidth"]), rtol=1e-14, atol=1e-14)
     np.testing.assert_allclose(linewidth.absorption, np.asarray(expected["absorption"]), rtol=1e-14, atol=1e-14)
     np.testing.assert_allclose(linewidth.emission, np.asarray(expected["emission"]), rtol=1e-14, atol=1e-14)
+
+
+def test_minimal_in_repo_epc_fixture_matches_analysis_references():
+    epc_data = _minimal_fixture_epc_data()
+
+    summary = compute_coupling_strength_summary(epc_data)
+    np.testing.assert_allclose(summary["total"], 0.30, rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(summary["q_resolved"], np.array([0.30]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(summary["k_resolved"], np.array([0.30]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(summary["mode_resolved"], np.array([0.30]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(summary["final_band_resolved"], np.array([0.05, 0.25]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(summary["initial_band_resolved"], np.array([0.10, 0.20]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(
+        summary["band_pair_resolved"],
+        np.array([[0.01, 0.04], [0.09, 0.16]]),
+        rtol=1e-14,
+        atol=1e-14,
+    )
+    assert summary["metadata"]["source"] == "EPCData.coupling_strength"
+    assert summary["metadata"]["input_schema"] == "deeptb.epc_data"
+
+    maps = compute_scattering_maps(epc_data)
+    np.testing.assert_allclose(maps["q_mode_resolved"], np.array([[0.30]]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(maps["q_initial_band_resolved"], np.array([[0.10, 0.20]]), rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(maps["q_final_band_resolved"], np.array([[0.05, 0.25]]), rtol=1e-14, atol=1e-14)
+    assert maps["metadata"]["convention"] == "coupling_strength_scattering_proxy"
 
 
 def test_minimal_in_repo_epc_fixture_matches_coupling_contraction_reference():
