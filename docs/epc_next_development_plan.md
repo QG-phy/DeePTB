@@ -44,7 +44,7 @@
   - docs index now links the v1 workflow and SCC design docs; CLI task examples and chunk-executor public symbol docs now have drift checks, while remaining CLI examples still need a final parser/API drift pass before merge。
   - unit metadata, mobility scan unit metadata, temperature convention, and reciprocal-cell convention now have focused regression coverage; keep a final physical-convention review before release。
   - artifact metadata validation now covers weights metadata JSON, weights shape/finite/non-negative/positive-sum checks, fixed-vs-recomputed linewidth scan convention guards, missing required array diagnostics for core EPC NPZ loaders, CLI array-loader missing-field diagnostics, and summary-loader metadata/schema rejection; continue strict NPZ loader audit for remaining edge cases。
-  - full repo test pass has been completed for the current missing-required-array, CLI array-loader, summary-loader, chunk-executor docs/export drift, and minimal-fixture analysis hardening slices; rerun before final merge after any further EPC changes。
+  - full repo test pass has been completed for the current missing-required-array, CLI array-loader, summary-loader, chunk-executor docs/export drift, minimal-fixture analysis, and SCC task-gate hardening slices; rerun before final merge after any further EPC changes。
 - Still design-only:
   - SCC EPC implementation; the design document now lives in `docs/epc_scc_design.md`。
   - multiprocessing/MPI executors。
@@ -113,6 +113,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - SCC EPC design doc 已创建为 `docs/epc_scc_design.md`；后续需要 review 后再实现。
   - 没有 charge response 公式和 reference 前，`use_scc=True` 继续保持 unsupported。
   - 该 design doc 通过前，不允许为了“功能开关”而简单把 `use_scc=True` 透传给现有 coupling/velocity provider。
+  - Entry point coverage now asserts every `dptb eph --task ...` choice rejects `use_scc=True` before task-specific dispatch.
 
 - Gate D: parity and advanced physics
   - 只吸收 dftbephy 中对 DeePTB 用户有价值的能力切片，例如 mode-resolved scattering、path/mesh summaries、mobility scans、reference benchmarks。

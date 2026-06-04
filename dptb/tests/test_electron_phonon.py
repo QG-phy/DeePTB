@@ -6912,6 +6912,12 @@ def test_eph_entrypoint_rejects_scc_v1(tmp_path):
         )
 
 
+@pytest.mark.parametrize("task", EPH_TASK_CHOICES)
+def test_eph_entrypoint_rejects_scc_before_task_dispatch(task):
+    with pytest.raises(NotImplementedError, match="SCC-corrected"):
+        eph(task=task, use_scc=True)
+
+
 def test_eph_entrypoint_rejects_invalid_task_type():
     with pytest.raises(ValueError, match="task"):
         eph(task=None)
