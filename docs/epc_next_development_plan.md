@@ -40,10 +40,11 @@
 - Still needs hardening before merge/release:
   - a minimal in-repo synthetic EPC fixture now covers default linewidth reference testing; broader coupling/FD fixtures still need release hardening。
   - opt-in full Graphene reference kept outside git for development and benchmark。
-  - import/export smoke tests for all new public symbols。
-  - docs/index integration and CLI examples verified against current parser。
-  - final review of unit metadata, temperature convention, and reciprocal-cell convention。
-  - artifact metadata and docs review for summary-first scan semantics。
+  - current public API export smoke coverage exists for the new EPC data objects/helpers, but any new public symbol added after this point must extend that smoke test immediately。
+  - docs index now links the v1 workflow and SCC design docs; CLI examples still need a final parser/API drift pass before merge。
+  - unit metadata, mobility scan unit metadata, temperature convention, and reciprocal-cell convention now have focused regression coverage; keep a final physical-convention review before release。
+  - artifact metadata validation now covers weights metadata JSON, weights shape/finite/non-negative/positive-sum checks, fixed-vs-recomputed linewidth scan convention guards, missing required array diagnostics for core EPC NPZ loaders, CLI array-loader missing-field diagnostics, and summary-loader metadata/schema rejection; continue strict NPZ loader audit for remaining edge cases。
+  - full repo test pass has been completed for the current missing-required-array, CLI array-loader, and summary-loader hardening slices; rerun before final merge after any further EPC changes。
 - Still design-only:
   - SCC EPC implementation; the design document now lives in `docs/epc_scc_design.md`。
   - multiprocessing/MPI executors。
@@ -228,10 +229,12 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - 当前已新增最小 synthetic EPC fixture，用于默认 linewidth reference regression。
 - 保留完整 Graphene reference 作为 opt-in benchmark，不进入 git 追踪。
 - 梳理 `docs/epc_v1_workflow.md`，确保所有 CLI 示例和 NPZ schema 与当前实现一致。
-- 增加 public API import smoke tests，避免未来导出路径断裂。
-- 检查所有 EPC NPZ loader 是否拒绝 pickle/object arrays、空数组、非有限值和 schema metadata conflict。
+- 当前 public API import smoke tests 已覆盖主要 EPC data objects、analysis helpers、transport/mobility helpers、velocity helper 和 chunked artifact helpers；新增 public API 时必须同步更新。
+- 继续检查所有 EPC NPZ loader 是否拒绝 pickle/object arrays、空数组、非有限值、非 scalar/object `metadata_json`、schema metadata conflict 和缺失 required arrays。
 - 统一 error message 风格：输入 shape、单位、SCC unsupported、phonon boundary 等错误需要可诊断。
-- 审查 `CONTEXT.md` 和 docs index 是否需要加入 EPC 文档入口。
+- docs index 已加入 EPC v1 workflow 和 SCC design 入口；`CONTEXT.md` 是否需要 EPC domain summary 仍可在 release review 时决定。
+- 保持 `linewidth_scan_convention="fixed_linewidth"` 与 `"per_scan_point_recomputed"` 两种语义显式分离；任何 transport/mobility scan 新入口都必须记录 metadata 并有 guard test。
+- 当前 hardening slice 已跑过全仓测试；后续每个实现切片和 release 前仍需重跑，并把失败项按 EPC 相关/非 EPC 相关分类处理。
 
 ### Acceptance
 
@@ -240,6 +243,8 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - Opt-in Graphene coupling reference 通过。
 - 修改 phase/Fourier/FD/overlap/prefactor 时，slow Graphene supercell FD reference 通过。
 - `docs/epc_v1_workflow.md` 能作为 v1 用户入口文档。
+- `docs/index.rst` 保持包含 EPC v1 workflow 和 SCC design 入口。
+- 当前所有 persistent EPC NPZ/data artifact loaders 对 metadata JSON、weights、shape、finite values 和 schema mismatch 有明确 rejection 或 documented boundary。
 
 ## Workstream 1: DeePTB-Native EPC Path Workflow
 
@@ -533,6 +538,8 @@ Non-goals for this slice:
 - 2D/3D normalization tests。
 - Multi-mu/multi-temperature shape tests。
 - Finite-difference velocity unit conversion tests。
+- Mobility and transport scan outputs assert unit metadata and `linewidth_scan_convention` metadata。
+- `linewidth_scan_convention="recompute"` is rejected outside artifact scan workflows so the flag is never silently ignored。
 - Graphene mobility sanity benchmark。
 - 文档中明确当前单位约定和限制。
 
@@ -832,17 +839,17 @@ For the next implementation wave, the correct preparation is interface-level:
    - Hamiltonian-derivative velocity。
    - SI mobility, mobility scan, and transport scan。
    - coupling-summary / scattering-map / phonon-DOS / Eliashberg-like diagnostic analysis。
-2. Harden the explicit per-scan-point linewidth recomputation artifact scans:
-   - keep existing fixed-linewidth scan helpers unchanged。
-   - Python helper and metadata convention are implemented。
-   - q-axis artifact + finite-difference velocity and k-axis artifact + Hamiltonian-derivative velocity tests are implemented。
-   - CLI artifact exposure is implemented through `--epc-artifact --linewidth-scan-convention recompute`。
+2. Keep the explicit per-scan-point linewidth recomputation artifact scans as a completed but protected behavior:
+   - existing fixed-linewidth scan helpers must remain unchanged。
+   - Python helper, CLI exposure, metadata convention, and fixed-vs-recomputed guard tests are implemented。
+   - future scan features must choose fixed-linewidth or per-scan-point recomputation explicitly and record that choice in metadata。
    - single-point artifact entrypoint tests must use synthetic parameters that produce finite positive linewidth; if a temporary hardcoded development fixture is used, keep `TODO(epc-fixture)` nearby。
-3. Release hardening:
+3. Continue release hardening:
    - lightweight default EPC fixture。
-   - public export smoke tests。
+   - public export smoke tests for any newly added public API。
    - CLI/doc schema drift check。
-   - strict NPZ validation tests。
+   - strict NPZ validation tests, especially metadata JSON and artifact weights。
+   - full repo test pass after recent EPC hardening commits。
 4. Review and finalize the SCC EPC design doc:
    - frozen-charge vs relaxed-charge definitions。
    - provider boundary。
@@ -886,32 +893,30 @@ This sprint is a stabilization and design sprint for the current implementation,
 1. Verify current branch state:
    - `git status --short --branch`
    - confirm no unrelated dirty files before editing implementation。
-2. Verify the recomputed-linewidth transport and mobility scan slices:
-   - `compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` is implemented and exported。
-   - `compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` is implemented and exported。
-   - q-axis artifact + finite-difference velocity is tested against manual full-mesh per-point recomputation。
-   - k-axis artifact + Hamiltonian-derivative velocity is tested against manual full-mesh per-point recomputation。
-   - fixed-linewidth vs recomputed-linewidth metadata convention is tested。
-   - invalid scan axes and artifact validation reuse existing error paths。
-3. Verify CLI exposure for recomputed-linewidth artifact scans:
-   - parser accepts `--epc-artifact` and `--linewidth-scan-convention recompute`。
-   - entrypoint writes `TransportScanData` with `linewidth_scan_convention="per_scan_point_recomputed"`。
-   - entrypoint writes `MobilityScanData` with `linewidth_scan_convention="per_scan_point_recomputed"`。
-   - `--epc-artifact` rejects conflicting `--epc-data`, `--linewidth-data`, and `--kpoint-weights` inputs。
-4. Verify current exports:
+2. Run the full default test suite after the latest EPC hardening commits:
+   - `uv run pytest ./dptb/tests/ -q`
+   - if failures appear, separate EPC regressions from unrelated repository failures before editing。
+3. Audit strict NPZ validation in the remaining EPC loaders:
+   - metadata JSON must be scalar valid JSON object。
+   - arrays must be pickle-free/object-free, non-empty where required, shape-consistent, and finite。
+   - chunked artifact weights must remain finite, non-negative, shape-consistent, and positive-sum。
+   - CLI `.npz` / `.json` helper inputs must report missing required array fields as `ValueError` with the field name。
+   - errors should name the bad field and expected convention。
+4. Verify current exports whenever a new public helper is added:
    - `dptb.postprocess.unified.eph`
    - `dptb.postprocess.unified`
    - import smoke tests for EPC data objects, linewidth/relaxation/transport/mobility objects, scan helpers, analysis helpers, velocity helpers, and executor helpers。
-5. Run focused checks:
+5. Keep focused checks in the normal loop:
    - `git diff --check`
-   - focused tests for the recomputed-linewidth transport scan helper。
-   - existing fixed-linewidth scan tests, including `test_compute_serta_transport_scan_from_epc_mesh_chunked_artifact_matches_full_mesh` and mobility scan parity tests。
+   - focused tests for any touched EPC helper。
+   - existing fixed-linewidth and recomputed-linewidth scan tests when transport/mobility logic changes。
    - `uv run pytest dptb/tests/test_electron_phonon.py -q`
-6. Add direct executor tests if they are not already present:
-   - full single chunk
-   - multiple deterministic chunks
-   - invalid chunk settings
-   - concat rejection for inconsistent chunk inputs
+6. Add or extend direct executor tests only where coverage is still missing:
+   - full single chunk。
+   - multiple deterministic chunks。
+   - invalid chunk settings, including wrong types。
+   - concat rejection for inconsistent chunk inputs。
+   - artifact metadata/weights rejection for malformed files。
 7. Add a short scaling design check before implementing new mesh features:
    - identify the intended split axis: q chunk, k chunk, band group, chemical-potential axis, or temperature axis。
    - state whether the work produces a full coupling artifact or summary accumulators。

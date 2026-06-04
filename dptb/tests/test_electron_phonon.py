@@ -18,6 +18,7 @@ from dptb.entrypoints.eph import (
     EPH_TASK_ALIASES,
     EPH_TASK_CHOICES,
     _load_array,
+    _load_epc_summary_data,
     _load_kpoint_weights,
     _load_kpoints,
     _parse_band_groups,
@@ -1708,6 +1709,55 @@ def test_npz_metadata_json_must_be_scalar_json_object(tmp_path):
     np.savez(non_object_json, **payload, metadata_json=np.array("[]"))
     with pytest.raises(ValueError, match="JSON object"):
         Phonons.load_npz(non_object_json)
+
+
+@pytest.mark.parametrize(
+    "data_cls,missing_key,payload",
+    [
+        pytest.param(
+            Phonons,
+            "ph_masses",
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
+                "ph_frequencies": np.array([[1.0]]),
+                "ph_eigenvectors": np.ones((1, 1, 1, 3), dtype=complex),
+                "metadata_json": np.array('{"schema": "deeptb.phonons"}'),
+            },
+            id="phonons",
+        ),
+        pytest.param(
+            EPCData,
+            "elph_coupling_strength",
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
+                "ph_frequencies": np.array([[1.0]]),
+                "el_kpoints": np.array([[0.0, 0.0, 0.0]]),
+                "el_band_indices": np.array([0]),
+                "el_eigenvalues_k": np.array([[0.0]]),
+                "el_eigenvalues_kq": np.array([[[0.0]]]),
+                "elph_coupling_matrix": np.ones((1, 1, 1, 1, 1), dtype=complex),
+                "metadata_json": np.array('{"schema": "deeptb.epc_data"}'),
+            },
+            id="epc-data",
+        ),
+        pytest.param(
+            LinewidthData,
+            "elph_linewidth_emission",
+            {
+                "elph_linewidth": np.array([[0.1]]),
+                "elph_linewidth_absorption": np.array([[0.1]]),
+                "metadata_json": np.array('{"schema": "deeptb.epc_linewidth"}'),
+            },
+            id="linewidth",
+        ),
+    ],
+)
+def test_epc_npz_loaders_reject_missing_required_arrays_with_field_name(data_cls, missing_key, payload, tmp_path):
+    path = tmp_path / f"missing_{missing_key}.npz"
+    np.savez(path, **payload)
+
+    with pytest.raises(ValueError, match=missing_key):
+        data_cls.load_npz(path)
 
 
 def test_epc_npz_loaders_use_pickle_free_numpy_loading(monkeypatch, tmp_path):
@@ -5700,8 +5750,13 @@ def test_load_array_accepts_npz_key_for_transport_weights(tmp_path):
 
     missing_path = tmp_path / "missing.npz"
     np.savez(missing_path, weights=weights)
-    with pytest.raises(KeyError, match="kpoint_weights"):
+    with pytest.raises(ValueError, match="kpoint_weights"):
         _load_array(str(missing_path), npz_key="kpoint_weights")
+
+    missing_json_path = tmp_path / "missing.json"
+    missing_json_path.write_text('{"weights": [1.0, 2.0]}', encoding="utf-8")
+    with pytest.raises(ValueError, match="kpoint_weights"):
+        _load_array(str(missing_json_path), npz_key="kpoint_weights")
 
     bad_shape_path = tmp_path / "bad_weights.npy"
     np.save(bad_shape_path, np.ones((1, 2)))
@@ -6724,6 +6779,32 @@ def test_eph_entrypoint_writes_eliashberg_json_from_epc_data(tmp_path):
     np.testing.assert_allclose(payload["alpha2f"], result["alpha2f"])
     assert payload["metadata"]["source"] == "EPCData.coupling_strength"
     assert payload["metadata"]["spectral_unit"] == "eV^2 THz^-1"
+
+
+@pytest.mark.parametrize(
+    "payload,match",
+    [
+        pytest.param(
+            {"coupling_strength": np.ones((1,))},
+            "metadata_json",
+            id="missing-metadata",
+        ),
+        pytest.param(
+            {
+                "coupling_strength": np.ones((1,)),
+                "metadata_json": np.array('{"schema": "deeptb.epc_linewidth"}'),
+            },
+            "EPCData, EPCMeshData, or EPCPathData",
+            id="wrong-schema",
+        ),
+    ],
+)
+def test_eph_summary_loader_rejects_bad_npz_metadata(payload, match, tmp_path):
+    path = tmp_path / "bad_epc_summary_input.npz"
+    np.savez(path, **payload)
+
+    with pytest.raises(ValueError, match=match):
+        _load_epc_summary_data(str(path))
 
 
 def test_eph_entrypoint_rejects_scc_v1(tmp_path):

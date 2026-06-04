@@ -13,6 +13,7 @@ from dptb.postprocess.unified.eph.data import (
     _merge_metadata,
     _metadata_from_npz,
     _metadata_to_json,
+    _required_npz_array,
 )
 from dptb.postprocess.unified.eph.executor import read_epc_mesh_chunked_manifest, read_epc_mesh_chunked_weights
 from dptb.utils.constants import ANGSTROM_TO_M, ELECTRON_CHARGE_C, HBAR_EV_S, THZ_TO_EV, eV2J
@@ -96,9 +97,9 @@ class LinewidthData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                linewidth=data["elph_linewidth"],
-                absorption=data["elph_linewidth_absorption"],
-                emission=data["elph_linewidth_emission"],
+                linewidth=_required_npz_array(data, "elph_linewidth"),
+                absorption=_required_npz_array(data, "elph_linewidth_absorption"),
+                emission=_required_npz_array(data, "elph_linewidth_emission"),
                 metadata=metadata,
             )
 
@@ -170,12 +171,12 @@ class LinewidthMeshData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                linewidth=data["elph_mesh_linewidth"],
-                absorption=data["elph_mesh_linewidth_absorption"],
-                emission=data["elph_mesh_linewidth_emission"],
-                kpoints=data["el_kpoints"],
-                kpoint_weights=data["el_kpoint_weights"],
-                band_indices=data["el_band_indices"],
+                linewidth=_required_npz_array(data, "elph_mesh_linewidth"),
+                absorption=_required_npz_array(data, "elph_mesh_linewidth_absorption"),
+                emission=_required_npz_array(data, "elph_mesh_linewidth_emission"),
+                kpoints=_required_npz_array(data, "el_kpoints"),
+                kpoint_weights=_required_npz_array(data, "el_kpoint_weights"),
+                band_indices=_required_npz_array(data, "el_band_indices"),
                 metadata=metadata,
             )
 
@@ -256,12 +257,12 @@ class LinewidthPathData:
             metadata = _metadata_from_npz(data)
             path_axis = _scalar_string_from_npz(data, "path_axis")
             return cls(
-                linewidth=data["elph_path_linewidth"],
-                absorption=data["elph_path_linewidth_absorption"],
-                emission=data["elph_path_linewidth_emission"],
+                linewidth=_required_npz_array(data, "elph_path_linewidth"),
+                absorption=_required_npz_array(data, "elph_path_linewidth_absorption"),
+                emission=_required_npz_array(data, "elph_path_linewidth_emission"),
                 path_axis=path_axis,
-                path_coordinates=data["path_coordinates"],
-                band_indices=data["el_band_indices"],
+                path_coordinates=_required_npz_array(data, "path_coordinates"),
+                band_indices=_required_npz_array(data, "el_band_indices"),
                 path_segments=data["path_segments"] if "path_segments" in data else None,
                 metadata=metadata,
             )
@@ -306,7 +307,7 @@ class RelaxationTimeData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                relaxation_time=data["elph_relaxation_time"],
+                relaxation_time=_required_npz_array(data, "elph_relaxation_time"),
                 metadata=metadata,
             )
 
@@ -361,10 +362,10 @@ class RelaxationTimeMeshData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                relaxation_time=data["elph_mesh_relaxation_time"],
-                kpoints=data["el_kpoints"],
-                kpoint_weights=data["el_kpoint_weights"],
-                band_indices=data["el_band_indices"],
+                relaxation_time=_required_npz_array(data, "elph_mesh_relaxation_time"),
+                kpoints=_required_npz_array(data, "el_kpoints"),
+                kpoint_weights=_required_npz_array(data, "el_kpoint_weights"),
+                band_indices=_required_npz_array(data, "el_band_indices"),
                 metadata=metadata,
             )
 
@@ -430,10 +431,10 @@ class RelaxationTimePathData:
             metadata = _metadata_from_npz(data)
             path_axis = _scalar_string_from_npz(data, "path_axis")
             return cls(
-                relaxation_time=data["elph_path_relaxation_time"],
+                relaxation_time=_required_npz_array(data, "elph_path_relaxation_time"),
                 path_axis=path_axis,
-                path_coordinates=data["path_coordinates"],
-                band_indices=data["el_band_indices"],
+                path_coordinates=_required_npz_array(data, "path_coordinates"),
+                band_indices=_required_npz_array(data, "el_band_indices"),
                 path_segments=data["path_segments"] if "path_segments" in data else None,
                 metadata=metadata,
             )
@@ -486,8 +487,8 @@ class TransportData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                conductivity=data["transport_conductivity"],
-                carrier_density=data["transport_carrier_density"],
+                conductivity=_required_npz_array(data, "transport_conductivity"),
+                carrier_density=_required_npz_array(data, "transport_carrier_density"),
                 metadata=metadata,
             )
 
@@ -553,10 +554,10 @@ class TransportScanData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                conductivity=data["transport_scan_conductivity"],
-                carrier_density=data["transport_scan_carrier_density"],
-                chemical_potentials=data["chemical_potentials"],
-                temperatures=data["temperatures"],
+                conductivity=_required_npz_array(data, "transport_scan_conductivity"),
+                carrier_density=_required_npz_array(data, "transport_scan_carrier_density"),
+                chemical_potentials=_required_npz_array(data, "chemical_potentials"),
+                temperatures=_required_npz_array(data, "temperatures"),
                 metadata=metadata,
             )
 
@@ -618,9 +619,9 @@ class MobilityData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                conductivity=data["mobility_conductivity"],
-                mobility=data["mobility_tensor"],
-                carrier_density=data["mobility_carrier_density"],
+                conductivity=_required_npz_array(data, "mobility_conductivity"),
+                mobility=_required_npz_array(data, "mobility_tensor"),
+                carrier_density=_required_npz_array(data, "mobility_carrier_density"),
                 metadata=metadata,
             )
 
@@ -698,11 +699,11 @@ class MobilityScanData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                conductivity=data["mobility_scan_conductivity"],
-                mobility=data["mobility_scan_tensor"],
-                carrier_density=data["mobility_scan_carrier_density"],
-                chemical_potentials=data["chemical_potentials"],
-                temperatures=data["temperatures"],
+                conductivity=_required_npz_array(data, "mobility_scan_conductivity"),
+                mobility=_required_npz_array(data, "mobility_scan_tensor"),
+                carrier_density=_required_npz_array(data, "mobility_scan_carrier_density"),
+                chemical_potentials=_required_npz_array(data, "chemical_potentials"),
+                temperatures=_required_npz_array(data, "temperatures"),
                 metadata=metadata,
             )
 
@@ -754,9 +755,9 @@ class SubspaceCouplingData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                strength=data["elph_subspace_strength"],
-                final_group_bounds=data["final_group_bounds"],
-                initial_group_bounds=data["initial_group_bounds"],
+                strength=_required_npz_array(data, "elph_subspace_strength"),
+                final_group_bounds=_required_npz_array(data, "final_group_bounds"),
+                initial_group_bounds=_required_npz_array(data, "initial_group_bounds"),
                 metadata=metadata,
             )
 
@@ -3071,9 +3072,7 @@ def _normalize_weights(weights: np.ndarray, name: str) -> np.ndarray:
 
 
 def _scalar_string_from_npz(data, key: str) -> str:
-    if key not in data:
-        raise ValueError(f"{key} is required for DeePTB EPC path NPZ files.")
-    value = data[key]
+    value = _required_npz_array(data, key, "DeePTB EPC path NPZ files")
     if np.shape(value) != ():
         raise ValueError(f"{key} must be a scalar string.")
     if hasattr(value, "item"):

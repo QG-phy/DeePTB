@@ -1408,7 +1408,7 @@ def _load_array(path: str, npz_key: str) -> np.ndarray:
     if suffix == ".npz":
         with np.load(path, allow_pickle=False) as data:
             if npz_key not in data:
-                raise KeyError(f"NPZ input must contain a {npz_key!r} array.")
+                raise ValueError(f"NPZ input must contain a {npz_key!r} array.")
             return data[npz_key]
     if suffix == ".json":
         with open(path, "r", encoding="utf-8") as handle:
@@ -1416,7 +1416,7 @@ def _load_array(path: str, npz_key: str) -> np.ndarray:
         if isinstance(value, dict):
             value = value.get(npz_key)
         if value is None:
-            raise KeyError(f"JSON input must be an array or contain a {npz_key!r} field.")
+            raise ValueError(f"JSON input must be an array or contain a {npz_key!r} field.")
         return np.asarray(value, dtype=float)
     return np.loadtxt(path, dtype=float)
 

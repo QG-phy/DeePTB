@@ -103,10 +103,10 @@ class Phonons:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                qpoints=data["ph_qpoints"],
-                frequencies=data["ph_frequencies"],
-                eigenvectors=data["ph_eigenvectors"],
-                masses=data["ph_masses"],
+                qpoints=_required_npz_array(data, "ph_qpoints"),
+                frequencies=_required_npz_array(data, "ph_frequencies"),
+                eigenvectors=_required_npz_array(data, "ph_eigenvectors"),
+                masses=_required_npz_array(data, "ph_masses"),
                 cell=data["ph_cell"] if "ph_cell" in data else None,
                 scaled_positions=data["ph_scaled_positions"] if "ph_scaled_positions" in data else None,
                 metadata=metadata,
@@ -257,14 +257,14 @@ class EPCData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                kpoints=data["el_kpoints"],
-                qpoints=data["ph_qpoints"],
-                band_indices=data["el_band_indices"],
-                frequencies=data["ph_frequencies"],
-                eigenvalues_k=data["el_eigenvalues_k"],
-                eigenvalues_kq=data["el_eigenvalues_kq"],
-                coupling_matrix=data["elph_coupling_matrix"],
-                coupling_strength=data["elph_coupling_strength"],
+                kpoints=_required_npz_array(data, "el_kpoints"),
+                qpoints=_required_npz_array(data, "ph_qpoints"),
+                band_indices=_required_npz_array(data, "el_band_indices"),
+                frequencies=_required_npz_array(data, "ph_frequencies"),
+                eigenvalues_k=_required_npz_array(data, "el_eigenvalues_k"),
+                eigenvalues_kq=_required_npz_array(data, "el_eigenvalues_kq"),
+                coupling_matrix=_required_npz_array(data, "elph_coupling_matrix"),
+                coupling_strength=_required_npz_array(data, "elph_coupling_strength"),
                 metadata=metadata,
             )
 
@@ -463,16 +463,16 @@ class EPCMeshData:
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
             return cls(
-                kpoints=data["el_kpoints"],
-                qpoints=data["ph_qpoints"],
-                band_indices=data["el_band_indices"],
-                frequencies=data["ph_frequencies"],
-                eigenvalues_k=data["el_eigenvalues_k"],
-                eigenvalues_kq=data["el_eigenvalues_kq"],
-                coupling_matrix=data["elph_coupling_matrix"],
-                coupling_strength=data["elph_coupling_strength"],
-                kpoint_weights=data["el_kpoint_weights"],
-                qpoint_weights=data["ph_qpoint_weights"],
+                kpoints=_required_npz_array(data, "el_kpoints"),
+                qpoints=_required_npz_array(data, "ph_qpoints"),
+                band_indices=_required_npz_array(data, "el_band_indices"),
+                frequencies=_required_npz_array(data, "ph_frequencies"),
+                eigenvalues_k=_required_npz_array(data, "el_eigenvalues_k"),
+                eigenvalues_kq=_required_npz_array(data, "el_eigenvalues_kq"),
+                coupling_matrix=_required_npz_array(data, "elph_coupling_matrix"),
+                coupling_strength=_required_npz_array(data, "elph_coupling_strength"),
+                kpoint_weights=_required_npz_array(data, "el_kpoint_weights"),
+                qpoint_weights=_required_npz_array(data, "ph_qpoint_weights"),
                 metadata=metadata,
             )
 
@@ -610,24 +610,18 @@ class EPCPathData:
     def load_npz(cls, path: Union[str, Path]) -> "EPCPathData":
         with np.load(path, allow_pickle=False) as data:
             metadata = _metadata_from_npz(data)
-            if "path_axis" not in data:
-                raise ValueError("path_axis is required for DeePTB EPC path NPZ files.")
-            path_axis = data["path_axis"]
-            if np.shape(path_axis) != ():
-                raise ValueError("path_axis must be a scalar string.")
-            if hasattr(path_axis, "item"):
-                path_axis = path_axis.item()
+            path_axis = _scalar_string_from_npz(data, "path_axis")
             return cls(
-                kpoints=data["el_kpoints"],
-                qpoints=data["ph_qpoints"],
-                band_indices=data["el_band_indices"],
-                frequencies=data["ph_frequencies"],
-                eigenvalues_k=data["el_eigenvalues_k"],
-                eigenvalues_kq=data["el_eigenvalues_kq"],
-                coupling_matrix=data["elph_coupling_matrix"],
-                coupling_strength=data["elph_coupling_strength"],
-                path_axis=str(path_axis),
-                path_coordinates=data["path_coordinates"],
+                kpoints=_required_npz_array(data, "el_kpoints"),
+                qpoints=_required_npz_array(data, "ph_qpoints"),
+                band_indices=_required_npz_array(data, "el_band_indices"),
+                frequencies=_required_npz_array(data, "ph_frequencies"),
+                eigenvalues_k=_required_npz_array(data, "el_eigenvalues_k"),
+                eigenvalues_kq=_required_npz_array(data, "el_eigenvalues_kq"),
+                coupling_matrix=_required_npz_array(data, "elph_coupling_matrix"),
+                coupling_strength=_required_npz_array(data, "elph_coupling_strength"),
+                path_axis=path_axis,
+                path_coordinates=_required_npz_array(data, "path_coordinates"),
                 path_segments=data["path_segments"] if "path_segments" in data else None,
                 metadata=metadata,
             )
@@ -661,6 +655,21 @@ def _metadata_from_npz(data) -> Dict[str, Any]:
     if not isinstance(metadata, dict):
         raise ValueError("metadata_json must decode to a JSON object.")
     return metadata
+
+
+def _required_npz_array(data, key: str, context: str = "DeePTB EPC NPZ files"):
+    if key not in data:
+        raise ValueError(f"{key} is required for {context}.")
+    return data[key]
+
+
+def _scalar_string_from_npz(data, key: str) -> str:
+    value = _required_npz_array(data, key, "DeePTB EPC path NPZ files")
+    if np.shape(value) != ():
+        raise ValueError(f"{key} must be a scalar string.")
+    if hasattr(value, "item"):
+        value = value.item()
+    return str(value)
 
 
 def _merge_metadata(defaults: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, Any]:
