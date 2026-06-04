@@ -22,6 +22,7 @@ from dptb.postprocess.unified.eph import (
     RelaxationTimePathData,
     SubspaceCouplingData,
     TransportData,
+    TransportScanData,
     compute_band_velocities_finite_difference,
     compute_band_velocities_hamiltonian_derivative,
     compute_coupling_strength_summary,
@@ -37,6 +38,7 @@ from dptb.postprocess.unified.eph import (
     compute_serta_mobility_si,
     compute_serta_mobility_scan_si,
     compute_serta_transport_from_epc,
+    compute_serta_transport_scan,
     compute_subspace_coupling_data,
 )
 from dptb.postprocess.unified.eph.utils import normalize_kpoints
@@ -145,6 +147,7 @@ def eph(
     RelaxationTimeMeshData,
     RelaxationTimePathData,
     TransportData,
+    TransportScanData,
     MobilityData,
     MobilityScanData,
     SubspaceCouplingData,
@@ -259,7 +262,9 @@ def eph(
             linewidth_data=linewidth_data,
             output=output or "transport.npz",
             chemical_potential=chemical_potential,
+            chemical_potentials=chemical_potentials,
             temperature=temperature,
+            temperatures=temperatures,
             kpoint_weights=kpoint_weights,
             spin_degeneracy=spin_degeneracy,
             volume=volume,
@@ -642,8 +647,10 @@ def eph_transport(
     epc_data: str,
     linewidth_data: str,
     output: str,
-    chemical_potential: float,
-    temperature: float,
+    chemical_potential: Optional[float],
+    temperature: Optional[float],
+    chemical_potentials: Optional[Sequence[float]] = None,
+    temperatures: Optional[Sequence[float]] = None,
     kpoint_weights: Optional[str] = None,
     spin_degeneracy: int = 1,
     volume: float = 1.0,
@@ -651,7 +658,7 @@ def eph_transport(
     velocity_source: str = "finite_difference",
     use_scc: bool = False,
     system=None,
-) -> TransportData:
+) -> Union[TransportData, TransportScanData]:
     """Calculate SERTA transport data from EPC and linewidth NPZ files."""
     if use_scc:
         _reject_scc_v1("transport")
@@ -659,10 +666,22 @@ def eph_transport(
         raise ValueError("epc_data is required for dptb eph --task transport.")
     if linewidth_data is None:
         raise ValueError("linewidth_data is required for dptb eph --task transport.")
-    if chemical_potential is None:
-        raise ValueError("chemical_potential is required for dptb eph --task transport.")
-    if temperature is None:
-        raise ValueError("temperature is required for dptb eph --task transport.")
+    chemical_potential_values, use_scan_mu = _resolve_scan_axis(
+        single_value=chemical_potential,
+        multiple_values=chemical_potentials,
+        single_name="chemical_potential",
+        multiple_name="chemical_potentials",
+        task="transport",
+    )
+    temperature_values, use_scan_temperature = _resolve_scan_axis(
+        single_value=temperature,
+        multiple_values=temperatures,
+        single_name="temperature",
+        multiple_name="temperatures",
+        task="transport",
+        positive=True,
+    )
+    use_scan = use_scan_mu or use_scan_temperature
     if system is None:
         if structure is None:
             raise ValueError("structure is required for dptb eph --task transport.")
@@ -671,19 +690,73 @@ def eph_transport(
         system = TBSystem(data=structure, calculator=init_model)
 
     weights = _load_kpoint_weights(kpoint_weights) if kpoint_weights is not None else None
-    result = compute_serta_transport_from_epc(
-        system=system,
-        epc_data=EPCData.load_npz(epc_data),
-        linewidth_data=LinewidthData.load_npz(linewidth_data),
-        chemical_potential=chemical_potential,
-        temperature=temperature,
-        kpoint_weights=weights,
-        spin_degeneracy=spin_degeneracy,
-        volume=volume,
-        velocity_delta=velocity_delta,
-        velocity_source=velocity_source,
-        use_scc=use_scc,
-    )
+    epc = EPCData.load_npz(epc_data)
+    linewidth_result = LinewidthData.load_npz(linewidth_data)
+    if use_scan:
+        linewidth_input = linewidth_result.linewidth
+        if linewidth_input.ndim == 3:
+            linewidth_input = linewidth_input.sum(axis=-1)
+        if linewidth_input.shape != epc.eigenvalues_k.shape:
+            raise ValueError("linewidth_data.linewidth must match EPCData eigenvalues_k shape after mode summation.")
+        source = _normalize_velocity_source(velocity_source)
+        if source == "finite_difference":
+            velocities = compute_band_velocities_finite_difference(
+                system=system,
+                kpoints=epc.kpoints,
+                bands=epc.band_indices,
+                delta=velocity_delta,
+                use_scc=use_scc,
+            )
+            velocity_metadata = {
+                "velocity_source": "finite_difference",
+                "velocity_delta": velocity_delta,
+                "velocity_convention": "central_difference_band_energy",
+            }
+        else:
+            velocities = compute_band_velocities_hamiltonian_derivative(
+                system=system,
+                kpoints=epc.kpoints,
+                bands=epc.band_indices,
+                use_scc=use_scc,
+            )
+            velocity_metadata = {
+                "velocity_source": "hamiltonian_derivative",
+                "velocity_convention": "diag_Cdagger_dH_minus_EdS_C",
+                "overlap_correction": "dH_minus_E_dS_diagonal",
+            }
+        result = compute_serta_transport_scan(
+            eigenvalues=epc.eigenvalues_k,
+            velocities=velocities,
+            linewidth=linewidth_input,
+            chemical_potentials=chemical_potential_values,
+            temperatures=temperature_values,
+            kpoint_weights=weights,
+            spin_degeneracy=spin_degeneracy,
+            volume=volume,
+        )
+        result.metadata.update(
+            {
+                "velocity_unit": "eV/fractional_reciprocal_coordinate",
+                "band_indices": epc.band_indices,
+                "epc_schema": epc.metadata.get("schema"),
+                "linewidth_schema": linewidth_result.metadata.get("schema"),
+            }
+        )
+        result.metadata.update(velocity_metadata)
+    else:
+        result = compute_serta_transport_from_epc(
+            system=system,
+            epc_data=epc,
+            linewidth_data=linewidth_result,
+            chemical_potential=float(chemical_potential_values[0]),
+            temperature=float(temperature_values[0]),
+            kpoint_weights=weights,
+            spin_degeneracy=spin_degeneracy,
+            volume=volume,
+            velocity_delta=velocity_delta,
+            velocity_source=velocity_source,
+            use_scc=use_scc,
+        )
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result.save_npz(output_path)

@@ -431,6 +431,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 ### CLI
 
 - `dptb eph --task transport` 已支持 `--velocity-source finite_difference|hamiltonian_derivative`。
+- transport CLI 已支持 `--chemical-potentials`、`--temperatures` scan 参数，并写出 `TransportScanData`。
 - `dptb eph --task mobility` 已支持单个 chemical potential / temperature 的 SI mobility 输出。
 - mobility CLI 已支持 `--dimension 2d/3d`、`--area`、`--volume`。
 - mobility CLI 已支持 `--chemical-potentials`、`--temperatures` scan 参数。
@@ -462,6 +463,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - stores carrier-density shape `(nmu, ntemperatures)`.
   - uses the existing fixed-linewidth convention: the caller supplies one linewidth array, and the scan varies occupation/carrier-density/transport weighting.
 - Added CLI scan output:
+  - `dptb eph --task transport --chemical-potentials ... --temperatures ...` writes `TransportScanData`.
   - `dptb eph --task mobility --chemical-potentials ... --temperatures ...` writes `MobilityScanData`.
   - singular and plural chemical-potential/temperature arguments are mutually exclusive per axis.
 - Implemented chunked artifact consumers for transport/mobility:

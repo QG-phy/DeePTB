@@ -14,13 +14,15 @@ Python users can import the v1 EPC APIs from either
 include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `LinewidthData`, `LinewidthPathData`, `LinewidthMeshData`,
 `RelaxationTimeData`, `RelaxationTimePathData`, `RelaxationTimeMeshData`,
-`TransportData`, `MobilityData`, `MobilityScanData`, `SubspaceCouplingData`, `compute_coupling_matrix`,
+`TransportData`, `TransportScanData`, `MobilityData`, `MobilityScanData`,
+`SubspaceCouplingData`, `compute_coupling_matrix`,
 `compute_linewidth`, `compute_linewidth_path`, `compute_linewidth_mesh`,
 `compute_relaxation_time`, `compute_relaxation_time_path`,
 `compute_relaxation_time_mesh`, `compute_serta_conductivity`,
 `compute_band_velocities_finite_difference`,
 `compute_band_velocities_hamiltonian_derivative`, `compute_serta_mobility_si`,
-`compute_serta_mobility_scan_si`, `compute_serta_transport_from_epc`,
+`compute_serta_mobility_scan_si`, `compute_serta_transport_scan`,
+`compute_serta_transport_from_epc`,
 `compute_coupling_strength_summary`, `compute_phonon_dos`,
 `compute_eliashberg_spectral_function`, `compute_scattering_maps`,
 `find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
@@ -183,6 +185,7 @@ Use the matching save/load APIs:
 - `RelaxationTimePathData.save_npz()` / `RelaxationTimePathData.load_npz()`.
 - `RelaxationTimeMeshData.save_npz()` / `RelaxationTimeMeshData.load_npz()`.
 - `TransportData.save_npz()` / `TransportData.load_npz()`.
+- `TransportScanData.save_npz()` / `TransportScanData.load_npz()`.
 - `MobilityData.save_npz()` / `MobilityData.load_npz()`.
 - `MobilityScanData.save_npz()` / `MobilityScanData.load_npz()`.
 - `SubspaceCouplingData.save_npz()` / `SubspaceCouplingData.load_npz()`.
@@ -221,6 +224,13 @@ ranges. Non-contiguous groups are available only through the Python helper
 Postprocess data arrays must also be non-empty. In particular, linewidth,
 relaxation-time, carrier-density, and subspace group-bound arrays cannot be
 empty. Carrier density must be finite and non-negative.
+
+`TransportScanData` stores non-SI SERTA conductivity and carrier density over
+chemical-potential and temperature axes. The Python helper
+`compute_serta_transport_scan(...)` returns arrays with shape
+`(nmu, ntemperatures, 3, 3)` for conductivity and `(nmu, ntemperatures)` for
+carrier density. It uses a fixed linewidth input, matching the mobility scan
+convention.
 
 `MobilityData` stores SI SERTA conductivity, carrier density, and mobility.
 The Python helper `compute_serta_mobility_si(...)` converts band velocities
@@ -424,6 +434,29 @@ Transport velocity metadata is stored as
 intermediate SERTA conductivity workflow in DeePTB's fractional-k convention.
 Use `--task mobility` for SI conductivity, carrier density, and mobility.
 
+For chemical-potential and temperature scans, use plural scan arguments:
+
+```bash
+dptb eph \
+  --task transport \
+  -i model.pth \
+  -stu structure.vasp \
+  --epc-data epc_data.npz \
+  --linewidth-data linewidth.npz \
+  --chemical-potentials 0.10 0.15 0.20 \
+  --temperatures 0.025 0.050 \
+  --kpoint-weights weights.npz \
+  --spin-degeneracy 2 \
+  --volume 1.0 \
+  -o transport_scan.npz
+```
+
+When `--chemical-potentials` or `--temperatures` is used with
+`--task transport`, the CLI writes a `TransportScanData` NPZ. The singular and
+plural forms for the same axis are mutually exclusive. The scan uses fixed
+linewidth values from `--linewidth-data`; per-scan-point linewidth
+recomputation is a separate future API.
+
 Supported k-point weights file formats:
 
 - JSON array or object with `kpoint_weights`.
@@ -570,8 +603,9 @@ theory. For `EPCMeshData`, summaries use normalized k/q weights by default; add
 - Path workflows currently support fixed electronic k-points plus q-path only.
   k-path plus fixed-q is not implemented.
 - Mesh workflows currently use serial in-memory execution. K-point and q-point
-  chunking are available for `mesh-coupling`, but chunked artifacts,
-  multiprocessing, MPI, and CUDA backends are future work.
+  chunking are available for `mesh-coupling`; chunked artifacts and
+  summary-first artifact consumers are available as Python APIs. True streaming
+  artifact production, multiprocessing, MPI, and CUDA backends are future work.
 - SOC/spinful EPC is not implemented.
 - Polar correction is not implemented.
 - Full degenerate-band gauge fixing and k/q-path continuous gauge tracking are
@@ -584,6 +618,9 @@ theory. For `EPCMeshData`, summaries use normalized k/q weights by default; add
   multi-temperature scans are available through the Python helper
   `compute_serta_mobility_scan_si(...)` and the CLI scan arguments
   `--chemical-potentials` / `--temperatures`.
+- Non-SI transport scans are available through
+  `compute_serta_transport_scan(...)` and the same CLI scan arguments on
+  `--task transport`.
 
 ## Development Validation
 
