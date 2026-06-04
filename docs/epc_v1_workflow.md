@@ -21,9 +21,9 @@ include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `compute_band_velocities_finite_difference`,
 `compute_band_velocities_hamiltonian_derivative`, `compute_serta_mobility_si`,
 `compute_serta_mobility_scan_si`, `compute_serta_transport_from_epc`,
-`compute_coupling_strength_summary`, `find_degenerate_band_groups`,
-`compute_subspace_coupling_strength`, `compute_subspace_coupling_data`,
-`FDProvider`, `SupercellFD`, and the
+`compute_coupling_strength_summary`, `compute_phonon_dos`,
+`find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
+`compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
 benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
 `dptb.utils.constants` and re-exported from the EPC namespace.
 
@@ -448,6 +448,23 @@ and does not introduce a new persistent NPZ schema.
 
 For `EPCMeshData`, summaries use normalized k/q weights by default. Add
 `--summary-unweighted` to report raw sums.
+
+### Phonon DOS
+
+```bash
+dptb eph \
+  --task phonon-dos \
+  -ph phonons_mesh.npz \
+  --dos-grid 0.0 0.5 1.0 1.5 2.0 \
+  --dos-sigma 0.05 \
+  --broadening gaussian \
+  -o phonon_dos.json
+```
+
+This task reads external `Phonons` NPZ frequencies and writes a JSON phonon DOS
+summary on the requested frequency grid. Frequencies, grid values, and
+`--dos-sigma` are in THz. DeePTB does not calculate phonons or force constants
+for this task.
 
 ## Current v1 Limits
 

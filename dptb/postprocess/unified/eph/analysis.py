@@ -9,6 +9,7 @@ from dptb.postprocess.unified.eph.data import (
     EPCData,
     EPCMeshData,
     EPCPathData,
+    Phonons,
     _merge_metadata,
     _metadata_from_npz,
     _metadata_to_json,
@@ -1695,6 +1696,71 @@ def compute_coupling_strength_summary(
         "band_pair_resolved": strength.sum(axis=(0, 1, 2)),
         "band_indices": epc_data.band_indices.copy(),
         "metadata": metadata,
+    }
+
+
+def compute_phonon_dos(
+    phonons: Phonons,
+    frequency_grid: np.ndarray,
+    sigma: float,
+    broadening: str = "gaussian",
+    qpoint_weights: Optional[np.ndarray] = None,
+) -> Dict[str, Any]:
+    """Compute phonon DOS from externally supplied phonon frequencies.
+
+    Frequencies and ``sigma`` are in THz. DeePTB does not compute phonons here;
+    this helper only broadens the frequencies already stored in ``Phonons``.
+    The returned DOS has unit ``THz^-1``.
+    """
+    if not isinstance(phonons, Phonons):
+        raise ValueError("phonons must be a Phonons object.")
+    frequency_grid = np.asarray(frequency_grid, dtype=float)
+    sigma = validate_finite_positive_scalar(sigma, "sigma")
+    if frequency_grid.ndim != 1 or frequency_grid.size == 0:
+        raise ValueError("frequency_grid must be a one-dimensional non-empty array.")
+    if not np.all(np.isfinite(frequency_grid)):
+        raise ValueError("frequency_grid must contain finite values.")
+    if np.any(phonons.frequencies < 0.0):
+        raise ValueError("phonon DOS does not support negative frequencies.")
+    if not isinstance(broadening, str):
+        raise ValueError("broadening must be either 'gaussian' or 'lorentzian'.")
+    broadening = broadening.lower()
+    if broadening not in {"gaussian", "lorentzian"}:
+        raise ValueError("broadening must be either 'gaussian' or 'lorentzian'.")
+
+    nq, nmodes = phonons.frequencies.shape
+    if qpoint_weights is None:
+        weights = np.full((nq,), 1.0 / nq, dtype=float)
+        weight_convention = "uniform_normalized_qpoint_weights"
+    else:
+        weights = _normalize_weights(qpoint_weights, "qpoint_weights")
+        if weights.shape != (nq,):
+            raise ValueError("qpoint_weights must match phonons.qpoints.")
+        weight_convention = "normalized_qpoint_weights"
+
+    mode_resolved_dos = np.zeros((nmodes, frequency_grid.shape[0]), dtype=float)
+    for iq in range(nq):
+        for imode in range(nmodes):
+            mode_resolved_dos[imode] += weights[iq] * _broadening(
+                frequency_grid - phonons.frequencies[iq, imode],
+                sigma,
+                broadening,
+            )
+
+    return {
+        "frequency_grid": frequency_grid,
+        "dos": mode_resolved_dos.sum(axis=0),
+        "mode_resolved_dos": mode_resolved_dos,
+        "metadata": {
+            "source": "Phonons.frequencies",
+            "input_schema": phonons.metadata.get("schema"),
+            "frequency_unit": phonons.metadata.get("frequency_unit", "THz"),
+            "dos_unit": "THz^-1",
+            "sigma": sigma,
+            "sigma_unit": "THz",
+            "broadening": broadening,
+            "weight_convention": weight_convention,
+        },
     }
 
 

@@ -71,6 +71,7 @@ from dptb.postprocess.unified.eph import (
     compute_linewidth,
     compute_linewidth_mesh,
     compute_linewidth_path,
+    compute_phonon_dos,
     compute_relaxation_time,
     compute_relaxation_time_mesh,
     compute_relaxation_time_path,
@@ -159,6 +160,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.compute_linewidth is compute_linewidth
     assert unified_postprocess.compute_linewidth_mesh is compute_linewidth_mesh
     assert unified_postprocess.compute_linewidth_path is compute_linewidth_path
+    assert unified_postprocess.compute_phonon_dos is compute_phonon_dos
     assert unified_postprocess.compute_relaxation_time is compute_relaxation_time
     assert unified_postprocess.compute_relaxation_time_mesh is compute_relaxation_time_mesh
     assert unified_postprocess.compute_relaxation_time_path is compute_relaxation_time_path
@@ -1202,6 +1204,50 @@ def test_phonons_npz_roundtrip(tmp_path):
         assert "ph_eigenvectors" in data
         assert "ph_masses" in data
         assert "metadata_json" in data
+
+
+def test_compute_phonon_dos_matches_manual_gaussian_reference():
+    phonons = Phonons(
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        frequencies=np.array([[1.0, 2.0], [3.0, 4.0]]),
+        eigenvectors=np.ones((2, 2, 1, 3), dtype=complex),
+        masses=np.array([1.0]),
+    )
+    grid = np.array([1.0, 2.0, 3.0])
+    sigma = 0.5
+
+    result = compute_phonon_dos(phonons, frequency_grid=grid, sigma=sigma)
+
+    expected_mode = np.zeros((2, 3), dtype=float)
+    for iq in range(2):
+        for imode in range(2):
+            expected_mode[imode] += 0.5 * np.exp(-((grid - phonons.frequencies[iq, imode]) ** 2) / (2.0 * sigma**2)) / (
+                np.sqrt(2.0 * np.pi) * sigma
+            )
+    np.testing.assert_allclose(result["frequency_grid"], grid)
+    np.testing.assert_allclose(result["mode_resolved_dos"], expected_mode)
+    np.testing.assert_allclose(result["dos"], expected_mode.sum(axis=0))
+    assert result["metadata"]["frequency_unit"] == "THz"
+    assert result["metadata"]["dos_unit"] == "THz^-1"
+    assert result["metadata"]["weight_convention"] == "uniform_normalized_qpoint_weights"
+
+
+def test_compute_phonon_dos_rejects_invalid_inputs():
+    phonons = Phonons(
+        qpoints=np.array([[0.0, 0.0, 0.0]]),
+        frequencies=np.array([[1.0]]),
+        eigenvectors=np.ones((1, 1, 1, 3), dtype=complex),
+        masses=np.array([1.0]),
+    )
+
+    with pytest.raises(ValueError, match="Phonons"):
+        compute_phonon_dos(object(), frequency_grid=np.array([1.0]), sigma=0.1)
+    with pytest.raises(ValueError, match="frequency_grid"):
+        compute_phonon_dos(phonons, frequency_grid=np.ones((1, 1)), sigma=0.1)
+    with pytest.raises(ValueError, match="sigma"):
+        compute_phonon_dos(phonons, frequency_grid=np.array([1.0]), sigma=0.0)
+    with pytest.raises(ValueError, match="qpoint_weights"):
+        compute_phonon_dos(phonons, frequency_grid=np.array([1.0]), sigma=0.1, qpoint_weights=np.array([0.5, 0.5]))
 
 
 def test_npz_metadata_json_must_be_scalar_json_object(tmp_path):
@@ -4264,6 +4310,36 @@ def test_eph_cli_parser_accepts_coupling_summary_inputs():
     assert args.output == "coupling_summary.json"
 
 
+def test_eph_cli_parser_accepts_phonon_dos_inputs():
+    args = parse_args(
+        [
+            "eph",
+            "--task",
+            "phonon-dos",
+            "-ph",
+            "phonons.npz",
+            "--dos-grid",
+            "0.0",
+            "1.0",
+            "2.0",
+            "--dos-sigma",
+            "0.1",
+            "--broadening",
+            "lorentzian",
+            "-o",
+            "phonon_dos.json",
+        ]
+    )
+
+    assert args.command == "eph"
+    assert args.task == "phonon-dos"
+    assert args.phonons == "phonons.npz"
+    assert args.dos_grid == [0.0, 1.0, 2.0]
+    assert args.dos_sigma == 0.1
+    assert args.broadening == "lorentzian"
+    assert args.output == "phonon_dos.json"
+
+
 def test_eph_task_registry_matches_parser_choices_and_docs():
     parser = main_parser()
     subparser_action = next(
@@ -4949,6 +5025,33 @@ def test_eph_entrypoint_writes_coupling_summary_json_from_mesh_data(tmp_path):
     assert unweighted_payload["metadata"]["weight_convention"] == "unweighted_sum"
 
 
+def test_eph_entrypoint_writes_phonon_dos_json_from_external_phonon_modes(tmp_path):
+    phonons = Phonons(
+        qpoints=np.array([[0.0, 0.0, 0.0]]),
+        frequencies=np.array([[1.0, 2.0]]),
+        eigenvectors=np.ones((1, 2, 1, 3), dtype=complex),
+        masses=np.array([1.0]),
+    )
+    phonon_path = tmp_path / "phonons.npz"
+    output_path = tmp_path / "phonon_dos.json"
+    phonons.save_npz(phonon_path)
+
+    result = eph(
+        task="phonon-dos",
+        phonons=str(phonon_path),
+        dos_grid=[1.0, 2.0],
+        dos_sigma=0.5,
+        output=str(output_path),
+    )
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert output_path.exists()
+    np.testing.assert_allclose(payload["frequency_grid"], [1.0, 2.0])
+    np.testing.assert_allclose(payload["dos"], result["dos"])
+    assert payload["metadata"]["source"] == "Phonons.frequencies"
+    assert payload["metadata"]["dos_unit"] == "THz^-1"
+
+
 def test_eph_entrypoint_rejects_scc_v1(tmp_path):
     phonon_path = tmp_path / "phonons.npz"
     Phonons(
@@ -5093,6 +5196,9 @@ def test_eph_entrypoint_rejects_invalid_task_type():
         ({"task": "subspace", "final_groups": ["0:1"]}, "epc_data"),
         ({"task": "subspace", "epc_data": "epc.npz"}, "final_groups"),
         ({"task": "coupling-summary"}, "epc_data"),
+        ({"task": "phonon-dos", "dos_grid": [1.0], "dos_sigma": 0.1}, "phonons"),
+        ({"task": "phonon-dos", "phonons": "phonons.npz", "dos_sigma": 0.1}, "dos_grid"),
+        ({"task": "phonon-dos", "phonons": "phonons.npz", "dos_grid": [1.0]}, "dos_sigma"),
     ],
 )
 def test_eph_entrypoint_rejects_missing_required_inputs(kwargs, match):

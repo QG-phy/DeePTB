@@ -575,7 +575,8 @@ def main_parser() -> argparse.ArgumentParser:
             "Output path. Defaults by task: epc_data.npz, epc_path_data.npz, "
             "epc_mesh_data.npz, linewidth.npz, path_linewidth.npz, mesh_linewidth.npz, "
             "relaxation_time.npz, path_relaxation_time.npz, mesh_relaxation_time.npz, "
-            "transport.npz, mobility.npz, subspace_coupling.npz, or coupling_summary.json."
+            "transport.npz, mobility.npz, subspace_coupling.npz, coupling_summary.json, "
+            "or phonon_dos.json."
         ),
     )
 
@@ -701,6 +702,19 @@ def main_parser() -> argparse.ArgumentParser:
         type=float,
         default=1e-5,
         help="Minimum phonon frequency in THz used by linewidth postprocess to regularize acoustic zero modes.",
+    )
+    parser_eph.add_argument(
+        "--dos-grid",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Frequency grid in THz for phonon-dos.",
+    )
+    parser_eph.add_argument(
+        "--dos-sigma",
+        type=float,
+        default=None,
+        help="Frequency broadening in THz for phonon-dos.",
     )
 
     parser_eph.add_argument(

@@ -28,6 +28,7 @@ from dptb.postprocess.unified.eph import (
     compute_linewidth,
     compute_linewidth_mesh,
     compute_linewidth_path,
+    compute_phonon_dos,
     compute_relaxation_time,
     compute_relaxation_time_mesh,
     compute_relaxation_time_path,
@@ -54,6 +55,7 @@ EPH_PRIMARY_TASKS = (
     "mobility",
     "subspace",
     "coupling-summary",
+    "phonon-dos",
 )
 
 EPH_TASK_ALIASES = (
@@ -79,6 +81,7 @@ EPH_TASK_CHOICES = (
     "mobility",
     "subspace",
     "coupling-summary",
+    "phonon-dos",
 )
 
 EPH_TASK_ERROR_MESSAGE = "task must be one of " + ", ".join(f"'{task}'" for task in EPH_TASK_CHOICES) + "."
@@ -120,6 +123,8 @@ def eph(
     displacement: float = 1e-3,
     use_scc: bool = False,
     summary_unweighted: bool = False,
+    dos_grid: Optional[Sequence[float]] = None,
+    dos_sigma: Optional[float] = None,
     system=None,
     derivative_provider=None,
     **kwargs,
@@ -290,6 +295,14 @@ def eph(
             epc_data=epc_data,
             output=output or "coupling_summary.json",
             weighted=not summary_unweighted,
+        )
+    if task == "phonon-dos":
+        return eph_phonon_dos(
+            phonons=phonons,
+            output=output or "phonon_dos.json",
+            frequency_grid=dos_grid,
+            sigma=dos_sigma,
+            broadening=broadening,
         )
     raise ValueError(EPH_TASK_ERROR_MESSAGE)
 
@@ -818,6 +831,34 @@ def eph_coupling_summary(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(_jsonable(result), indent=2, sort_keys=True), encoding="utf-8")
     log.info("Electron-phonon coupling summary written to %s", output_path)
+    return result
+
+
+def eph_phonon_dos(
+    phonons: str,
+    output: str,
+    frequency_grid: Optional[Sequence[float]],
+    sigma: Optional[float],
+    broadening: str = "gaussian",
+) -> dict:
+    """Write phonon DOS from external phonon-mode data as JSON."""
+    if phonons is None:
+        raise ValueError("phonons is required for dptb eph --task phonon-dos.")
+    if frequency_grid is None:
+        raise ValueError("dos_grid is required for dptb eph --task phonon-dos.")
+    if sigma is None:
+        raise ValueError("dos_sigma is required for dptb eph --task phonon-dos.")
+
+    result = compute_phonon_dos(
+        Phonons.load_npz(phonons),
+        frequency_grid=np.asarray(frequency_grid, dtype=float),
+        sigma=sigma,
+        broadening=broadening,
+    )
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(_jsonable(result), indent=2, sort_keys=True), encoding="utf-8")
+    log.info("Electron-phonon phonon DOS written to %s", output_path)
     return result
 
 
