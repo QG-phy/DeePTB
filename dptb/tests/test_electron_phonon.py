@@ -2718,6 +2718,58 @@ def test_linewidth_data_rejects_invalid_schema_and_shapes():
         )
 
 
+@pytest.mark.parametrize(
+    ("factory", "metadata", "match"),
+    [
+        pytest.param(
+            lambda metadata: LinewidthMeshData(
+                linewidth=np.ones((1, 1)),
+                absorption=np.zeros((1, 1)),
+                emission=np.ones((1, 1)),
+                kpoints=np.array([[0.0, 0.0, 0.0]]),
+                kpoint_weights=np.array([1.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            {"linewidth_unit": "meV"},
+            "linewidth_unit",
+            id="mesh_linewidth_unit",
+        ),
+        pytest.param(
+            lambda metadata: LinewidthPathData(
+                linewidth=np.ones((1, 1, 1)),
+                absorption=np.zeros((1, 1, 1)),
+                emission=np.ones((1, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            {"linewidth_unit": "meV"},
+            "linewidth_unit",
+            id="path_linewidth_unit",
+        ),
+        pytest.param(
+            lambda metadata: LinewidthPathData(
+                linewidth=np.ones((1, 1, 1)),
+                absorption=np.zeros((1, 1, 1)),
+                emission=np.ones((1, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            {"path_coordinate_unit": "cartesian_reciprocal_distance"},
+            "path_coordinate_unit",
+            id="path_linewidth_coordinate_unit",
+        ),
+    ],
+)
+def test_linewidth_mesh_and_path_data_reject_conflicting_unit_metadata(factory, metadata, match):
+    with pytest.raises(ValueError, match=match):
+        factory(metadata)
+
+
 def test_compute_relaxation_time_matches_linewidth_convention():
     linewidth = LinewidthData(
         linewidth=np.array([[0.01, 0.02], [0.04, 0.08]]),
@@ -2898,6 +2950,52 @@ def test_compute_relaxation_time_rejects_nonpositive_linewidth():
             relaxation_time=np.array([[1e-13]]),
             metadata={"convention": "hbar_over_linewidth"},
         )
+
+
+@pytest.mark.parametrize(
+    ("factory", "metadata", "match"),
+    [
+        pytest.param(
+            lambda metadata: RelaxationTimeMeshData(
+                relaxation_time=np.ones((1, 1)),
+                kpoints=np.array([[0.0, 0.0, 0.0]]),
+                kpoint_weights=np.array([1.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            {"relaxation_time_unit": "fs"},
+            "relaxation_time_unit",
+            id="mesh_relaxation_time_unit",
+        ),
+        pytest.param(
+            lambda metadata: RelaxationTimePathData(
+                relaxation_time=np.ones((1, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            {"relaxation_time_unit": "fs"},
+            "relaxation_time_unit",
+            id="path_relaxation_time_unit",
+        ),
+        pytest.param(
+            lambda metadata: RelaxationTimePathData(
+                relaxation_time=np.ones((1, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            {"path_coordinate_unit": "cartesian_reciprocal_distance"},
+            "path_coordinate_unit",
+            id="path_relaxation_time_coordinate_unit",
+        ),
+    ],
+)
+def test_relaxation_time_mesh_and_path_data_reject_conflicting_unit_metadata(factory, metadata, match):
+    with pytest.raises(ValueError, match=match):
+        factory(metadata)
 
 
 def test_find_degenerate_band_groups_preserves_band_order():
