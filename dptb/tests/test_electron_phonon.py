@@ -66,6 +66,7 @@ from dptb.postprocess.unified.eph import (
     build_q_chunk_specs,
     compute_band_velocities_finite_difference,
     compute_band_velocities_hamiltonian_derivative,
+    compute_eliashberg_spectral_function,
     compute_serta_mobility_si,
     compute_serta_mobility_scan_si,
     compute_linewidth,
@@ -170,6 +171,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
         unified_postprocess.compute_band_velocities_hamiltonian_derivative
         is compute_band_velocities_hamiltonian_derivative
     )
+    assert unified_postprocess.compute_eliashberg_spectral_function is compute_eliashberg_spectral_function
     assert unified_postprocess.compute_serta_mobility_si is compute_serta_mobility_si
     assert unified_postprocess.compute_serta_mobility_scan_si is compute_serta_mobility_scan_si
     assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
@@ -1103,6 +1105,85 @@ def test_compute_coupling_strength_summary_rejects_invalid_inputs():
             ),
             weighted="yes",
         )
+
+
+def test_compute_eliashberg_spectral_function_matches_manual_reference():
+    strength = np.array([[[[[2.0]]]], [[[[4.0]]]]])
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.array([[1.0], [2.0]]),
+        eigenvalues_k=np.ones((1, 1)),
+        eigenvalues_kq=np.ones((2, 1, 1)),
+        coupling_matrix=np.sqrt(strength).astype(complex),
+        coupling_strength=strength,
+    )
+    grid = np.array([1.0, 2.0])
+    sigma = 0.5
+
+    result = compute_eliashberg_spectral_function(epc_data, frequency_grid=grid, sigma=sigma)
+    expected = (
+        2.0 * np.exp(-((grid - 1.0) ** 2) / (2.0 * sigma**2))
+        + 4.0 * np.exp(-((grid - 2.0) ** 2) / (2.0 * sigma**2))
+    ) / (np.sqrt(2.0 * np.pi) * sigma)
+
+    np.testing.assert_allclose(result["frequency_grid"], grid)
+    np.testing.assert_allclose(result["alpha2f"], expected)
+    np.testing.assert_allclose(result["mode_resolved_alpha2f"][0], expected)
+    assert result["metadata"]["convention"] == "coupling_strength_weighted_phonon_frequency_spectrum"
+    assert result["metadata"]["weight_convention"] == "unweighted_sum"
+
+
+def test_compute_eliashberg_spectral_function_uses_mesh_weights():
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.array([[1.0], [2.0]]),
+        eigenvalues_k=np.ones((2, 1)),
+        eigenvalues_kq=np.ones((2, 2, 1)),
+        coupling_matrix=np.ones((2, 2, 1, 1, 1), dtype=complex),
+        coupling_strength=np.ones((2, 2, 1, 1, 1)),
+    )
+    mesh_data = EPCMeshData.from_epc_data(
+        epc_data,
+        kpoint_weights=np.array([1.0, 3.0]),
+        qpoint_weights=np.array([2.0, 6.0]),
+    )
+    grid = np.array([1.0, 2.0])
+    sigma = 0.5
+
+    weighted = compute_eliashberg_spectral_function(mesh_data, frequency_grid=grid, sigma=sigma)
+    unweighted = compute_eliashberg_spectral_function(mesh_data, frequency_grid=grid, sigma=sigma, weighted=False)
+
+    weighted_expected = (
+        0.25 * np.exp(-((grid - 1.0) ** 2) / (2.0 * sigma**2))
+        + 0.75 * np.exp(-((grid - 2.0) ** 2) / (2.0 * sigma**2))
+    ) / (np.sqrt(2.0 * np.pi) * sigma)
+    np.testing.assert_allclose(weighted["alpha2f"], weighted_expected)
+    assert weighted["metadata"]["weight_convention"] == "normalized_qpoint_and_kpoint_weights"
+    assert unweighted["metadata"]["weight_convention"] == "unweighted_sum"
+
+
+def test_compute_eliashberg_spectral_function_rejects_invalid_inputs():
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.ones((1, 1)),
+        eigenvalues_k=np.ones((1, 1)),
+        eigenvalues_kq=np.ones((1, 1, 1)),
+        coupling_matrix=np.ones((1, 1, 1, 1, 1), dtype=complex),
+        coupling_strength=np.ones((1, 1, 1, 1, 1)),
+    )
+
+    with pytest.raises(ValueError, match="EPCData"):
+        compute_eliashberg_spectral_function(object(), frequency_grid=np.array([1.0]), sigma=0.1)
+    with pytest.raises(ValueError, match="frequency_grid"):
+        compute_eliashberg_spectral_function(epc_data, frequency_grid=np.ones((1, 1)), sigma=0.1)
+    with pytest.raises(ValueError, match="weighted"):
+        compute_eliashberg_spectral_function(epc_data, frequency_grid=np.array([1.0]), sigma=0.1, weighted="yes")
 
 
 def test_epc_path_data_npz_roundtrip(tmp_path):
@@ -4340,6 +4421,34 @@ def test_eph_cli_parser_accepts_phonon_dos_inputs():
     assert args.output == "phonon_dos.json"
 
 
+def test_eph_cli_parser_accepts_eliashberg_inputs():
+    args = parse_args(
+        [
+            "eph",
+            "--task",
+            "eliashberg",
+            "--epc-data",
+            "epc_mesh_data.npz",
+            "--dos-grid",
+            "0.0",
+            "1.0",
+            "--dos-sigma",
+            "0.1",
+            "--summary-unweighted",
+            "-o",
+            "eliashberg.json",
+        ]
+    )
+
+    assert args.command == "eph"
+    assert args.task == "eliashberg"
+    assert args.epc_data == "epc_mesh_data.npz"
+    assert args.dos_grid == [0.0, 1.0]
+    assert args.dos_sigma == 0.1
+    assert args.summary_unweighted is True
+    assert args.output == "eliashberg.json"
+
+
 def test_eph_task_registry_matches_parser_choices_and_docs():
     parser = main_parser()
     subparser_action = next(
@@ -5052,6 +5161,37 @@ def test_eph_entrypoint_writes_phonon_dos_json_from_external_phonon_modes(tmp_pa
     assert payload["metadata"]["dos_unit"] == "THz^-1"
 
 
+def test_eph_entrypoint_writes_eliashberg_json_from_epc_data(tmp_path):
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.array([[1.0]]),
+        eigenvalues_k=np.ones((1, 1)),
+        eigenvalues_kq=np.ones((1, 1, 1)),
+        coupling_matrix=np.ones((1, 1, 1, 1, 1), dtype=complex) * 2.0,
+        coupling_strength=np.ones((1, 1, 1, 1, 1)) * 4.0,
+    )
+    epc_path = tmp_path / "epc_data.npz"
+    output_path = tmp_path / "eliashberg.json"
+    epc_data.save_npz(epc_path)
+
+    result = eph(
+        task="eliashberg",
+        epc_data=str(epc_path),
+        dos_grid=[1.0],
+        dos_sigma=0.5,
+        output=str(output_path),
+    )
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert output_path.exists()
+    np.testing.assert_allclose(payload["frequency_grid"], [1.0])
+    np.testing.assert_allclose(payload["alpha2f"], result["alpha2f"])
+    assert payload["metadata"]["source"] == "EPCData.coupling_strength"
+    assert payload["metadata"]["spectral_unit"] == "eV^2 THz^-1"
+
+
 def test_eph_entrypoint_rejects_scc_v1(tmp_path):
     phonon_path = tmp_path / "phonons.npz"
     Phonons(
@@ -5199,6 +5339,9 @@ def test_eph_entrypoint_rejects_invalid_task_type():
         ({"task": "phonon-dos", "dos_grid": [1.0], "dos_sigma": 0.1}, "phonons"),
         ({"task": "phonon-dos", "phonons": "phonons.npz", "dos_sigma": 0.1}, "dos_grid"),
         ({"task": "phonon-dos", "phonons": "phonons.npz", "dos_grid": [1.0]}, "dos_sigma"),
+        ({"task": "eliashberg", "dos_grid": [1.0], "dos_sigma": 0.1}, "epc_data"),
+        ({"task": "eliashberg", "epc_data": "epc.npz", "dos_sigma": 0.1}, "dos_grid"),
+        ({"task": "eliashberg", "epc_data": "epc.npz", "dos_grid": [1.0]}, "dos_sigma"),
     ],
 )
 def test_eph_entrypoint_rejects_missing_required_inputs(kwargs, match):

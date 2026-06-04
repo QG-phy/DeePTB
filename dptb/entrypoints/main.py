@@ -576,7 +576,7 @@ def main_parser() -> argparse.ArgumentParser:
             "epc_mesh_data.npz, linewidth.npz, path_linewidth.npz, mesh_linewidth.npz, "
             "relaxation_time.npz, path_relaxation_time.npz, mesh_relaxation_time.npz, "
             "transport.npz, mobility.npz, subspace_coupling.npz, coupling_summary.json, "
-            "or phonon_dos.json."
+            "phonon_dos.json, or eliashberg.json."
         ),
     )
 
@@ -708,13 +708,13 @@ def main_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=float,
         default=None,
-        help="Frequency grid in THz for phonon-dos.",
+        help="Frequency grid in THz for phonon-dos or eliashberg.",
     )
     parser_eph.add_argument(
         "--dos-sigma",
         type=float,
         default=None,
-        help="Frequency broadening in THz for phonon-dos.",
+        help="Frequency broadening in THz for phonon-dos or eliashberg.",
     )
 
     parser_eph.add_argument(
@@ -767,7 +767,7 @@ def main_parser() -> argparse.ArgumentParser:
     parser_eph.add_argument(
         "--summary-unweighted",
         action="store_true",
-        help="For coupling-summary, ignore EPCMeshData k/q weights and use raw sums.",
+        help="For coupling-summary or eliashberg, ignore EPCMeshData k/q weights and use raw sums.",
     )
 
     # pdso parser (Julia/Pardiso Backend)

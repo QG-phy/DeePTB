@@ -22,8 +22,9 @@ include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `compute_band_velocities_hamiltonian_derivative`, `compute_serta_mobility_si`,
 `compute_serta_mobility_scan_si`, `compute_serta_transport_from_epc`,
 `compute_coupling_strength_summary`, `compute_phonon_dos`,
-`find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
-`compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
+`compute_eliashberg_spectral_function`, `find_degenerate_band_groups`,
+`compute_subspace_coupling_strength`, `compute_subspace_coupling_data`,
+`FDProvider`, `SupercellFD`, and the
 benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
 `dptb.utils.constants` and re-exported from the EPC namespace.
 
@@ -465,6 +466,24 @@ This task reads external `Phonons` NPZ frequencies and writes a JSON phonon DOS
 summary on the requested frequency grid. Frequencies, grid values, and
 `--dos-sigma` are in THz. DeePTB does not calculate phonons or force constants
 for this task.
+
+### Eliashberg-Like Spectrum
+
+```bash
+dptb eph \
+  --task eliashberg \
+  --epc-data epc_mesh_data.npz \
+  --dos-grid 0.0 0.5 1.0 1.5 2.0 \
+  --dos-sigma 0.05 \
+  --broadening gaussian \
+  -o eliashberg.json
+```
+
+This task reads an existing `EPCData`, `EPCPathData`, or `EPCMeshData` NPZ and
+writes a JSON coupling-strength-weighted phonon frequency spectrum. It is a
+DeePTB-native diagnostic, not a claim of full material-specific Eliashberg
+theory. For `EPCMeshData`, summaries use normalized k/q weights by default; add
+`--summary-unweighted` for raw sums.
 
 ## Current v1 Limits
 

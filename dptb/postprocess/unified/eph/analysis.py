@@ -1764,6 +1764,97 @@ def compute_phonon_dos(
     }
 
 
+def compute_eliashberg_spectral_function(
+    epc_data: Union[EPCData, EPCMeshData, EPCPathData],
+    frequency_grid: np.ndarray,
+    sigma: float,
+    broadening: str = "gaussian",
+    weighted: bool = True,
+) -> Dict[str, Any]:
+    """Compute an Eliashberg-like EPC spectral function from existing EPC data.
+
+    This helper broadens the externally supplied phonon frequencies and weights
+    them by ``coupling_strength``. It is a DeePTB-native diagnostic, not a claim
+    of full material-specific Eliashberg theory.
+    """
+    weighted = _validate_bool(weighted, "weighted")
+    frequency_grid = np.asarray(frequency_grid, dtype=float)
+    sigma = validate_finite_positive_scalar(sigma, "sigma")
+    if frequency_grid.ndim != 1 or frequency_grid.size == 0:
+        raise ValueError("frequency_grid must be a one-dimensional non-empty array.")
+    if not np.all(np.isfinite(frequency_grid)):
+        raise ValueError("frequency_grid must contain finite values.")
+    if not isinstance(broadening, str):
+        raise ValueError("broadening must be either 'gaussian' or 'lorentzian'.")
+    broadening = broadening.lower()
+    if broadening not in {"gaussian", "lorentzian"}:
+        raise ValueError("broadening must be either 'gaussian' or 'lorentzian'.")
+
+    if isinstance(epc_data, EPCMeshData):
+        source = "EPCMeshData.coupling_strength"
+        frequencies = np.asarray(epc_data.frequencies, dtype=float)
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        if weighted:
+            qpoint_weights = _normalize_weights(epc_data.qpoint_weights, "qpoint_weights")
+            kpoint_weights = _normalize_weights(epc_data.kpoint_weights, "kpoint_weights")
+            strength = strength * qpoint_weights[:, None, None, None, None] * kpoint_weights[None, :, None, None, None]
+            weight_convention = "normalized_qpoint_and_kpoint_weights"
+        else:
+            weight_convention = "unweighted_sum"
+    elif isinstance(epc_data, EPCPathData):
+        source = "EPCPathData.coupling_strength"
+        frequencies = np.asarray(epc_data.frequencies, dtype=float)
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        weight_convention = "unweighted_sum"
+    elif isinstance(epc_data, EPCData):
+        source = "EPCData.coupling_strength"
+        frequencies = np.asarray(epc_data.frequencies, dtype=float)
+        strength = np.asarray(epc_data.coupling_strength, dtype=float)
+        weight_convention = "unweighted_sum"
+    else:
+        raise ValueError("epc_data must be an EPCData, EPCMeshData, or EPCPathData object.")
+
+    if frequencies.ndim != 2:
+        raise ValueError("frequencies must have shape (nq, nmodes).")
+    if strength.ndim != 5:
+        raise ValueError("coupling_strength must have shape (nq, nk, nmodes, nfinal, ninitial).")
+    if strength.shape[0] != frequencies.shape[0] or strength.shape[2] != frequencies.shape[1]:
+        raise ValueError("coupling_strength q/mode axes must match frequencies.")
+    if not np.all(np.isfinite(frequencies)) or np.any(frequencies < 0.0):
+        raise ValueError("frequencies must contain finite non-negative values.")
+    if not np.all(np.isfinite(strength)) or np.any(strength < 0.0):
+        raise ValueError("coupling_strength must contain finite non-negative values.")
+
+    nmodes = frequencies.shape[1]
+    mode_resolved = np.zeros((nmodes, frequency_grid.shape[0]), dtype=float)
+    for iq in range(frequencies.shape[0]):
+        for imode in range(nmodes):
+            mode_strength = strength[iq, :, imode].sum()
+            mode_resolved[imode] += mode_strength * _broadening(
+                frequency_grid - frequencies[iq, imode],
+                sigma,
+                broadening,
+            )
+
+    return {
+        "frequency_grid": frequency_grid,
+        "alpha2f": mode_resolved.sum(axis=0),
+        "mode_resolved_alpha2f": mode_resolved,
+        "metadata": {
+            "source": source,
+            "input_schema": epc_data.metadata.get("schema"),
+            "frequency_unit": epc_data.metadata.get("frequency_unit", "THz"),
+            "spectral_unit": f"{epc_data.metadata.get('coupling_strength_unit', 'eV^2')} THz^-1",
+            "sigma": sigma,
+            "sigma_unit": "THz",
+            "broadening": broadening,
+            "weighted": weighted,
+            "weight_convention": weight_convention,
+            "convention": "coupling_strength_weighted_phonon_frequency_spectrum",
+        },
+    }
+
+
 def compute_subspace_coupling_strength(
     coupling_matrix: np.ndarray,
     final_groups: Sequence[Sequence[int]],

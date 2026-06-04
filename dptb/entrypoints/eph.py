@@ -25,6 +25,7 @@ from dptb.postprocess.unified.eph import (
     compute_band_velocities_finite_difference,
     compute_band_velocities_hamiltonian_derivative,
     compute_coupling_strength_summary,
+    compute_eliashberg_spectral_function,
     compute_linewidth,
     compute_linewidth_mesh,
     compute_linewidth_path,
@@ -56,6 +57,7 @@ EPH_PRIMARY_TASKS = (
     "subspace",
     "coupling-summary",
     "phonon-dos",
+    "eliashberg",
 )
 
 EPH_TASK_ALIASES = (
@@ -82,6 +84,7 @@ EPH_TASK_CHOICES = (
     "subspace",
     "coupling-summary",
     "phonon-dos",
+    "eliashberg",
 )
 
 EPH_TASK_ERROR_MESSAGE = "task must be one of " + ", ".join(f"'{task}'" for task in EPH_TASK_CHOICES) + "."
@@ -303,6 +306,15 @@ def eph(
             frequency_grid=dos_grid,
             sigma=dos_sigma,
             broadening=broadening,
+        )
+    if task == "eliashberg":
+        return eph_eliashberg(
+            epc_data=epc_data,
+            output=output or "eliashberg.json",
+            frequency_grid=dos_grid,
+            sigma=dos_sigma,
+            broadening=broadening,
+            weighted=not summary_unweighted,
         )
     raise ValueError(EPH_TASK_ERROR_MESSAGE)
 
@@ -859,6 +871,36 @@ def eph_phonon_dos(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(_jsonable(result), indent=2, sort_keys=True), encoding="utf-8")
     log.info("Electron-phonon phonon DOS written to %s", output_path)
+    return result
+
+
+def eph_eliashberg(
+    epc_data: str,
+    output: str,
+    frequency_grid: Optional[Sequence[float]],
+    sigma: Optional[float],
+    broadening: str = "gaussian",
+    weighted: bool = True,
+) -> dict:
+    """Write an Eliashberg-like coupling-strength spectrum as JSON."""
+    if epc_data is None:
+        raise ValueError("epc_data is required for dptb eph --task eliashberg.")
+    if frequency_grid is None:
+        raise ValueError("dos_grid is required for dptb eph --task eliashberg.")
+    if sigma is None:
+        raise ValueError("dos_sigma is required for dptb eph --task eliashberg.")
+
+    result = compute_eliashberg_spectral_function(
+        _load_epc_summary_data(epc_data),
+        frequency_grid=np.asarray(frequency_grid, dtype=float),
+        sigma=sigma,
+        broadening=broadening,
+        weighted=weighted,
+    )
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(_jsonable(result), indent=2, sort_keys=True), encoding="utf-8")
+    log.info("Electron-phonon Eliashberg-like spectrum written to %s", output_path)
     return result
 
 
