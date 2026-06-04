@@ -114,9 +114,10 @@ class Phonons:
     @classmethod
     def from_phonopy(cls, phonopy_obj, qpoints: Optional[np.ndarray] = None):
         if qpoints is not None:
-            phonopy_obj.run_qpoints(qpoints, with_eigenvectors=True)
+            requested_qpoints = normalize_kpoints(qpoints)
+            phonopy_obj.run_qpoints(requested_qpoints, with_eigenvectors=True)
             result = phonopy_obj.get_qpoints_dict()
-            qpts = result["qpoints"]
+            qpts = result.get("qpoints", requested_qpoints)
         else:
             result = phonopy_obj.get_mesh_dict()
             qpts = result["qpoints"]

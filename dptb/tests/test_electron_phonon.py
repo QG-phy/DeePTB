@@ -744,6 +744,36 @@ def test_phonons_from_phonopy_reads_external_modes():
     assert phonons.metadata["source"] == "phonopy"
 
 
+def test_phonons_from_phonopy_uses_requested_qpoints_when_result_omits_them():
+    class _Primitive:
+        masses = np.array([12.0, 12.0])
+        cell = np.eye(3)
+        scaled_positions = np.array([[0.0, 0.0, 0.0], [1.0 / 3.0, 2.0 / 3.0, 0.0]])
+
+    class _Phonopy:
+        primitive = _Primitive()
+
+        def __init__(self):
+            self.requested_qpoints = None
+
+        def run_qpoints(self, qpoints, with_eigenvectors=False):
+            self.requested_qpoints = np.asarray(qpoints, dtype=float)
+
+        def get_qpoints_dict(self):
+            eigenvectors = np.arange(2 * 6 * 6).reshape(2, 6, 6)
+            return {
+                "frequencies": np.ones((2, 6)),
+                "eigenvectors": eigenvectors,
+            }
+
+    qpoints = np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]])
+    phonons = Phonons.from_phonopy(_Phonopy(), qpoints=qpoints)
+
+    np.testing.assert_allclose(phonons.qpoints, qpoints)
+    assert phonons.frequencies.shape == (2, 6)
+    assert phonons.eigenvectors.shape == (2, 6, 2, 3)
+
+
 def test_phonons_from_phonopy_file_delegates_to_phonopy_load(monkeypatch, tmp_path):
     class _Primitive:
         masses = np.array([12.0])
