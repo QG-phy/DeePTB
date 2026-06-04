@@ -80,6 +80,10 @@
   - 当前实现目标是 serial k-chunk reference path；MPI/CUDA 只通过接口预留进入，不在本轮变成必需依赖或默认路径。
   - 下一步实现时优先把 task spec、chunk metadata、reducer 语义和 backend selection 写清楚；不要先引入 `mpi4py` 或 CUDA kernel。
   - 如果后续需要实际加速，推荐顺序是：serial chunked summaries -> chunked artifact -> multiprocessing/MPI executor -> torch CUDA backend。这样 MPI 和 CUDA 可以组合使用，而不是二选一。
+  - 当前开发波次的工程判断是：先不要在默认路径里实现 MPI 或 CUDA；先把 serial/chunk contract 做到足够清晰，使后续 MPI executor 和 CUDA backend 都能接入而不改公共 API。
+  - 如果必须在下一波选择一个真实加速方向，优先实现 CPU-side chunked artifact 和 multiprocessing/MPI executor，因为 EPC mesh 的第一瓶颈通常是独立 k/q/chunk 任务数量和输出规模；CUDA 放在 backend/kernel 层，等 contraction/eigensolve/velocity kernel 的数据布局稳定后再做。
+  - `mpi4py` 只能作为 optional dependency；默认安装、默认测试和 NPZ 文件格式不得依赖 MPI runtime。
+  - CUDA device、torch dtype/device、rank id、process id 等 runtime 信息只能进入 debug metadata 或 benchmark log，不得成为持久化 schema 的必要字段。
 
 ## Stage Gates
 
@@ -542,6 +546,14 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 
 让 mesh EPC 和 transport 能在实际体系上运行，而不只是小测试。
 
+本 workstream 的核心原则是分离三件事：
+
+- data contract: NPZ/chunked artifact 如何表达结果。
+- executor: serial/multiprocessing/MPI 如何分发独立任务。
+- backend: numpy/torch CPU/CUDA 如何计算单个任务。
+
+这三层不能互相泄漏。尤其是，不能为了 MPI 改 EPCData 的物理 shape，也不能为了 CUDA 改 CLI 或 NPZ schema。
+
 ### Candidate Strategies
 
 - Vectorize contraction loops where practical。
@@ -553,6 +565,34 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - Keep backend selection separate from executor selection: executor controls task distribution, backend controls numeric device/kernel。
 - Add torch-CUDA backend only after serial chunked API and reducer semantics are stable。
 - Keep Cython/CUDA as future option, not first response.
+
+### Recommended Scaling Roadmap
+
+Phase 0, already started:
+
+- Keep serial executor as the reference implementation.
+- Keep `EPCKChunkSpec`, `build_k_chunk_specs(...)`, and `concat_epc_k_chunks(...)` deterministic.
+- Keep chunk metadata rank-independent and process-independent.
+
+Phase 1, next practical scaling step:
+
+- Add a chunked artifact format for large mesh outputs before adding a parallel runtime.
+- Support summary-first workflows that compute linewidth/transport accumulators without persisting the full `nq * nk * nmodes * nbands^2` coupling matrix when the user does not need it.
+- Add direct tests proving chunked artifact load/reduce gives the same result as in-memory small cases.
+
+Phase 2, CPU parallel execution:
+
+- Add a multiprocessing executor first if it can reuse `dptb.utils.multiprocessing.num_tasks()` and avoid new required dependencies.
+- Add `mpi4py` executor only as an optional backend for cluster runs.
+- Both executors must consume the same immutable chunk specs and use the same reducers as serial execution.
+
+Phase 3, GPU backend:
+
+- Add torch CUDA backend only after the per-chunk arrays, contraction order, velocity provider outputs, and reducer semantics are stable.
+- CUDA should accelerate batched eigensolve, velocity matrix elements, and EPC contraction inside one chunk.
+- CUDA must not own chunk scheduling, file writing, or persistent schema decisions.
+
+Practical recommendation for this codebase: implement Phase 1 before MPI or CUDA. If the next wave must pick one acceleration feature after Phase 1, pick multiprocessing/MPI executor before CUDA unless profiling shows a single chunk's contraction/eigensolve dominates wall time.
 
 ### MPI and CUDA Position
 
@@ -596,6 +636,9 @@ For the next implementation wave, the correct preparation is interface-level:
 - Serial executor should be the default and used in tests.
 - Multiprocessing/MPI executors should share the same task spec and reducer.
 - Do not make `mpi4py` a required dependency for default EPC workflows.
+- Worker functions must not mutate `TBSystem` shared state without a local copy or a documented restore path; finite-difference displacement workflows are especially sensitive because `set_atoms(...)` resets postprocess state.
+- Executor configuration should stay outside physics APIs where possible: physics functions accept specs/data objects, while executor wrappers choose serial/multiprocessing/MPI.
+- Reducers must validate global shape, chunk index coverage, k/q/band index consistency, weights, units, schema version, and backend metadata before concatenating or summing.
 
 ### Backend Design
 
@@ -606,6 +649,8 @@ For the next implementation wave, the correct preparation is interface-level:
 - NPZ persistence remains CPU/numpy oriented; GPU tensors must be converted at artifact boundaries.
 - Analytic velocity backend should reuse `get_hk(..., with_derivative=True)` where possible.
 - Finite-difference velocity remains a fallback/reference backend.
+- Backend selection should be orthogonal to velocity source: `velocity_source="finite_difference"` and `velocity_source="hamiltonian_derivative"` can each have CPU implementations first, and only later gain CUDA kernels if profiling justifies it.
+- Backend metadata should record enough to reproduce and audit a run, for example backend name, device class, dtype, velocity source, derivative convention, and unit convention; it should not require an MPI rank or CUDA device to load the artifact.
 
 ### Acceptance
 
@@ -634,10 +679,11 @@ For the next implementation wave, the correct preparation is interface-level:
    - tests required before enabling `use_scc=True`。
 4. Implement chunked summary/artifact design for large mesh workflows.
 5. Add mode-resolved and q/band-resolved analysis summaries from existing NPZ objects.
-6. Add multiprocessing/MPI executor only after chunk specs and reducers are stable.
-7. Add torch CUDA backend only after serial and MPI executor semantics are fixed.
-8. Implement SCC EPC only after design, reference data, and tests are ready.
-9. Advance SOC/spinful, polar correction, and full gauge tracking as separate design-backed workstreams.
+6. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.
+7. Add optional `mpi4py` executor only after multiprocessing/serial reducer semantics are stable and default tests remain MPI-free.
+8. Add torch CUDA backend only after serial and CPU/MPI executor semantics are fixed and profiling shows per-chunk kernels dominate.
+9. Implement SCC EPC only after design, reference data, and tests are ready.
+10. Advance SOC/spinful, polar correction, and full gauge tracking as separate design-backed workstreams.
 
 ## Testing Strategy
 
@@ -677,12 +723,17 @@ This sprint is a stabilization and design sprint for the current implementation,
    - multiple deterministic chunks
    - invalid chunk settings
    - concat rejection for inconsistent chunk inputs
-5. Audit hardcoded development reference usage:
+5. Add a short scaling design check before implementing new mesh features:
+   - identify the intended split axis: q chunk, k chunk, band group, chemical-potential axis, or temperature axis。
+   - state whether the work produces a full coupling artifact or summary accumulators。
+   - state whether the implementation is executor-only, backend-only, or data-contract work。
+   - keep MPI and CUDA out of the default path until Phase 1 chunked artifact/reducer behavior is stable。
+6. Audit hardcoded development reference usage:
    - keep full Graphene reference opt-in and untracked if desired。
    - every hardcoded development reference must carry `TODO(epc-fixture)`。
    - default tests must move toward lightweight self-contained fixtures before merge。
-6. Update `docs/epc_v1_workflow.md` and docs index if schema/API drift exists.
-7. Review and finalize `docs/epc_scc_design.md` before touching SCC implementation.
-8. Create a checkpoint commit once docs and focused tests pass.
+7. Update `docs/epc_v1_workflow.md` and docs index if schema/API drift exists.
+8. Review and finalize `docs/epc_scc_design.md` before touching SCC implementation.
+9. Create a checkpoint commit once docs and focused tests pass.
 
 The immediate merge target is: stable EPC v1 plus DeePTB-native path/mesh workflows, serial k-chunk executor boundary, Hamiltonian-derivative velocity, SI mobility, and mobility scan. SCC EPC, MPI, CUDA, SOC/spinful, polar correction, and large chunked artifacts remain planned follow-up workstreams.

@@ -4570,6 +4570,94 @@ def test_eph_entrypoint_rejects_invalid_task_type():
         eph(task=None)
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"task": "coupling", "kpoints": "kpoints.json", "system": _FakeSystem()}, "phonons"),
+        ({"task": "coupling", "phonons": "phonons.npz", "system": _FakeSystem()}, "kpoints"),
+        ({"task": "coupling", "phonons": "phonons.npz", "kpoints": "kpoints.json"}, "structure"),
+        (
+            {"task": "coupling", "phonons": "phonons.npz", "kpoints": "kpoints.json", "structure": "struct.vasp"},
+            "init_model",
+        ),
+        ({"task": "path-coupling", "kpoints": "kpoints.json", "system": _FakeSystem()}, "phonons"),
+        ({"task": "path-coupling", "phonons": "phonons.npz", "system": _FakeSystem()}, "kpoints"),
+        ({"task": "mesh-coupling", "k_mesh": [1, 1, 1], "system": _FakeSystem()}, "phonons"),
+        ({"task": "mesh-coupling", "phonons": "phonons.npz", "system": _FakeSystem()}, "kpoints or k_mesh"),
+        ({"task": "linewidth", "chemical_potential": 0.0, "temperature": 0.01, "sigma": 0.01}, "epc_data"),
+        ({"task": "linewidth", "epc_data": "epc.npz", "temperature": 0.01, "sigma": 0.01}, "chemical_potential"),
+        ({"task": "linewidth", "epc_data": "epc.npz", "chemical_potential": 0.0, "sigma": 0.01}, "temperature"),
+        (
+            {"task": "linewidth", "epc_data": "epc.npz", "chemical_potential": 0.0, "temperature": 0.01},
+            "sigma",
+        ),
+        ({"task": "path-linewidth", "chemical_potential": 0.0, "temperature": 0.01, "sigma": 0.01}, "epc_data"),
+        ({"task": "mesh-linewidth", "chemical_potential": 0.0, "temperature": 0.01, "sigma": 0.01}, "epc_data"),
+        ({"task": "relaxation-time"}, "linewidth_data"),
+        ({"task": "path-relaxation-time"}, "linewidth_data"),
+        ({"task": "mesh-relaxation-time"}, "linewidth_data"),
+        (
+            {"task": "transport", "linewidth_data": "linewidth.npz", "chemical_potential": 0.0, "temperature": 0.01},
+            "epc_data",
+        ),
+        (
+            {"task": "transport", "epc_data": "epc.npz", "chemical_potential": 0.0, "temperature": 0.01},
+            "linewidth_data",
+        ),
+        (
+            {"task": "transport", "epc_data": "epc.npz", "linewidth_data": "linewidth.npz", "temperature": 0.01},
+            "chemical_potential",
+        ),
+        (
+            {
+                "task": "transport",
+                "epc_data": "epc.npz",
+                "linewidth_data": "linewidth.npz",
+                "chemical_potential": 0.0,
+            },
+            "temperature",
+        ),
+        (
+            {
+                "task": "transport",
+                "epc_data": "epc.npz",
+                "linewidth_data": "linewidth.npz",
+                "chemical_potential": 0.0,
+                "temperature": 0.01,
+            },
+            "structure",
+        ),
+        ({"task": "mobility", "linewidth_data": "linewidth.npz", "chemical_potential": 0.0, "temperature": 0.01}, "epc_data"),
+        ({"task": "mobility", "epc_data": "epc.npz", "chemical_potential": 0.0, "temperature": 0.01}, "linewidth_data"),
+        ({"task": "mobility", "epc_data": "epc.npz", "linewidth_data": "linewidth.npz", "temperature": 0.01}, "chemical_potential"),
+        (
+            {
+                "task": "mobility",
+                "epc_data": "epc.npz",
+                "linewidth_data": "linewidth.npz",
+                "chemical_potential": 0.0,
+            },
+            "temperature",
+        ),
+        (
+            {
+                "task": "mobility",
+                "epc_data": "epc.npz",
+                "linewidth_data": "linewidth.npz",
+                "chemical_potential": 0.0,
+                "temperature": 0.01,
+            },
+            "structure",
+        ),
+        ({"task": "subspace", "final_groups": ["0:1"]}, "epc_data"),
+        ({"task": "subspace", "epc_data": "epc.npz"}, "final_groups"),
+    ],
+)
+def test_eph_entrypoint_rejects_missing_required_inputs(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        eph(**kwargs)
+
+
 class _FakePhonopyCell:
     symbols = ["C", "C"]
     scaled_positions = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]])
