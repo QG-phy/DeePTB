@@ -340,9 +340,13 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - Current limitation: no chunked artifact/reducer yet; chunked mesh coupling still returns a single in-memory `EPCMeshData`.
 - Current executor boundary:
   - `EPCKChunkSpec` defines rank-independent k-axis chunk metadata.
+  - `EPCQChunkSpec` defines rank-independent q-axis chunk metadata.
   - `build_k_chunk_specs(...)` creates deterministic serial/future-parallel task specs.
+  - `build_q_chunk_specs(...)` creates deterministic q-axis task specs for future q-parallel execution.
   - `concat_epc_k_chunks(...)` performs deterministic k-axis concatenation and rejects inconsistent q-points, bands, frequencies, or coupling trailing shapes.
+  - `concat_epc_q_chunks(...)` performs deterministic q-axis concatenation and rejects inconsistent k-points, bands, eigenvalues, or coupling trailing shapes.
   - This is an API boundary for future multiprocessing/MPI; it is not yet a chunked artifact format.
+  - q-axis chunks are not yet wired into `compute_mesh(...)` execution; they are a tested reducer/spec boundary for the next scaling slice.
 
 ### CLI
 
@@ -605,7 +609,7 @@ MPI and CUDA are not competing designs here:
 
 For the next implementation wave, the correct preparation is interface-level:
 
-- keep `EPCKChunkSpec` and future `EPCQChunkSpec` rank-independent;
+- keep `EPCKChunkSpec` and `EPCQChunkSpec` rank-independent;
 - make reducers deterministic and independent of file/rank order;
 - preserve backend metadata in outputs;
 - avoid putting device objects, MPI rank IDs, or process-local assumptions into NPZ files;

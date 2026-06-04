@@ -61,7 +61,9 @@ from dptb.postprocess.unified.eph import (
     TRANSPORT_NPZ_SCHEMA_VERSION,
     TransportData,
     EPCKChunkSpec,
+    EPCQChunkSpec,
     build_k_chunk_specs,
+    build_q_chunk_specs,
     compute_band_velocities_finite_difference,
     compute_band_velocities_hamiltonian_derivative,
     compute_serta_mobility_si,
@@ -78,6 +80,7 @@ from dptb.postprocess.unified.eph import (
     compute_subspace_coupling_data,
     compute_subspace_coupling_strength,
     concat_epc_k_chunks,
+    concat_epc_q_chunks,
     cumulative_path_coordinates,
     find_degenerate_band_groups,
 )
@@ -147,8 +150,11 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.TransportData is TransportData
     assert unified_postprocess.SubspaceCouplingData is SubspaceCouplingData
     assert unified_postprocess.EPCKChunkSpec is EPCKChunkSpec
+    assert unified_postprocess.EPCQChunkSpec is EPCQChunkSpec
     assert unified_postprocess.build_k_chunk_specs is build_k_chunk_specs
+    assert unified_postprocess.build_q_chunk_specs is build_q_chunk_specs
     assert unified_postprocess.concat_epc_k_chunks is concat_epc_k_chunks
+    assert unified_postprocess.concat_epc_q_chunks is concat_epc_q_chunks
     assert unified_postprocess.compute_coupling_matrix is compute_coupling_matrix
     assert unified_postprocess.compute_linewidth is compute_linewidth
     assert unified_postprocess.compute_linewidth_mesh is compute_linewidth_mesh
@@ -3464,6 +3470,98 @@ def test_concat_epc_k_chunks_rejects_inconsistent_coupling_trailing_shape():
 def test_concat_epc_k_chunks_rejects_empty_input():
     with pytest.raises(ValueError, match="At least one EPC chunk"):
         concat_epc_k_chunks([])
+
+
+def test_epc_q_chunk_specs_are_deterministic():
+    full = build_q_chunk_specs(3, None)
+    assert full == [EPCQChunkSpec(chunk_index=0, q_start=0, q_stop=3)]
+    assert full[0].slice == slice(0, 3)
+    assert full[0].metadata() == {"chunk_index": 0, "q_start": 0, "q_stop": 3}
+
+    chunks = build_q_chunk_specs(5, 2)
+    assert chunks == [
+        EPCQChunkSpec(chunk_index=0, q_start=0, q_stop=2),
+        EPCQChunkSpec(chunk_index=1, q_start=2, q_stop=4),
+        EPCQChunkSpec(chunk_index=2, q_start=4, q_stop=5),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("nq", "chunk_size", "match"),
+    [
+        (0, 1, "nq"),
+        (3, 0, "chunk_size"),
+        (3, True, "chunk_size"),
+    ],
+)
+def test_epc_q_chunk_specs_reject_invalid_inputs(nq, chunk_size, match):
+    with pytest.raises(ValueError, match=match):
+        build_q_chunk_specs(nq, chunk_size)
+
+
+def _epc_q_chunk(qpoint_values, *, kpoint_shift=0.0, band_indices=None, eigenvalues_k=None, nbands=1):
+    qpoint_values = np.asarray(qpoint_values, dtype=float)
+    nq = len(qpoint_values)
+    if band_indices is None:
+        band_indices = np.arange(nbands)
+    band_indices = np.asarray(band_indices, dtype=int)
+    nbands = len(band_indices)
+    if eigenvalues_k is None:
+        eigenvalues_k = np.arange(nbands, dtype=float).reshape(1, nbands)
+    eigenvalues_k = np.asarray(eigenvalues_k, dtype=float)
+    values = qpoint_values.reshape(nq, 1, 1) + eigenvalues_k.reshape(1, 1, nbands)
+    coupling_strength = np.broadcast_to(values.reshape(nq, 1, 1, nbands, 1), (nq, 1, 1, nbands, nbands))
+    return EPCData(
+        kpoints=np.array([[kpoint_shift, 0.0, 0.0]]),
+        qpoints=np.column_stack([qpoint_values, np.zeros((nq, 2))]),
+        band_indices=band_indices,
+        frequencies=qpoint_values.reshape(nq, 1) + 1.0,
+        eigenvalues_k=eigenvalues_k,
+        eigenvalues_kq=values,
+        coupling_matrix=coupling_strength.astype(complex),
+        coupling_strength=coupling_strength,
+    )
+
+
+def test_concat_epc_q_chunks_concatenates_q_axis():
+    first = _epc_q_chunk([0.0, 0.5])
+    second = _epc_q_chunk([1.0])
+
+    combined = concat_epc_q_chunks([first, second])
+
+    np.testing.assert_allclose(combined.qpoints[:, 0], np.array([0.0, 0.5, 1.0]))
+    np.testing.assert_allclose(combined.frequencies[:, 0], np.array([1.0, 1.5, 2.0]))
+    np.testing.assert_allclose(combined.eigenvalues_kq[:, 0, 0], np.array([0.0, 0.5, 1.0]))
+    assert combined.coupling_matrix.shape == (3, 1, 1, 1, 1)
+    assert combined.metadata["chunk_count"] == 2
+    assert len(combined.metadata["chunk_sources"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("bad_chunk", "match"),
+    [
+        (_epc_q_chunk([1.0], kpoint_shift=0.25), "kpoints"),
+        (_epc_q_chunk([1.0], band_indices=[1]), "band_indices"),
+        (_epc_q_chunk([1.0], eigenvalues_k=np.array([[2.0]])), "eigenvalues_k"),
+    ],
+)
+def test_concat_epc_q_chunks_rejects_inconsistent_chunks(bad_chunk, match):
+    with pytest.raises(ValueError, match=match):
+        concat_epc_q_chunks([_epc_q_chunk([0.0]), bad_chunk])
+
+
+def test_concat_epc_q_chunks_rejects_inconsistent_coupling_trailing_shape():
+    bad_chunk = _epc_q_chunk([1.0])
+    bad_chunk.coupling_matrix = np.ones((1, 1, 2, 1, 1), dtype=complex)
+    bad_chunk.coupling_strength = np.ones((1, 1, 2, 1, 1))
+
+    with pytest.raises(ValueError, match="coupling trailing shape"):
+        concat_epc_q_chunks([_epc_q_chunk([0.0]), bad_chunk])
+
+
+def test_concat_epc_q_chunks_rejects_empty_input():
+    with pytest.raises(ValueError, match="At least one EPC chunk"):
+        concat_epc_q_chunks([])
 
 
 def test_electron_phonon_accessor_compute_mesh_rejects_bad_spec():

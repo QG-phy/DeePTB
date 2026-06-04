@@ -53,7 +53,14 @@ from dptb.postprocess.unified.eph.data import (
     Phonons,
     cumulative_path_coordinates,
 )
-from dptb.postprocess.unified.eph.executor import EPCKChunkSpec, build_k_chunk_specs, concat_epc_k_chunks
+from dptb.postprocess.unified.eph.executor import (
+    EPCKChunkSpec,
+    EPCQChunkSpec,
+    build_k_chunk_specs,
+    build_q_chunk_specs,
+    concat_epc_k_chunks,
+    concat_epc_q_chunks,
+)
 from dptb.postprocess.unified.eph.providers import FDProvider, SupercellFD
 
 __all__ = [
@@ -69,6 +76,7 @@ __all__ = [
     "EPC_NPZ_SCHEMA_VERSION",
     "EPC_PATH_NPZ_SCHEMA_VERSION",
     "EPCKChunkSpec",
+    "EPCQChunkSpec",
     "HBAR_EV_S",
     "LINEWIDTH_MESH_NPZ_SCHEMA_VERSION",
     "LINEWIDTH_NPZ_SCHEMA_VERSION",
@@ -100,6 +108,7 @@ __all__ = [
     "compute_serta_mobility_scan_si",
     "compute_coupling_matrix",
     "concat_epc_k_chunks",
+    "concat_epc_q_chunks",
     "cumulative_path_coordinates",
     "compute_linewidth",
     "compute_linewidth_mesh",
@@ -114,4 +123,5 @@ __all__ = [
     "compute_subspace_coupling_strength",
     "find_degenerate_band_groups",
     "build_k_chunk_specs",
+    "build_q_chunk_specs",
 ]
