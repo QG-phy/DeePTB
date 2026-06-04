@@ -250,8 +250,8 @@ def save_epc_mesh_chunked_artifact(
     )
 
 
-def load_epc_mesh_chunked_artifact(directory: Union[str, Path]) -> EPCMeshData:
-    """Load a chunked EPC mesh artifact and reduce it to ``EPCMeshData``."""
+def read_epc_mesh_chunked_manifest(directory: Union[str, Path]) -> dict:
+    """Read and validate an EPC mesh chunked artifact manifest."""
     directory = Path(directory)
     manifest_path = directory / "manifest.json"
     if not manifest_path.exists():
@@ -267,32 +267,81 @@ def load_epc_mesh_chunked_artifact(directory: Union[str, Path]) -> EPCMeshData:
     if manifest.get("schema_version") != EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION:
         raise ValueError("Unsupported EPC mesh chunked artifact schema_version.")
     axis = _normalize_chunk_axis(manifest.get("axis"))
+    chunk_count = manifest.get("chunk_count")
+    if isinstance(chunk_count, bool) or not isinstance(chunk_count, int) or chunk_count <= 0:
+        raise ValueError("manifest.json chunk_count must be a positive integer.")
+    chunk_size = manifest.get("chunk_size")
+    _validate_chunk_size(chunk_size)
+    expected_reducer = f"concat_epc_{axis}_chunks"
+    if manifest.get("reducer") != expected_reducer:
+        raise ValueError(f"manifest.json reducer must be {expected_reducer!r}.")
+    weights_filename = manifest.get("weights_filename", "weights.npz")
+    _validate_artifact_filename(weights_filename, "weights_filename")
+    if "mesh_metadata" in manifest and not isinstance(manifest["mesh_metadata"], dict):
+        raise ValueError("manifest.json mesh_metadata must be a JSON object.")
     chunk_entries = manifest.get("chunks")
     if not isinstance(chunk_entries, list) or len(chunk_entries) == 0:
         raise ValueError("EPC mesh chunked artifact must contain at least one chunk.")
+    if len(chunk_entries) != chunk_count:
+        raise ValueError("manifest.json chunk_count must match chunks length.")
 
-    chunks = []
-    expected_indices = []
-    for entry in chunk_entries:
+    expected_start = 0
+    for expected_index, entry in enumerate(chunk_entries):
         if not isinstance(entry, dict):
             raise ValueError("Each chunk manifest entry must be a JSON object.")
         if entry.get("axis") != axis:
             raise ValueError("Chunk manifest axis must match artifact axis.")
         filename = entry.get("filename")
-        if not isinstance(filename, str) or not filename:
-            raise ValueError("Chunk manifest entry requires a filename.")
+        _validate_artifact_filename(filename, "chunk filename")
         spec = entry.get("spec")
         if not isinstance(spec, dict):
             raise ValueError("Chunk manifest entry requires a spec object.")
-        expected_indices.append(_chunk_index_from_spec(axis, spec))
-        chunks.append(EPCData.load_npz(directory / filename))
-    if expected_indices != list(range(len(expected_indices))):
-        raise ValueError("Chunk manifest entries must be ordered by contiguous chunk_index.")
+        chunk_index, start, stop = _chunk_bounds_from_spec(axis, spec)
+        if chunk_index != expected_index:
+            raise ValueError("Chunk manifest entries must be ordered by contiguous chunk_index.")
+        if start != expected_start:
+            raise ValueError("Chunk manifest ranges must be contiguous and ordered.")
+        expected_start = stop
+    return manifest
 
+
+def read_epc_mesh_chunked_weights(directory: Union[str, Path], manifest: Optional[dict] = None) -> tuple:
+    """Read and validate global k/q weights from a chunked mesh artifact."""
+    directory = Path(directory)
+    if manifest is None:
+        manifest = read_epc_mesh_chunked_manifest(directory)
     weights_filename = manifest.get("weights_filename", "weights.npz")
+    _validate_artifact_filename(weights_filename, "weights_filename")
     with np.load(directory / weights_filename, allow_pickle=False) as weights_payload:
+        if "metadata_json" not in weights_payload:
+            raise ValueError("weights.npz metadata_json is required.")
+        try:
+            weights_metadata = json.loads(str(weights_payload["metadata_json"].item()))
+        except (AttributeError, json.JSONDecodeError):
+            raise ValueError("weights.npz metadata_json must be valid JSON.") from None
+        if not isinstance(weights_metadata, dict):
+            raise ValueError("weights.npz metadata_json must decode to a JSON object.")
+        if weights_metadata.get("schema") != "deeptb.epc_mesh_chunked_artifact.weights":
+            raise ValueError("weights.npz schema must be deeptb.epc_mesh_chunked_artifact.weights.")
+        if weights_metadata.get("schema_version") != EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION:
+            raise ValueError("Unsupported weights.npz schema_version.")
         kpoint_weights = weights_payload["el_kpoint_weights"]
         qpoint_weights = weights_payload["ph_qpoint_weights"]
+    return kpoint_weights, qpoint_weights
+
+
+def load_epc_mesh_chunked_artifact(directory: Union[str, Path]) -> EPCMeshData:
+    """Load a chunked EPC mesh artifact and reduce it to ``EPCMeshData``."""
+    directory = Path(directory)
+    manifest = read_epc_mesh_chunked_manifest(directory)
+    axis = manifest["axis"]
+
+    chunks = []
+    for entry in manifest["chunks"]:
+        filename = entry["filename"]
+        chunks.append(EPCData.load_npz(directory / filename))
+
+    kpoint_weights, qpoint_weights = read_epc_mesh_chunked_weights(directory, manifest)
 
     epc_data = concat_epc_k_chunks(chunks) if axis == "k" else concat_epc_q_chunks(chunks)
     metadata = dict(manifest.get("mesh_metadata") or {})
@@ -365,6 +414,23 @@ def _validate_chunk_size(chunk_size: int) -> int:
     if isinstance(chunk_size, bool) or not isinstance(chunk_size, (int, np.integer)) or chunk_size <= 0:
         raise ValueError("chunk_size must be a positive integer.")
     return int(chunk_size)
+
+
+def _validate_artifact_filename(filename: str, name: str) -> None:
+    if not isinstance(filename, str) or not filename:
+        raise ValueError(f"{name} must be a non-empty relative filename.")
+    path = Path(filename)
+    if path.is_absolute() or any(part == ".." for part in path.parts):
+        raise ValueError(f"{name} must be a relative filename inside the artifact directory.")
+    if path.name != filename:
+        raise ValueError(f"{name} must not contain directory components.")
+
+
+def _chunk_bounds_from_spec(axis: str, spec: dict) -> tuple:
+    chunk_index = _chunk_index_from_spec(axis, spec)
+    if axis == "k":
+        return chunk_index, spec["k_start"], spec["k_stop"]
+    return chunk_index, spec["q_start"], spec["q_stop"]
 
 
 def _chunk_index_from_spec(axis: str, spec: dict) -> int:

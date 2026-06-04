@@ -1,4 +1,3 @@
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
@@ -15,7 +14,7 @@ from dptb.postprocess.unified.eph.data import (
     _metadata_from_npz,
     _metadata_to_json,
 )
-from dptb.postprocess.unified.eph.executor import EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION
+from dptb.postprocess.unified.eph.executor import read_epc_mesh_chunked_manifest, read_epc_mesh_chunked_weights
 from dptb.utils.constants import ANGSTROM_TO_M, ELECTRON_CHARGE_C, HBAR_EV_S, THZ_TO_EV, eV2J
 from dptb.postprocess.unified.eph.utils import (
     as_array,
@@ -905,9 +904,9 @@ def compute_linewidth_mesh_chunked_artifact(
     k chunk independently and concatenates the reduced linewidth arrays.
     """
     directory = Path(directory)
-    manifest = _load_epc_mesh_chunked_manifest(directory)
+    manifest = read_epc_mesh_chunked_manifest(directory)
     axis = manifest["axis"]
-    kpoint_weights, qpoint_weights = _load_epc_mesh_chunked_weights(directory, manifest)
+    kpoint_weights, qpoint_weights = read_epc_mesh_chunked_weights(directory, manifest)
 
     if axis == "q":
         linewidth_result = None
@@ -989,69 +988,6 @@ def compute_linewidth_mesh_chunked_artifact(
         }
     )
     return result
-
-
-def _load_epc_mesh_chunked_manifest(directory: Path) -> Dict[str, Any]:
-    manifest_path = directory / "manifest.json"
-    if not manifest_path.exists():
-        raise ValueError("manifest.json is required for EPC mesh chunked artifact.")
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        raise ValueError("manifest.json must be valid JSON.") from None
-    if not isinstance(manifest, dict):
-        raise ValueError("manifest.json must contain a JSON object.")
-    if manifest.get("schema") != "deeptb.epc_mesh_chunked_artifact":
-        raise ValueError("manifest.json must describe a DeePTB EPC mesh chunked artifact.")
-    if manifest.get("schema_version") != EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION:
-        raise ValueError("Unsupported EPC mesh chunked artifact schema_version.")
-    axis = manifest.get("axis")
-    if axis not in {"q", "k"}:
-        raise ValueError("EPC mesh chunked artifact axis must be 'q' or 'k'.")
-    chunks = manifest.get("chunks")
-    if not isinstance(chunks, list) or len(chunks) == 0:
-        raise ValueError("EPC mesh chunked artifact must contain at least one chunk.")
-    for expected_index, entry in enumerate(chunks):
-        if not isinstance(entry, dict):
-            raise ValueError("Each chunk manifest entry must be a JSON object.")
-        if entry.get("axis") != axis:
-            raise ValueError("Chunk manifest axis must match artifact axis.")
-        if not isinstance(entry.get("filename"), str) or not entry["filename"]:
-            raise ValueError("Chunk manifest entry requires a filename.")
-        spec = entry.get("spec")
-        if not isinstance(spec, dict):
-            raise ValueError("Chunk manifest entry requires a spec object.")
-        if spec.get("chunk_index") != expected_index:
-            raise ValueError("Chunk manifest entries must be ordered by contiguous chunk_index.")
-        if axis == "q":
-            if not _valid_chunk_range(spec, "q_start", "q_stop"):
-                raise ValueError("q chunk spec must contain a non-empty [q_start, q_stop) range.")
-        elif not _valid_chunk_range(spec, "k_start", "k_stop"):
-            raise ValueError("k chunk spec must contain a non-empty [k_start, k_stop) range.")
-    return manifest
-
-
-def _load_epc_mesh_chunked_weights(directory: Path, manifest: Dict[str, Any]) -> tuple:
-    weights_filename = manifest.get("weights_filename", "weights.npz")
-    with np.load(directory / weights_filename, allow_pickle=False) as weights_payload:
-        kpoint_weights = np.asarray(weights_payload["el_kpoint_weights"], dtype=float)
-        qpoint_weights = np.asarray(weights_payload["ph_qpoint_weights"], dtype=float)
-    kpoint_weights = _normalize_weights(kpoint_weights, "kpoint_weights")
-    qpoint_weights = _normalize_weights(qpoint_weights, "qpoint_weights")
-    return kpoint_weights, qpoint_weights
-
-
-def _valid_chunk_range(spec: Dict[str, Any], start_key: str, stop_key: str) -> bool:
-    start = spec.get(start_key)
-    stop = spec.get(stop_key)
-    return (
-        isinstance(start, int)
-        and not isinstance(start, bool)
-        and isinstance(stop, int)
-        and not isinstance(stop, bool)
-        and start >= 0
-        and stop > start
-    )
 
 
 def _validate_linewidth_chunk_compatibility(reference: LinewidthMeshData, chunk: LinewidthMeshData) -> None:

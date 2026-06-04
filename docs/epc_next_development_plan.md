@@ -631,6 +631,7 @@ Current Phase 1 status:
   - `load_epc_mesh_chunked_artifact(...)` validates the manifest and reduces q/k chunks back to `EPCMeshData`.
   - chunks are stored as pickle-free `EPCData` NPZ files plus global k/q weights.
   - artifact reducers reuse the existing deterministic `concat_epc_k_chunks(...)` / `concat_epc_q_chunks(...)` helpers.
+  - manifest/weights validation rejects schema drift, unsafe filenames, reducer mismatch, bad chunk counts, non-contiguous ranges, and bad weights metadata.
 - Implemented first summary-first postprocess helper:
   - `compute_linewidth_mesh_chunked_artifact(...)` reads chunk NPZ files one at a time and returns `LinewidthMeshData`.
   - q-axis artifacts accumulate q contributions with global q weights.
@@ -743,7 +744,7 @@ For the next implementation wave, the correct preparation is interface-level:
    - reference strategy。
    - tests required before enabling `use_scc=True`。
 4. Continue Phase 1 scaling:
-   - harden the first chunked artifact contract.
+   - continue hardening the chunked artifact contract as new artifact consumers are added.
    - harden summary-first linewidth/transport helpers and consider SI mobility/scan accumulators.
 5. Add optional plot helpers from existing NPZ objects.
 6. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.

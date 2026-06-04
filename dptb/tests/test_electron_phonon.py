@@ -1116,6 +1116,43 @@ def test_epc_mesh_chunked_artifact_rejects_bad_manifest_order(tmp_path):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
 
+@pytest.mark.parametrize(
+    ("mutator", "match"),
+    [
+        (lambda manifest: manifest.update({"chunk_count": manifest["chunk_count"] + 1}), "chunk_count"),
+        (lambda manifest: manifest.update({"reducer": "concat_epc_mode_chunks"}), "reducer"),
+        (lambda manifest: manifest["chunks"][1]["spec"].update({"q_start": 3, "q_stop": 4}), "contiguous"),
+        (lambda manifest: manifest["chunks"][0].update({"filename": "../escape.npz"}), "filename"),
+    ],
+)
+def test_epc_mesh_chunked_artifact_rejects_bad_manifest_contract(mutator, match, tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="q", chunk_size=1)
+    manifest_path = artifact_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mutator(manifest)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=match):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
+def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata(tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="k", chunk_size=1)
+    np.savez_compressed(
+        artifact_dir / "weights.npz",
+        el_kpoint_weights=mesh_data.kpoint_weights,
+        ph_qpoint_weights=mesh_data.qpoint_weights,
+        metadata_json=np.array(json.dumps({"schema": "wrong"})),
+    )
+
+    with pytest.raises(ValueError, match="weights.npz schema"):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
 @pytest.mark.parametrize("axis", ["q", "k"])
 @pytest.mark.parametrize("mode_resolved", [False, True])
 def test_compute_linewidth_mesh_chunked_artifact_matches_full_mesh(axis, mode_resolved, tmp_path):

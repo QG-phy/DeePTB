@@ -133,6 +133,10 @@ reducers, and returns an `EPCMeshData`. This is a storage/reducer contract for
 large mesh workflows. It is not a parallel executor, does not require `mpi4py`,
 and does not change the public `EPCMeshData` NPZ schema.
 
+The loader rejects malformed artifacts: inconsistent schema/version, invalid
+chunk counts, non-contiguous chunk ranges, wrong reducer names, unsafe
+filenames, and invalid weights metadata.
+
 `compute_linewidth_mesh_chunked_artifact(directory, ...)` reads the same
 artifact and computes `LinewidthMeshData` without materializing the full
 `EPCMeshData`. For q-axis artifacts it accumulates q contributions using the
