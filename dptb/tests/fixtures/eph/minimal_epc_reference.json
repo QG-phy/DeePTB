@@ -1,5 +1,22 @@
 {
   "description": "Minimal self-contained DeePTB EPC fixture for default CI hardening tests.",
+  "coupling_contraction": {
+    "eigenvalues_k": [[1.0, 2.0]],
+    "eigenvalues_kq": [[[1.2, 2.4]]],
+    "eigenvectors_k": [[[1.0, 0.0], [0.0, 1.0]]],
+    "eigenvectors_kq": [[[[1.0, 0.0], [0.0, 1.0]]]],
+    "h_derivatives_k": [[[[[2.0, 0.5], [-0.25, 3.0]], [[0.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.0]]]]],
+    "h_derivatives_kq": [[[[[[0.2, -0.1], [0.4, 0.6]], [[0.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.0]]]]]],
+    "overlap_derivatives_k": [[[[[0.1, 0.02], [0.03, 0.04]], [[0.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.0]]]]],
+    "overlap_derivatives_kq": [[[[[[0.05, 0.01], [0.02, 0.03]], [[0.0, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.0]]]]]],
+    "phonon_eigenvectors_real": [[[[1.0, 0.0, 0.0]]]],
+    "phonon_eigenvectors_imag": [[[[0.0, 0.0, 0.0]]]],
+    "masses": [4.0],
+    "frequencies": [[4.0]],
+    "expected_coupling_matrix_real": [[[[[0.7840634522691422, 0.2548206219874712], [-0.28155005786028287, 1.065613510129425]]]]],
+    "expected_coupling_matrix_imag": [[[[[0.0, 0.0], [0.0, 0.0]]]]],
+    "expected_coupling_strength": [[[[[0.6147554971842054, 0.06493354939008168], [0.07927043508112863, 1.1355321529703544]]]]]
+  },
   "linewidth_parameters": {
     "chemical_potential": 0.15,
     "temperature": 0.025,

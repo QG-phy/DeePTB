@@ -206,6 +206,42 @@ def test_minimal_in_repo_epc_fixture_matches_linewidth_reference():
     np.testing.assert_allclose(linewidth.emission, np.asarray(expected["emission"]), rtol=1e-14, atol=1e-14)
 
 
+def test_minimal_in_repo_epc_fixture_matches_coupling_contraction_reference():
+    with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
+        fixture = json.load(handle)
+
+    payload = fixture["coupling_contraction"]
+    phonon_eigenvectors = np.asarray(payload["phonon_eigenvectors_real"], dtype=float) + 1j * np.asarray(
+        payload["phonon_eigenvectors_imag"],
+        dtype=float,
+    )
+    coupling_matrix, coupling_strength = compute_coupling_matrix(
+        eigenvalues_k=np.asarray(payload["eigenvalues_k"], dtype=float),
+        eigenvectors_k=np.asarray(payload["eigenvectors_k"], dtype=complex),
+        eigenvalues_kq=np.asarray(payload["eigenvalues_kq"], dtype=float),
+        eigenvectors_kq=np.asarray(payload["eigenvectors_kq"], dtype=complex),
+        h_derivatives_k=np.asarray(payload["h_derivatives_k"], dtype=complex),
+        h_derivatives_kq=np.asarray(payload["h_derivatives_kq"], dtype=complex),
+        overlap_derivatives_k=np.asarray(payload["overlap_derivatives_k"], dtype=complex),
+        overlap_derivatives_kq=np.asarray(payload["overlap_derivatives_kq"], dtype=complex),
+        phonon_eigenvectors=phonon_eigenvectors,
+        masses=np.asarray(payload["masses"], dtype=float),
+        frequencies=np.asarray(payload["frequencies"], dtype=float),
+    )
+
+    expected_coupling = np.asarray(payload["expected_coupling_matrix_real"], dtype=float) + 1j * np.asarray(
+        payload["expected_coupling_matrix_imag"],
+        dtype=float,
+    )
+    np.testing.assert_allclose(coupling_matrix, expected_coupling, rtol=1e-14, atol=1e-14)
+    np.testing.assert_allclose(
+        coupling_strength,
+        np.asarray(payload["expected_coupling_strength"], dtype=float),
+        rtol=1e-14,
+        atol=1e-14,
+    )
+
+
 def test_compute_coupling_matrix_without_overlap():
     eigenvalues_k = np.array([[1.0, 2.0]])
     eigenvalues_kq = eigenvalues_k.reshape(1, 1, 2)
