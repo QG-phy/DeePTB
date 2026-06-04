@@ -4047,6 +4047,27 @@ def test_eph_cli_parser_accepts_subspace_postprocess_inputs():
     assert args.output == "subspace.npz"
 
 
+def test_eph_cli_parser_accepts_coupling_summary_inputs():
+    args = parse_args(
+        [
+            "eph",
+            "--task",
+            "coupling-summary",
+            "--epc-data",
+            "epc_mesh_data.npz",
+            "--summary-unweighted",
+            "-o",
+            "coupling_summary.json",
+        ]
+    )
+
+    assert args.command == "eph"
+    assert args.task == "coupling-summary"
+    assert args.epc_data == "epc_mesh_data.npz"
+    assert args.summary_unweighted is True
+    assert args.output == "coupling_summary.json"
+
+
 def test_eph_task_registry_matches_parser_choices_and_docs():
     parser = main_parser()
     subparser_action = next(
@@ -4652,6 +4673,49 @@ def test_eph_entrypoint_writes_subspace_npz_from_epc_data(tmp_path):
     assert loaded.metadata["schema"] == "deeptb.epc_subspace_coupling"
 
 
+def test_eph_entrypoint_writes_coupling_summary_json_from_mesh_data(tmp_path):
+    epc_data = EPCData(
+        kpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        band_indices=np.array([0]),
+        frequencies=np.ones((2, 1)),
+        eigenvalues_k=np.ones((2, 1)),
+        eigenvalues_kq=np.ones((2, 2, 1)),
+        coupling_matrix=np.ones((2, 2, 1, 1, 1), dtype=complex),
+        coupling_strength=np.ones((2, 2, 1, 1, 1)),
+    )
+    mesh_data = EPCMeshData.from_epc_data(
+        epc_data,
+        kpoint_weights=np.array([1.0, 3.0]),
+        qpoint_weights=np.array([2.0, 6.0]),
+    )
+    epc_path = tmp_path / "epc_mesh_data.npz"
+    output_path = tmp_path / "coupling_summary.json"
+    mesh_data.save_npz(epc_path)
+
+    result = eph(task="coupling-summary", epc_data=str(epc_path), output=str(output_path))
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert output_path.exists()
+    np.testing.assert_allclose(result["total"], 1.0)
+    assert payload["total"] == 1.0
+    assert payload["q_resolved"] == [0.25, 0.75]
+    assert payload["k_resolved"] == [0.25, 0.75]
+    assert payload["metadata"]["source"] == "EPCMeshData.coupling_strength"
+    assert payload["metadata"]["weight_convention"] == "normalized_qpoint_and_kpoint_weights"
+
+    unweighted_path = tmp_path / "coupling_summary_unweighted.json"
+    eph(
+        task="coupling-summary",
+        epc_data=str(epc_path),
+        output=str(unweighted_path),
+        summary_unweighted=True,
+    )
+    unweighted_payload = json.loads(unweighted_path.read_text(encoding="utf-8"))
+    assert unweighted_payload["total"] == 4.0
+    assert unweighted_payload["metadata"]["weight_convention"] == "unweighted_sum"
+
+
 def test_eph_entrypoint_rejects_scc_v1(tmp_path):
     phonon_path = tmp_path / "phonons.npz"
     Phonons(
@@ -4795,6 +4859,7 @@ def test_eph_entrypoint_rejects_invalid_task_type():
         ),
         ({"task": "subspace", "final_groups": ["0:1"]}, "epc_data"),
         ({"task": "subspace", "epc_data": "epc.npz"}, "final_groups"),
+        ({"task": "coupling-summary"}, "epc_data"),
     ],
 )
 def test_eph_entrypoint_rejects_missing_required_inputs(kwargs, match):

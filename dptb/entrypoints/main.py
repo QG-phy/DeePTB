@@ -572,10 +572,10 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help=(
-            "Output NPZ path. Defaults by task: epc_data.npz, epc_path_data.npz, "
+            "Output path. Defaults by task: epc_data.npz, epc_path_data.npz, "
             "epc_mesh_data.npz, linewidth.npz, path_linewidth.npz, mesh_linewidth.npz, "
             "relaxation_time.npz, path_relaxation_time.npz, mesh_relaxation_time.npz, "
-            "transport.npz, mobility.npz, or subspace_coupling.npz."
+            "transport.npz, mobility.npz, subspace_coupling.npz, or coupling_summary.json."
         ),
     )
 
@@ -612,7 +612,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--epc-data",
         type=str,
         default=None,
-        help="Input EPCData NPZ for linewidth, transport, mobility, or subspace postprocess.",
+        help="Input EPCData/EPCPathData/EPCMeshData NPZ for linewidth, transport, mobility, subspace, or summary postprocess.",
     )
 
     parser_eph.add_argument(
@@ -743,6 +743,11 @@ def main_parser() -> argparse.ArgumentParser:
         default="finite_difference",
         choices=["finite_difference", "finite-difference", "hamiltonian_derivative", "hamiltonian-derivative"],
         help="Band velocity provider for transport postprocess.",
+    )
+    parser_eph.add_argument(
+        "--summary-unweighted",
+        action="store_true",
+        help="For coupling-summary, ignore EPCMeshData k/q weights and use raw sums.",
     )
 
     # pdso parser (Julia/Pardiso Backend)

@@ -430,6 +430,23 @@ This task writes gauge-invariant coupling strength aggregated over contiguous
 band subspaces. Groups use `start:stop` ranges and are stored in the NPZ as
 `[start, stop)` bounds. CLI-provided group ranges must be non-overlapping.
 
+### Coupling Summary
+
+```bash
+dptb eph \
+  --task coupling-summary \
+  --epc-data epc_mesh_data.npz \
+  -o coupling_summary.json
+```
+
+This task reads an existing `EPCData`, `EPCPathData`, or `EPCMeshData` NPZ and
+writes a JSON summary of coupling strength over q-points, k-points, phonon
+modes, final bands, initial bands, and band pairs. It does not recompute EPC
+and does not introduce a new persistent NPZ schema.
+
+For `EPCMeshData`, summaries use normalized k/q weights by default. Add
+`--summary-unweighted` to report raw sums.
+
 ## Current v1 Limits
 
 - SCC-corrected EPC is not supported. `use_scc=True` raises

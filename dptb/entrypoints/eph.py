@@ -24,6 +24,7 @@ from dptb.postprocess.unified.eph import (
     TransportData,
     compute_band_velocities_finite_difference,
     compute_band_velocities_hamiltonian_derivative,
+    compute_coupling_strength_summary,
     compute_linewidth,
     compute_linewidth_mesh,
     compute_linewidth_path,
@@ -52,6 +53,7 @@ EPH_PRIMARY_TASKS = (
     "transport",
     "mobility",
     "subspace",
+    "coupling-summary",
 )
 
 EPH_TASK_ALIASES = (
@@ -76,6 +78,7 @@ EPH_TASK_CHOICES = (
     "transport",
     "mobility",
     "subspace",
+    "coupling-summary",
 )
 
 EPH_TASK_ERROR_MESSAGE = "task must be one of " + ", ".join(f"'{task}'" for task in EPH_TASK_CHOICES) + "."
@@ -115,6 +118,7 @@ def eph(
     bands: Optional[Sequence[int]] = None,
     displacement: float = 1e-3,
     use_scc: bool = False,
+    summary_unweighted: bool = False,
     system=None,
     derivative_provider=None,
     **kwargs,
@@ -132,6 +136,7 @@ def eph(
     MobilityData,
     MobilityScanData,
     SubspaceCouplingData,
+    dict,
 ]:
     """Run an electron-phonon workflow task."""
     if not isinstance(task, str):
@@ -277,6 +282,12 @@ def eph(
             output=output or "subspace_coupling.npz",
             final_groups=final_groups,
             initial_groups=initial_groups,
+        )
+    if task == "coupling-summary":
+        return eph_coupling_summary(
+            epc_data=epc_data,
+            output=output or "coupling_summary.json",
+            weighted=not summary_unweighted,
         )
     raise ValueError(EPH_TASK_ERROR_MESSAGE)
 
@@ -787,6 +798,63 @@ def eph_subspace(
     result.save_npz(output_path)
     log.info("Electron-phonon subspace coupling data written to %s", output_path)
     return result
+
+
+def eph_coupling_summary(
+    epc_data: str,
+    output: str,
+    weighted: bool = True,
+) -> dict:
+    """Write q/k/mode/band-resolved coupling-strength summaries as JSON."""
+    if epc_data is None:
+        raise ValueError("epc_data is required for dptb eph --task coupling-summary.")
+
+    result = compute_coupling_strength_summary(_load_epc_summary_data(epc_data), weighted=weighted)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(_jsonable(result), indent=2, sort_keys=True), encoding="utf-8")
+    log.info("Electron-phonon coupling summary written to %s", output_path)
+    return result
+
+
+def _load_epc_summary_data(path: str) -> Union[EPCData, EPCMeshData, EPCPathData]:
+    with np.load(path, allow_pickle=False) as data:
+        metadata = _metadata_json_from_npz(data)
+    schema = metadata.get("schema")
+    if schema == "deeptb.epc_mesh_data":
+        return EPCMeshData.load_npz(path)
+    if schema == "deeptb.epc_path_data":
+        return EPCPathData.load_npz(path)
+    if schema == "deeptb.epc_data":
+        return EPCData.load_npz(path)
+    raise ValueError("epc_data must contain EPCData, EPCMeshData, or EPCPathData schema metadata.")
+
+
+def _metadata_json_from_npz(data) -> dict:
+    if "metadata_json" not in data:
+        raise ValueError("metadata_json is required for DeePTB EPC summary inputs.")
+    metadata_raw = data["metadata_json"]
+    if np.shape(metadata_raw) != ():
+        raise ValueError("metadata_json must be a scalar JSON object.")
+    try:
+        metadata = json.loads(str(metadata_raw.item()))
+    except json.JSONDecodeError:
+        raise ValueError("metadata_json must be valid JSON.") from None
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata_json must decode to a JSON object.")
+    return metadata
+
+
+def _jsonable(value):
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return value
 
 
 def _load_kpoints(path: str) -> np.ndarray:
