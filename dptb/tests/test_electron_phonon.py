@@ -69,6 +69,7 @@ from dptb.postprocess.unified.eph import (
     build_q_chunk_specs,
     compute_band_velocities_finite_difference,
     compute_band_velocities_hamiltonian_derivative,
+    fractional_band_velocities_to_si,
     compute_eliashberg_spectral_function,
     compute_serta_mobility_si,
     compute_serta_mobility_scan_si,
@@ -200,6 +201,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
         unified_postprocess.compute_band_velocities_hamiltonian_derivative
         is compute_band_velocities_hamiltonian_derivative
     )
+    assert unified_postprocess.fractional_band_velocities_to_si is fractional_band_velocities_to_si
     assert unified_postprocess.compute_eliashberg_spectral_function is compute_eliashberg_spectral_function
     assert unified_postprocess.compute_scattering_maps is compute_scattering_maps
     assert unified_postprocess.compute_serta_mobility_si is compute_serta_mobility_si
@@ -3998,6 +4000,16 @@ def test_compute_serta_mobility_si_matches_manual_3d_reference():
     assert result.metadata["volume_unit"] == "Angstrom^3"
 
 
+def test_fractional_band_velocities_to_si_uses_reciprocal_cell_convention():
+    velocities = np.array([[[2.0, 0.0, 0.0]]])
+    reciprocal_cell = np.diag([2.0, 4.0, 8.0])
+
+    converted = fractional_band_velocities_to_si(velocities, reciprocal_cell)
+
+    expected = np.array([[[1.0, 0.0, 0.0]]]) * dptb_constants.ANGSTROM_TO_M / dptb_constants.HBAR_EV_S
+    np.testing.assert_allclose(converted, expected)
+
+
 def test_compute_serta_mobility_si_supports_2d_sheet_normalization():
     result = compute_serta_mobility_si(
         eigenvalues=np.array([[0.0]]),
@@ -4012,6 +4024,9 @@ def test_compute_serta_mobility_si_supports_2d_sheet_normalization():
 
     assert result.metadata["conductivity_unit"] == "S"
     assert result.metadata["carrier_density_unit"] == "m^-2"
+    assert result.metadata["velocity_input_unit"] == "eV/fractional_reciprocal_coordinate"
+    assert result.metadata["velocity_unit"] == "m/s"
+    assert result.metadata["reciprocal_cell_unit"] == "Angstrom^-1"
     assert result.metadata["area_unit"] == "Angstrom^2"
     assert result.carrier_density.shape == ()
 
