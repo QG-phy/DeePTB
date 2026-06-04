@@ -13,8 +13,17 @@ from scipy import constants as scipy_constants
 import dptb.postprocess.unified.eph.providers as eph_providers
 from dptb.postprocess.unified.eph.providers import _length_unit_scale_to_angstrom
 from dptb.postprocess import unified as unified_postprocess
-from dptb.entrypoints.eph import _load_array, _load_kpoint_weights, _load_kpoints, _parse_band_groups, eph
-from dptb.entrypoints.main import parse_args
+from dptb.entrypoints.eph import (
+    EPH_PRIMARY_TASKS,
+    EPH_TASK_ALIASES,
+    EPH_TASK_CHOICES,
+    _load_array,
+    _load_kpoint_weights,
+    _load_kpoints,
+    _parse_band_groups,
+    eph,
+)
+from dptb.entrypoints.main import main_parser, parse_args
 from dptb.postprocess.unified.eph import (
     EPCData,
     EPCMeshData,
@@ -3957,6 +3966,26 @@ def test_eph_cli_parser_accepts_subspace_postprocess_inputs():
     assert args.final_groups == ["0:2", "2:3"]
     assert args.initial_groups == ["0:1", "1:3"]
     assert args.output == "subspace.npz"
+
+
+def test_eph_task_registry_matches_parser_choices_and_docs():
+    parser = main_parser()
+    subparser_action = next(
+        action
+        for action in parser._actions
+        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
+    )
+    eph_parser = subparser_action.choices["eph"]
+    task_action = next(action for action in eph_parser._actions if "--task" in action.option_strings)
+
+    assert tuple(task_action.choices) == EPH_TASK_CHOICES
+
+    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
+    for task in EPH_PRIMARY_TASKS:
+        assert f"--task {task}" in workflow_doc
+        assert parse_args(["eph", "--task", task]).task == task
+    for alias in EPH_TASK_ALIASES:
+        assert parse_args(["eph", "--task", alias]).task == alias
 
 
 def test_load_kpoints_accepts_json_npy_npz_and_text(tmp_path):

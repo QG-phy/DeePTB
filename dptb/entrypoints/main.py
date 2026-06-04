@@ -17,7 +17,7 @@ from dptb.entrypoints.collectskf import skf2pth, skf2nnsk
 from dptb.entrypoints.emp_sk import to_empsk
 from dptb.entrypoints.export import export
 from dptb.entrypoints.pdso import pdso
-from dptb.entrypoints.eph import eph
+from dptb.entrypoints.eph import EPH_TASK_CHOICES, eph
 
 from dptb import __version__
 
@@ -505,23 +505,7 @@ def main_parser() -> argparse.ArgumentParser:
 
     parser_eph.add_argument(
         "--task",
-        choices=[
-            "coupling",
-            "path-coupling",
-            "mesh-coupling",
-            "linewidth",
-            "path-linewidth",
-            "mesh-linewidth",
-            "relaxation-time",
-            "relaxation",
-            "path-relaxation-time",
-            "path-relaxation",
-            "mesh-relaxation-time",
-            "mesh-relaxation",
-            "transport",
-            "mobility",
-            "subspace",
-        ],
+        choices=EPH_TASK_CHOICES,
         default="coupling",
         help="EPC workflow task. path-* tasks preserve EPC path metadata; mesh-coupling uses DeePTB k-mesh helpers.",
     )

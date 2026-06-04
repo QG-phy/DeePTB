@@ -39,6 +39,47 @@ from dptb.postprocess.unified.eph.utils import normalize_kpoints
 
 log = logging.getLogger(__name__)
 
+EPH_PRIMARY_TASKS = (
+    "coupling",
+    "path-coupling",
+    "mesh-coupling",
+    "linewidth",
+    "path-linewidth",
+    "mesh-linewidth",
+    "relaxation-time",
+    "path-relaxation-time",
+    "mesh-relaxation-time",
+    "transport",
+    "mobility",
+    "subspace",
+)
+
+EPH_TASK_ALIASES = (
+    "relaxation",
+    "path-relaxation",
+    "mesh-relaxation",
+)
+
+EPH_TASK_CHOICES = (
+    "coupling",
+    "path-coupling",
+    "mesh-coupling",
+    "linewidth",
+    "path-linewidth",
+    "mesh-linewidth",
+    "relaxation-time",
+    "relaxation",
+    "path-relaxation-time",
+    "path-relaxation",
+    "mesh-relaxation-time",
+    "mesh-relaxation",
+    "transport",
+    "mobility",
+    "subspace",
+)
+
+EPH_TASK_ERROR_MESSAGE = "task must be one of " + ", ".join(f"'{task}'" for task in EPH_TASK_CHOICES) + "."
+
 
 def eph(
     structure: Optional[str] = None,
@@ -94,12 +135,7 @@ def eph(
 ]:
     """Run an electron-phonon workflow task."""
     if not isinstance(task, str):
-        raise ValueError(
-            "task must be one of 'coupling', 'path-coupling', 'mesh-coupling', 'linewidth', "
-            "'path-linewidth', 'mesh-linewidth', 'relaxation-time', 'relaxation', "
-            "'path-relaxation-time', 'path-relaxation', 'mesh-relaxation-time', "
-            "'mesh-relaxation', 'transport', 'mobility', or 'subspace'."
-        )
+        raise ValueError(EPH_TASK_ERROR_MESSAGE)
     task = task.lower()
     if use_scc:
         _reject_scc_v1(task)
@@ -242,12 +278,7 @@ def eph(
             final_groups=final_groups,
             initial_groups=initial_groups,
         )
-    raise ValueError(
-        "task must be one of 'coupling', 'path-coupling', 'mesh-coupling', 'linewidth', "
-        "'path-linewidth', 'mesh-linewidth', 'relaxation-time', 'relaxation', "
-        "'path-relaxation-time', 'path-relaxation', 'mesh-relaxation-time', "
-        "'mesh-relaxation', 'transport', 'mobility', or 'subspace'."
-    )
+    raise ValueError(EPH_TASK_ERROR_MESSAGE)
 
 
 def eph_coupling(
