@@ -725,6 +725,13 @@ def main_parser() -> argparse.ArgumentParser:
         default=1e-4,
         help="Central finite-difference step in fractional reciprocal coordinates for transport velocity.",
     )
+    parser_eph.add_argument(
+        "--velocity-source",
+        type=str,
+        default="finite_difference",
+        choices=["finite_difference", "finite-difference", "hamiltonian_derivative", "hamiltonian-derivative"],
+        help="Band velocity provider for transport postprocess.",
+    )
 
     # pdso parser (Julia/Pardiso Backend)
     parser_pdso = subparsers.add_parser(

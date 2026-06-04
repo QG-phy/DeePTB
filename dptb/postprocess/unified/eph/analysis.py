@@ -1081,6 +1081,76 @@ def compute_band_velocities_finite_difference(
     return velocities
 
 
+def compute_band_velocities_hamiltonian_derivative(
+    system,
+    kpoints: np.ndarray,
+    bands: Optional[Sequence[int]] = None,
+    use_scc: bool = False,
+    **solver_kwargs,
+) -> np.ndarray:
+    """Compute band velocities from analytic ``dH(k)/dk`` and ``dS(k)/dk``.
+
+    The returned convention matches :func:`compute_band_velocities_finite_difference`:
+    eV per fractional reciprocal-coordinate component. This provider does not
+    perform SI conversion and does not resolve degenerate-subspace gauge issues.
+    """
+    if use_scc:
+        raise NotImplementedError("SCC-corrected electron-phonon transport is not supported in v1.")
+    if solver_kwargs:
+        raise ValueError("solver_kwargs are not supported by hamiltonian_derivative velocity provider.")
+
+    kpoints = normalize_kpoints(kpoints)
+    hk_payload = system.get_hk(k_points=kpoints, use_scc=use_scc, with_derivative=True)
+    if not isinstance(hk_payload, tuple) or len(hk_payload) != 4:
+        raise ValueError("system.get_hk(..., with_derivative=True) must return (Hk, dHdk, Sk, dSdk).")
+    hk, dhdk, sk, dsdk = hk_payload
+    hk = as_array(hk, dtype=complex)
+    dhdk = as_array(dhdk, dtype=complex)
+    sk = None if sk is None else as_array(sk, dtype=complex)
+    dsdk = None if dsdk is None else as_array(dsdk, dtype=complex)
+
+    nk = kpoints.shape[0]
+    if hk.ndim != 3 or hk.shape[0] != nk or hk.shape[1] != hk.shape[2]:
+        raise ValueError("Hk must have shape (nk, norb, norb).")
+    if dhdk.shape != (*hk.shape, 3):
+        raise ValueError("dHdk must have shape (nk, norb, norb, 3).")
+    if sk is not None and sk.shape != hk.shape:
+        raise ValueError("Sk must have shape (nk, norb, norb).")
+    if sk is not None and dsdk is None:
+        raise ValueError("dSdk is required when overlap Sk is provided.")
+    if dsdk is not None and dsdk.shape != (*hk.shape, 3):
+        raise ValueError("dSdk must have shape (nk, norb, norb, 3).")
+    if not np.all(np.isfinite(hk)) or not np.all(np.isfinite(dhdk)):
+        raise ValueError("Hk and dHdk must contain finite values.")
+    if sk is not None and (not np.all(np.isfinite(sk)) or not np.all(np.isfinite(dsdk))):
+        raise ValueError("Sk and dSdk must contain finite values.")
+
+    all_eigenvalues = np.zeros((nk, hk.shape[1]), dtype=float)
+    all_velocities = np.zeros((nk, hk.shape[1], 3), dtype=float)
+    for ik in range(nk):
+        if sk is None:
+            eigenvalues, eigenvectors = np.linalg.eigh(hk[ik])
+        else:
+            chol = np.linalg.cholesky(sk[ik])
+            chol_inv = np.linalg.inv(chol)
+            h_orth = chol_inv @ hk[ik] @ chol_inv.conj().T
+            eigenvalues, eigenvectors_orth = np.linalg.eigh(h_orth)
+            eigenvectors = chol_inv.conj().T @ eigenvectors_orth
+        all_eigenvalues[ik] = eigenvalues.real
+        for axis in range(3):
+            velocity_operator = dhdk[ik, :, :, axis]
+            matrix_elements = eigenvectors.conj().T @ velocity_operator @ eigenvectors
+            if sk is not None:
+                overlap_elements = eigenvectors.conj().T @ dsdk[ik, :, :, axis] @ eigenvectors
+                matrix_elements = matrix_elements - eigenvalues[:, None] * overlap_elements
+            all_velocities[ik, :, axis] = np.real(np.diag(matrix_elements))
+
+    if not np.all(np.isfinite(all_eigenvalues)) or not np.all(np.isfinite(all_velocities)):
+        raise ValueError("Hamiltonian-derivative velocities must be finite.")
+    band_indices = _normalize_band_indices(bands, all_eigenvalues.shape[1])
+    return all_velocities[:, band_indices, :]
+
+
 def compute_serta_transport_from_epc(
     system,
     epc_data: EPCData,
@@ -1091,25 +1161,51 @@ def compute_serta_transport_from_epc(
     spin_degeneracy: int = 1,
     volume: float = 1.0,
     velocity_delta: float = 1e-4,
+    velocity_source: str = "finite_difference",
     use_scc: bool = False,
     **solver_kwargs,
 ) -> TransportData:
-    """Compute SERTA transport using EPC linewidths and finite-difference velocities."""
-    velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
+    """Compute SERTA transport using EPC linewidths and selected band-velocity provider."""
+    if not isinstance(velocity_source, str):
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = velocity_source.replace("-", "_").lower()
+    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
     linewidth = linewidth_data.linewidth
     if linewidth.ndim == 3:
         linewidth = linewidth.sum(axis=-1)
     if linewidth.shape != epc_data.eigenvalues_k.shape:
         raise ValueError("linewidth_data.linewidth must match EPCData eigenvalues_k shape after mode summation.")
 
-    velocities = compute_band_velocities_finite_difference(
-        system=system,
-        kpoints=epc_data.kpoints,
-        bands=epc_data.band_indices,
-        delta=velocity_delta,
-        use_scc=use_scc,
-        **solver_kwargs,
-    )
+    velocity_metadata: Dict[str, Any]
+    if velocity_source == "finite_difference":
+        velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
+        velocities = compute_band_velocities_finite_difference(
+            system=system,
+            kpoints=epc_data.kpoints,
+            bands=epc_data.band_indices,
+            delta=velocity_delta,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "finite_difference",
+            "velocity_delta": velocity_delta,
+            "velocity_convention": "central_difference_band_energy",
+        }
+    else:
+        velocities = compute_band_velocities_hamiltonian_derivative(
+            system=system,
+            kpoints=epc_data.kpoints,
+            bands=epc_data.band_indices,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "hamiltonian_derivative",
+            "velocity_convention": "diag_Cdagger_dH_minus_EdS_C",
+            "overlap_correction": "dH_minus_E_dS_diagonal",
+        }
     result = compute_serta_conductivity(
         eigenvalues=epc_data.eigenvalues_k,
         velocities=velocities,
@@ -1122,14 +1218,13 @@ def compute_serta_transport_from_epc(
     )
     result.metadata.update(
         {
-            "velocity_source": "finite_difference",
-            "velocity_delta": velocity_delta,
             "velocity_unit": "eV/fractional_reciprocal_coordinate",
             "band_indices": epc_data.band_indices,
             "epc_schema": epc_data.metadata.get("schema"),
             "linewidth_schema": linewidth_data.metadata.get("schema"),
         }
     )
+    result.metadata.update(velocity_metadata)
     return result
 
 

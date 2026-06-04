@@ -56,6 +56,7 @@ def eph(
     spin_degeneracy: int = 1,
     volume: float = 1.0,
     velocity_delta: float = 1e-4,
+    velocity_source: str = "finite_difference",
     k_mesh: Optional[Sequence[int]] = None,
     q_mesh: Optional[Sequence[int]] = None,
     chunk_size: Optional[int] = None,
@@ -197,6 +198,7 @@ def eph(
             spin_degeneracy=spin_degeneracy,
             volume=volume,
             velocity_delta=velocity_delta,
+            velocity_source=velocity_source,
             use_scc=use_scc,
             system=system,
         )
@@ -533,6 +535,7 @@ def eph_transport(
     spin_degeneracy: int = 1,
     volume: float = 1.0,
     velocity_delta: float = 1e-4,
+    velocity_source: str = "finite_difference",
     use_scc: bool = False,
     system=None,
 ) -> TransportData:
@@ -565,6 +568,7 @@ def eph_transport(
         spin_degeneracy=spin_degeneracy,
         volume=volume,
         velocity_delta=velocity_delta,
+        velocity_source=velocity_source,
         use_scc=use_scc,
     )
     output_path = Path(output)

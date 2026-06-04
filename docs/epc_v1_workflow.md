@@ -18,7 +18,8 @@ include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `compute_linewidth`, `compute_linewidth_path`, `compute_linewidth_mesh`,
 `compute_relaxation_time`, `compute_relaxation_time_path`,
 `compute_relaxation_time_mesh`, `compute_serta_conductivity`,
-`compute_band_velocities_finite_difference`, `compute_serta_transport_from_epc`,
+`compute_band_velocities_finite_difference`,
+`compute_band_velocities_hamiltonian_derivative`, `compute_serta_transport_from_epc`,
 `find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
 `compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
 benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
@@ -321,14 +322,21 @@ dptb eph \
   --kpoint-weights weights.npz \
   --spin-degeneracy 2 \
   --volume 1.0 \
+  --velocity-source finite_difference \
   --velocity-delta 1e-4 \
   -o transport.npz
 ```
 
-Transport v1 uses a finite-difference velocity bridge over
-`system.get_eigenvalues(k_points=...)`. Velocity metadata is stored as
-`eV/fractional_reciprocal_coordinate`. Full SI mobility/conductivity unit
-conversion is not part of v1.
+Transport v1 supports two band-velocity providers:
+
+- `--velocity-source finite_difference`: central finite differences over
+  `system.get_eigenvalues(k_points=...)`. This remains the default.
+- `--velocity-source hamiltonian_derivative`: analytic band velocities from
+  `system.get_hk(k_points=..., with_derivative=True)`, using
+  `<n|dH/dk|n> - E_n <n|dS/dk|n>` when overlap derivatives are present.
+
+Velocity metadata is stored as `eV/fractional_reciprocal_coordinate`. Full SI
+mobility/conductivity unit conversion is not part of v1.
 
 Supported k-point weights file formats:
 
@@ -368,8 +376,8 @@ band subspaces. Groups use `start:stop` ranges and are stored in the NPZ as
 - Polar correction is not implemented.
 - Full degenerate-band gauge fixing and k/q-path continuous gauge tracking are
   not implemented.
-- Transport uses finite-difference velocities and does not perform full SI unit
-  conversion.
+- Transport supports finite-difference and Hamiltonian-derivative velocity
+  providers, but does not perform full SI unit conversion.
 
 ## Development Validation
 

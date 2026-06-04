@@ -49,6 +49,7 @@ from dptb.postprocess.unified.eph import (
     EPCKChunkSpec,
     build_k_chunk_specs,
     compute_band_velocities_finite_difference,
+    compute_band_velocities_hamiltonian_derivative,
     compute_linewidth,
     compute_linewidth_mesh,
     compute_linewidth_path,
@@ -131,6 +132,10 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.compute_relaxation_time_path is compute_relaxation_time_path
     assert unified_postprocess.compute_serta_conductivity is compute_serta_conductivity
     assert unified_postprocess.compute_band_velocities_finite_difference is compute_band_velocities_finite_difference
+    assert (
+        unified_postprocess.compute_band_velocities_hamiltonian_derivative
+        is compute_band_velocities_hamiltonian_derivative
+    )
     assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
     assert unified_postprocess.compute_serta_transport_from_epc is compute_serta_transport_from_epc
     assert unified_postprocess.compute_subspace_coupling_strength is compute_subspace_coupling_strength
@@ -2260,6 +2265,40 @@ class _EmptyBandSystem:
         return {}, np.empty((len(k_points), 0))
 
 
+class _DerivativeBandSystem(_LinearBandSystem):
+    def get_hk(self, k_points, use_scc=False, with_derivative=False, **kwargs):
+        if use_scc:
+            raise AssertionError("test system should not be called with SCC")
+        if not with_derivative:
+            raise AssertionError("test requires with_derivative=True")
+        kpoints = np.asarray(k_points, dtype=float)
+        eigenvalues = self.band_offsets[None, :] + kpoints @ self.band_slopes.T
+        nk, nbands = eigenvalues.shape
+        hk = np.zeros((nk, nbands, nbands), dtype=complex)
+        dhdk = np.zeros((nk, nbands, nbands, 3), dtype=complex)
+        for ik in range(nk):
+            hk[ik] = np.diag(eigenvalues[ik])
+            for axis in range(3):
+                dhdk[ik, :, :, axis] = np.diag(self.band_slopes[:, axis])
+        return hk, dhdk, None, None
+
+
+class _OverlapDerivativeBandSystem:
+    def get_hk(self, k_points, use_scc=False, with_derivative=False, **kwargs):
+        if not with_derivative:
+            raise AssertionError("test requires with_derivative=True")
+        kpoints = np.asarray(k_points, dtype=float)
+        nk = kpoints.shape[0]
+        hk = np.zeros((nk, 1, 1), dtype=complex)
+        dhdk = np.zeros((nk, 1, 1, 3), dtype=complex)
+        sk = np.ones((nk, 1, 1), dtype=complex) * 2.0
+        dsdk = np.zeros((nk, 1, 1, 3), dtype=complex)
+        hk[:, 0, 0] = 2.0 + 6.0 * kpoints[:, 0]
+        dhdk[:, 0, 0, 0] = 6.0
+        dsdk[:, 0, 0, 0] = 1.0
+        return hk, dhdk, sk, dsdk
+
+
 def test_compute_band_velocities_finite_difference_matches_linear_bands():
     system = _LinearBandSystem()
     kpoints = np.array([[0.0, 0.0, 0.0], [0.25, 0.1, -0.2]])
@@ -2273,6 +2312,52 @@ def test_compute_band_velocities_finite_difference_matches_linear_bands():
 
     expected = np.repeat(system.band_slopes[[0, 2]][None, :, :], kpoints.shape[0], axis=0)
     np.testing.assert_allclose(velocities, expected, atol=1e-11)
+
+
+def test_compute_band_velocities_hamiltonian_derivative_matches_diagonal_dhdk():
+    system = _DerivativeBandSystem()
+    kpoints = np.array([[0.0, 0.0, 0.0], [0.01, 0.01, 0.01]])
+
+    velocities = compute_band_velocities_hamiltonian_derivative(
+        system=system,
+        kpoints=kpoints,
+        bands=[0, 2],
+    )
+
+    expected = np.repeat(system.band_slopes[[0, 2]][None, :, :], kpoints.shape[0], axis=0)
+    np.testing.assert_allclose(velocities, expected)
+
+
+def test_compute_band_velocities_hamiltonian_derivative_applies_overlap_correction():
+    velocities = compute_band_velocities_hamiltonian_derivative(
+        system=_OverlapDerivativeBandSystem(),
+        kpoints=np.array([[0.0, 0.0, 0.0]]),
+    )
+
+    # Generalized eigenvalue is H/S = 1.0 at k=0; normalized eigenvector is 1/sqrt(2).
+    # v = <dH> - E <dS> = 0.5 * 6.0 - 1.0 * 0.5 * 1.0.
+    np.testing.assert_allclose(velocities, np.array([[[2.5, 0.0, 0.0]]]))
+
+
+def test_compute_band_velocities_hamiltonian_derivative_rejects_invalid_inputs():
+    with pytest.raises(ValueError, match="solver_kwargs"):
+        compute_band_velocities_hamiltonian_derivative(
+            _DerivativeBandSystem(),
+            np.array([[0.0, 0.0, 0.0]]),
+            solver="lapack",
+        )
+    with pytest.raises(ValueError, match="bands"):
+        compute_band_velocities_hamiltonian_derivative(
+            _DerivativeBandSystem(),
+            np.array([[0.0, 0.0, 0.0]]),
+            bands=[3],
+        )
+    with pytest.raises(NotImplementedError, match="SCC-corrected"):
+        compute_band_velocities_hamiltonian_derivative(
+            _DerivativeBandSystem(),
+            np.array([[0.0, 0.0, 0.0]]),
+            use_scc=True,
+        )
 
 
 def test_compute_band_velocities_finite_difference_rejects_invalid_inputs():
@@ -2351,6 +2436,50 @@ def test_compute_serta_transport_from_epc_uses_epc_bands_and_linewidth():
     assert result.metadata["epc_schema"] == "deeptb.epc_data"
 
 
+def test_compute_serta_transport_from_epc_uses_hamiltonian_derivative_velocity_source():
+    system = _DerivativeBandSystem()
+    kpoints = np.array([[0.0, 0.0, 0.0], [0.01, 0.01, 0.01]])
+    band_indices = np.array([0, 2])
+    eigenvalues = system.band_offsets[None, band_indices] + kpoints @ system.band_slopes[band_indices].T
+    epc_data = EPCData(
+        kpoints=kpoints,
+        qpoints=np.array([[0.0, 0.0, 0.0]]),
+        band_indices=band_indices,
+        frequencies=np.array([[1.0]]),
+        eigenvalues_k=eigenvalues,
+        eigenvalues_kq=eigenvalues[None, :, :],
+        coupling_matrix=np.ones((1, 2, 1, 2, 2), dtype=complex),
+        coupling_strength=np.ones((1, 2, 1, 2, 2)),
+    )
+    linewidth = LinewidthData(
+        linewidth=np.array([[0.01, 0.02], [0.03, 0.04]]),
+        absorption=np.zeros((2, 2)),
+        emission=np.array([[0.01, 0.02], [0.03, 0.04]]),
+    )
+
+    result = compute_serta_transport_from_epc(
+        system=system,
+        epc_data=epc_data,
+        linewidth_data=linewidth,
+        chemical_potential=0.15,
+        temperature=0.03,
+        velocity_source="hamiltonian_derivative",
+    )
+    expected = compute_serta_conductivity(
+        eigenvalues=eigenvalues,
+        velocities=np.repeat(system.band_slopes[band_indices][None, :, :], kpoints.shape[0], axis=0),
+        linewidth=linewidth.linewidth,
+        chemical_potential=0.15,
+        temperature=0.03,
+    )
+
+    np.testing.assert_allclose(result.conductivity, expected.conductivity)
+    assert result.metadata["velocity_source"] == "hamiltonian_derivative"
+    assert result.metadata["velocity_unit"] == "eV/fractional_reciprocal_coordinate"
+    assert result.metadata["velocity_convention"] == "diag_Cdagger_dH_minus_EdS_C"
+    assert result.metadata["overlap_correction"] == "dH_minus_E_dS_diagonal"
+
+
 def test_compute_serta_transport_from_epc_rejects_invalid_velocity_delta():
     system = _LinearBandSystem()
     epc_data = EPCData(
@@ -2377,6 +2506,15 @@ def test_compute_serta_transport_from_epc_rejects_invalid_velocity_delta():
             chemical_potential=0.0,
             temperature=0.01,
             velocity_delta="1e-4",
+        )
+    with pytest.raises(ValueError, match="velocity_source"):
+        compute_serta_transport_from_epc(
+            system,
+            epc_data,
+            linewidth,
+            chemical_potential=0.0,
+            temperature=0.01,
+            velocity_source="unknown",
         )
 
 
@@ -3207,6 +3345,8 @@ def test_eph_cli_parser_accepts_transport_postprocess_inputs():
             "5.0",
             "--velocity-delta",
             "1e-5",
+            "--velocity-source",
+            "hamiltonian-derivative",
             "-o",
             "transport.npz",
         ]
@@ -3222,6 +3362,7 @@ def test_eph_cli_parser_accepts_transport_postprocess_inputs():
     assert args.spin_degeneracy == 2
     assert args.volume == 5.0
     assert args.velocity_delta == 1e-5
+    assert args.velocity_source == "hamiltonian-derivative"
 
 
 def test_eph_cli_parser_accepts_subspace_postprocess_inputs():

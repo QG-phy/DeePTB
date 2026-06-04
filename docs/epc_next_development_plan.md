@@ -346,8 +346,8 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 ### Tasks
 
 - 定义 velocity provider interface：
-  - finite-difference velocity provider
-  - analytic Hamiltonian-derivative velocity provider based on `get_hk(..., with_derivative=True)`
+  - finite-difference velocity provider 已实现为默认 transport provider。
+  - analytic Hamiltonian-derivative velocity provider 已实现为 `velocity_source="hamiltonian_derivative"`，基于 `get_hk(..., with_derivative=True)`。
   - future model-native velocity provider
 - 设计 SI unit conversion：
   - eigenvalue eV
@@ -371,8 +371,18 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 
 ### CLI
 
-- 扩展 `dptb eph --task transport` 或新增 `--task mobility`。
+- `dptb eph --task transport` 已支持 `--velocity-source finite_difference|hamiltonian_derivative`。
+- 后续扩展 `dptb eph --task transport` 或新增 `--task mobility`。
 - 支持 `--chemical-potentials`、`--temperatures`、`--dimension 2d/3d`、`--area`、`--volume`。
+
+### Current Implementation Status
+
+- Implemented provider selection in `compute_serta_transport_from_epc(...)`:
+  - `velocity_source="finite_difference"` keeps the existing central finite-difference behavior and metadata.
+  - `velocity_source="hamiltonian_derivative"` computes diagonal band velocities from analytic `dH/dk` and optional `dS/dk`.
+- The Hamiltonian-derivative convention is recorded as `diag_Cdagger_dH_minus_EdS_C`.
+- The velocity unit remains `eV/fractional_reciprocal_coordinate`; full SI conversion remains future work.
+- SCC-corrected velocity remains unsupported in v1.
 
 ### Acceptance
 
