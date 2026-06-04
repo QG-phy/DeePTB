@@ -2031,6 +2031,70 @@ def test_epc_npz_loader_rejects_object_arrays_without_pickle(tmp_path):
 
 
 @pytest.mark.parametrize(
+    ("data_cls", "object_key", "payload"),
+    [
+        pytest.param(
+            Phonons,
+            "ph_qpoints",
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]], dtype=object),
+                "ph_frequencies": np.array([[1.0]]),
+                "ph_eigenvectors": np.ones((1, 1, 1, 3), dtype=complex),
+                "ph_masses": np.array([1.0]),
+                "metadata_json": np.array('{"schema": "deeptb.phonons"}'),
+            },
+            id="phonons",
+        ),
+        pytest.param(
+            LinewidthMeshData,
+            "el_kpoints",
+            {
+                "elph_mesh_linewidth": np.array([[0.1]]),
+                "elph_mesh_linewidth_absorption": np.array([[0.0]]),
+                "elph_mesh_linewidth_emission": np.array([[0.1]]),
+                "el_kpoints": np.array([[0.0, 0.0, 0.0]], dtype=object),
+                "el_kpoint_weights": np.array([1.0]),
+                "el_band_indices": np.array([0]),
+                "metadata_json": np.array('{"schema": "deeptb.epc_mesh_linewidth"}'),
+            },
+            id="linewidth-mesh",
+        ),
+        pytest.param(
+            TransportScanData,
+            "chemical_potentials",
+            {
+                "transport_scan_conductivity": np.ones((1, 1, 3, 3)),
+                "transport_scan_carrier_density": np.ones((1, 1)),
+                "chemical_potentials": np.array([0.0], dtype=object),
+                "temperatures": np.array([0.1]),
+                "metadata_json": np.array('{"schema": "deeptb.epc_transport_scan"}'),
+            },
+            id="transport-scan",
+        ),
+        pytest.param(
+            MobilityData,
+            "mobility_carrier_density",
+            {
+                "mobility_conductivity": np.eye(3),
+                "mobility_tensor": np.eye(3),
+                "mobility_carrier_density": np.array(1.0, dtype=object),
+                "metadata_json": np.array('{"schema": "deeptb.epc_mobility"}'),
+            },
+            id="mobility",
+        ),
+    ],
+)
+def test_representative_epc_npz_loaders_reject_object_arrays_without_pickle(
+    data_cls, object_key, payload, tmp_path
+):
+    path = tmp_path / f"object_array_{object_key}.npz"
+    np.savez(path, **payload)
+
+    with pytest.raises(ValueError, match="Object arrays cannot be loaded"):
+        data_cls.load_npz(path)
+
+
+@pytest.mark.parametrize(
     "factory",
     [
         pytest.param(
