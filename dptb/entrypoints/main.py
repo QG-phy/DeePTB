@@ -607,6 +607,12 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional k-point chunk size for serial mesh-coupling execution.",
     )
+    parser_eph.add_argument(
+        "--q-chunk-size",
+        type=int,
+        default=None,
+        help="Optional q-point chunk size for serial mesh-coupling execution.",
+    )
 
     parser_eph.add_argument(
         "--epc-data",

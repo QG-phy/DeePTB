@@ -285,6 +285,7 @@ class EPCMeshSpec:
     kpoint_weights: Optional[np.ndarray] = None
     qpoint_weights: Optional[np.ndarray] = None
     chunk_size: Optional[int] = None
+    q_chunk_size: Optional[int] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -306,6 +307,8 @@ class EPCMeshSpec:
             self.qpoint_weights = _normalize_weights(self.qpoint_weights, "qpoint_weights")
         if self.chunk_size is not None:
             self.chunk_size = int(validate_finite_positive_scalar(self.chunk_size, "chunk_size"))
+        if self.q_chunk_size is not None:
+            self.q_chunk_size = int(validate_finite_positive_scalar(self.q_chunk_size, "q_chunk_size"))
 
     def resolve_kpoints_and_weights(self) -> tuple:
         if self.kpoints is not None:
@@ -350,6 +353,7 @@ class EPCMeshSpec:
                 "gamma_centered": self.gamma_centered,
                 "time_reversal": self.time_reversal,
                 "chunk_size": self.chunk_size,
+                "q_chunk_size": self.q_chunk_size,
             }
         )
         return payload

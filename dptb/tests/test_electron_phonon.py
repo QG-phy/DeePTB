@@ -986,6 +986,8 @@ def test_epc_mesh_spec_generates_kmesh_and_validates_phonon_qmesh():
         EPCMeshSpec(k_mesh=[1, 1, 1], q_mesh=[1, 1, 1]).resolve_qpoint_weights(phonons)
     with pytest.raises(ValueError, match="k_mesh"):
         EPCMeshSpec(k_mesh=[1, 0, 1])
+    with pytest.raises(ValueError, match="q_chunk_size"):
+        EPCMeshSpec(k_mesh=[1, 1, 1], q_chunk_size=0)
 
 
 def test_epc_mesh_data_npz_roundtrip(tmp_path):
@@ -3381,6 +3383,49 @@ def test_electron_phonon_accessor_compute_mesh_chunked_matches_full_mesh():
     ]
 
 
+def test_electron_phonon_accessor_compute_mesh_q_chunked_matches_full_mesh():
+    phonons = Phonons(
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+        frequencies=np.array([[1.0], [2.0], [3.0]]),
+        eigenvectors=np.array(
+            [[[[1.0, 0.0, 0.0]]], [[[1.0, 0.0, 0.0]]], [[[1.0, 0.0, 0.0]]]],
+            dtype=complex,
+        ),
+        masses=np.array([1.0]),
+    )
+    accessor = EPhAccessor(_FakeSystem())
+
+    full = accessor.compute_mesh(
+        mesh_spec=EPCMeshSpec(k_mesh=[2, 1, 1]),
+        phonons=phonons,
+        bands=[0],
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+    chunked = accessor.compute_mesh(
+        mesh_spec=EPCMeshSpec(k_mesh=[2, 1, 1], q_chunk_size=1),
+        phonons=phonons,
+        bands=[0],
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+
+    np.testing.assert_allclose(chunked.kpoints, full.kpoints)
+    np.testing.assert_allclose(chunked.qpoints, full.qpoints)
+    np.testing.assert_allclose(chunked.kpoint_weights, full.kpoint_weights)
+    np.testing.assert_allclose(chunked.qpoint_weights, full.qpoint_weights)
+    np.testing.assert_allclose(chunked.eigenvalues_k, full.eigenvalues_k)
+    np.testing.assert_allclose(chunked.eigenvalues_kq, full.eigenvalues_kq)
+    np.testing.assert_allclose(chunked.coupling_matrix, full.coupling_matrix)
+    np.testing.assert_allclose(chunked.coupling_strength, full.coupling_strength)
+    assert chunked.metadata["chunked"] is True
+    assert chunked.metadata["execution"] == "serial_q_chunked"
+    assert chunked.metadata["chunk_axis"] == "q"
+    assert chunked.metadata["chunks"] == [
+        {"chunk_index": 0, "q_start": 0, "q_stop": 1},
+        {"chunk_index": 1, "q_start": 1, "q_stop": 2},
+        {"chunk_index": 2, "q_start": 2, "q_stop": 3},
+    ]
+
+
 def test_epc_k_chunk_specs_are_deterministic():
     full = build_k_chunk_specs(3, None)
     assert full == [EPCKChunkSpec(chunk_index=0, k_start=0, k_stop=3)]
@@ -3824,6 +3869,8 @@ def test_eph_cli_parser_accepts_mesh_coupling_inputs():
             "--time-reversal",
             "--chunk-size",
             "1",
+            "--q-chunk-size",
+            "2",
             "-b",
             "0",
             "-o",
@@ -3837,6 +3884,7 @@ def test_eph_cli_parser_accepts_mesh_coupling_inputs():
     assert args.q_mesh == [1, 1, 1]
     assert args.time_reversal is True
     assert args.chunk_size == 1
+    assert args.q_chunk_size == 2
     assert args.output == "epc_mesh_data.npz"
 
 

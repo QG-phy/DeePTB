@@ -114,6 +114,7 @@ def eph(
     k_mesh: Optional[Sequence[int]] = None,
     q_mesh: Optional[Sequence[int]] = None,
     chunk_size: Optional[int] = None,
+    q_chunk_size: Optional[int] = None,
     time_reversal: bool = False,
     bands: Optional[Sequence[int]] = None,
     displacement: float = 1e-3,
@@ -179,6 +180,7 @@ def eph(
             k_mesh=k_mesh,
             q_mesh=q_mesh,
             chunk_size=chunk_size,
+            q_chunk_size=q_chunk_size,
             time_reversal=time_reversal,
             output=output or "epc_mesh_data.npz",
             bands=bands,
@@ -390,6 +392,7 @@ def eph_mesh_coupling(
     k_mesh: Optional[Sequence[int]],
     q_mesh: Optional[Sequence[int]],
     chunk_size: Optional[int],
+    q_chunk_size: Optional[int],
     time_reversal: bool,
     output: str,
     bands: Optional[Sequence[int]] = None,
@@ -420,6 +423,7 @@ def eph_mesh_coupling(
         k_mesh=k_mesh,
         q_mesh=q_mesh,
         chunk_size=chunk_size,
+        q_chunk_size=q_chunk_size,
         time_reversal=time_reversal,
     )
     output_path = Path(output)

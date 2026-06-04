@@ -13,7 +13,12 @@ from dptb.postprocess.unified.eph.data import (
     Phonons,
     cumulative_path_coordinates,
 )
-from dptb.postprocess.unified.eph.executor import build_k_chunk_specs, concat_epc_k_chunks
+from dptb.postprocess.unified.eph.executor import (
+    build_k_chunk_specs,
+    build_q_chunk_specs,
+    concat_epc_k_chunks,
+    concat_epc_q_chunks,
+)
 from dptb.postprocess.unified.eph.providers import (
     FDProvider,
     SupercellFD,
@@ -228,15 +233,17 @@ class EPhAccessor:
         """Compute EPC data on a DeePTB-native k/q mesh.
 
         This first mesh slice is a serial in-memory reference implementation.
-        ``mesh_spec.chunk_size`` drives deterministic k-point chunk specs that
-        can be reused by future multiprocessing/MPI executors.
+        ``mesh_spec.chunk_size`` and ``mesh_spec.q_chunk_size`` drive
+        deterministic serial chunk specs that can be reused by future
+        multiprocessing/MPI executors.
         """
         if not isinstance(mesh_spec, EPCMeshSpec):
             raise ValueError("mesh_spec must be an EPCMeshSpec instance.")
         kpoints, kpoint_weights = mesh_spec.resolve_kpoints_and_weights()
         qpoint_weights = mesh_spec.resolve_qpoint_weights(phonons)
-        chunk_specs = build_k_chunk_specs(kpoints.shape[0], mesh_spec.chunk_size)
-        if len(chunk_specs) == 1:
+        k_chunk_specs = build_k_chunk_specs(kpoints.shape[0], mesh_spec.chunk_size)
+        q_chunk_specs = build_q_chunk_specs(phonons.qpoints.shape[0], mesh_spec.q_chunk_size)
+        if len(k_chunk_specs) == 1 and len(q_chunk_specs) == 1:
             epc_data = self.compute_coupling(
                 kpoints=kpoints,
                 phonons=phonons,
@@ -247,26 +254,53 @@ class EPhAccessor:
             )
             chunked = False
             execution = "serial_full_mesh"
+            chunk_axis = None
             chunk_metadata = []
         else:
             chunked = True
-            execution = "serial_k_chunked"
+            if len(k_chunk_specs) > 1 and len(q_chunk_specs) > 1:
+                execution = "serial_qk_chunked"
+                chunk_axis = "q,k"
+            elif len(q_chunk_specs) > 1:
+                execution = "serial_q_chunked"
+                chunk_axis = "q"
+            else:
+                execution = "serial_k_chunked"
+                chunk_axis = "k"
             chunk_metadata = []
-            epc_chunks = []
-            for spec in chunk_specs:
-                chunk_kpoints = kpoints[spec.slice]
-                epc_chunks.append(
-                    self.compute_coupling(
-                        kpoints=chunk_kpoints,
-                        phonons=phonons,
-                        bands=bands,
-                        displacement=displacement,
-                        use_scc=use_scc,
-                        derivative_provider=derivative_provider,
+            q_chunks = []
+            for q_spec in q_chunk_specs:
+                chunk_phonons = _slice_phonons(phonons, q_spec.slice, q_spec.metadata())
+                k_chunks = []
+                k_metadata = []
+                for k_spec in k_chunk_specs:
+                    chunk_kpoints = kpoints[k_spec.slice]
+                    k_chunks.append(
+                        self.compute_coupling(
+                            kpoints=chunk_kpoints,
+                            phonons=chunk_phonons,
+                            bands=bands,
+                            displacement=displacement,
+                            use_scc=use_scc,
+                            derivative_provider=derivative_provider,
+                        )
                     )
+                    k_metadata.append(k_spec.metadata())
+                if len(k_chunks) == 1:
+                    q_chunks.append(k_chunks[0])
+                else:
+                    q_chunks.append(concat_epc_k_chunks(k_chunks))
+                chunk_metadata.append(
+                    {
+                        "q_chunk": q_spec.metadata(),
+                        "k_chunks": k_metadata,
+                    }
                 )
-                chunk_metadata.append(spec.metadata())
-            epc_data = concat_epc_k_chunks(epc_chunks)
+            epc_data = q_chunks[0] if len(q_chunks) == 1 else concat_epc_q_chunks(q_chunks)
+            if chunk_axis == "k":
+                chunk_metadata = chunk_metadata[0]["k_chunks"]
+            elif chunk_axis == "q":
+                chunk_metadata = [entry["q_chunk"] for entry in chunk_metadata]
         result = EPCMeshData.from_epc_data(
             epc_data,
             kpoint_weights=kpoint_weights,
@@ -277,7 +311,7 @@ class EPhAccessor:
                 "mesh_spec": mesh_spec.metadata_payload(),
                 "execution": execution,
                 "chunked": chunked,
-                "chunk_axis": "k" if chunked else None,
+                "chunk_axis": chunk_axis,
                 "chunks": chunk_metadata,
             },
         )
@@ -312,6 +346,26 @@ def _unpack_derivative_payload(payload, name: str):
     if not isinstance(payload, tuple) or len(payload) != 2:
         raise ValueError(f"{name} must return a (h_derivatives, overlap_derivatives) tuple.")
     return payload
+
+
+def _slice_phonons(phonons: Phonons, q_slice: slice, chunk_metadata: Dict[str, Any]) -> Phonons:
+    metadata = dict(phonons.metadata)
+    metadata.update(
+        {
+            "source": "deeptb.eph.phonons.q_chunk",
+            "base_phonon_metadata": phonons.metadata,
+            "q_chunk": chunk_metadata,
+        }
+    )
+    return Phonons(
+        qpoints=phonons.qpoints[q_slice],
+        frequencies=phonons.frequencies[q_slice],
+        eigenvectors=phonons.eigenvectors[q_slice],
+        masses=phonons.masses,
+        cell=phonons.cell,
+        scaled_positions=phonons.scaled_positions,
+        metadata=metadata,
+    )
 
 
 def _unpack_eigenstate_payload(payload, name: str):

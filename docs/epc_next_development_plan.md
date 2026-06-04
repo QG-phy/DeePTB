@@ -337,6 +337,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - optional `--q-mesh n1 n2 n3` for external phonon q-point validation
   - optional `--time-reversal` for generated k-mesh reduction
   - optional `--chunk-size n` for serial k-point chunk execution
+  - optional `--q-chunk-size n` for serial q-point chunk execution
 - Current limitation: no chunked artifact/reducer yet; chunked mesh coupling still returns a single in-memory `EPCMeshData`.
 - Current executor boundary:
   - `EPCKChunkSpec` defines rank-independent k-axis chunk metadata.
@@ -346,7 +347,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - `concat_epc_k_chunks(...)` performs deterministic k-axis concatenation and rejects inconsistent q-points, bands, frequencies, or coupling trailing shapes.
   - `concat_epc_q_chunks(...)` performs deterministic q-axis concatenation and rejects inconsistent k-points, bands, eigenvalues, or coupling trailing shapes.
   - This is an API boundary for future multiprocessing/MPI; it is not yet a chunked artifact format.
-  - q-axis chunks are not yet wired into `compute_mesh(...)` execution; they are a tested reducer/spec boundary for the next scaling slice.
+  - q-axis chunks are now wired into serial `compute_mesh(...)` execution through `EPCMeshSpec.q_chunk_size`, but still return one in-memory `EPCMeshData`; no chunked artifact exists yet.
 
 ### CLI
 

@@ -229,6 +229,7 @@ dptb eph \
   --q-mesh 4 4 1 \
   --time-reversal \
   --chunk-size 16 \
+  --q-chunk-size 4 \
   -b 0 1 \
   -o epc_mesh_data.npz
 ```
@@ -237,7 +238,8 @@ dptb eph \
 electronic k-points with DeePTB's existing k-point mesh helpers. `--q-mesh`
 only validates the external phonon q-points in `phonons_mesh.npz`; it does not
 calculate phonons. `--chunk-size` enables serial k-point chunk execution and
-then concatenates chunks deterministically into one `EPCMeshData` output.
+`--q-chunk-size` enables serial q-point chunk execution. Chunked mesh coupling
+still concatenates chunks deterministically into one `EPCMeshData` output.
 
 ### Linewidth
 
