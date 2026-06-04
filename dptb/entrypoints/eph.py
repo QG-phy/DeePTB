@@ -28,6 +28,7 @@ from dptb.postprocess.unified.eph import (
     compute_coupling_strength_summary,
     compute_eliashberg_spectral_function,
     compute_linewidth,
+    compute_linewidth_mesh_chunked_artifact,
     compute_linewidth_mesh,
     compute_linewidth_path,
     compute_phonon_dos,
@@ -36,8 +37,14 @@ from dptb.postprocess.unified.eph import (
     compute_relaxation_time_path,
     compute_scattering_maps,
     compute_serta_mobility_si,
+    compute_serta_mobility_si_from_epc_mesh_chunked_artifact,
     compute_serta_mobility_scan_si,
+    compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact,
+    compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact,
+    compute_serta_transport_from_epc_mesh_chunked_artifact,
     compute_serta_transport_from_epc,
+    compute_serta_transport_scan_from_epc_mesh_chunked_artifact,
+    compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact,
     compute_serta_transport_scan,
     compute_subspace_coupling_data,
 )
@@ -105,6 +112,7 @@ def eph(
     output: Optional[str] = None,
     task: str = "coupling",
     epc_data: Optional[str] = None,
+    epc_artifact: Optional[str] = None,
     linewidth_data: Optional[str] = None,
     final_groups: Optional[Sequence[str]] = None,
     initial_groups: Optional[Sequence[str]] = None,
@@ -124,6 +132,7 @@ def eph(
     dimension: str = "3d",
     velocity_delta: float = 1e-4,
     velocity_source: str = "finite_difference",
+    linewidth_scan_convention: str = "fixed",
     k_mesh: Optional[Sequence[int]] = None,
     q_mesh: Optional[Sequence[int]] = None,
     chunk_size: Optional[int] = None,
@@ -250,6 +259,7 @@ def eph(
     if task == "mesh-linewidth":
         return eph_mesh_linewidth(
             epc_data=epc_data,
+            epc_artifact=epc_artifact,
             output=output or "mesh_linewidth.npz",
             chemical_potential=chemical_potential,
             temperature=temperature,
@@ -281,17 +291,22 @@ def eph(
             structure=structure,
             init_model=init_model,
             epc_data=epc_data,
+            epc_artifact=epc_artifact,
             linewidth_data=linewidth_data,
             output=output or "transport.npz",
             chemical_potential=chemical_potential,
             chemical_potentials=chemical_potentials,
             temperature=temperature,
             temperatures=temperatures,
+            sigma=sigma,
+            broadening=broadening,
+            frequency_floor=frequency_floor,
             kpoint_weights=kpoint_weights,
             spin_degeneracy=spin_degeneracy,
             volume=volume,
             velocity_delta=velocity_delta,
             velocity_source=velocity_source,
+            linewidth_scan_convention=linewidth_scan_convention,
             use_scc=use_scc,
             system=system,
         )
@@ -300,12 +315,16 @@ def eph(
             structure=structure,
             init_model=init_model,
             epc_data=epc_data,
+            epc_artifact=epc_artifact,
             linewidth_data=linewidth_data,
             output=output or "mobility.npz",
             chemical_potential=chemical_potential,
             chemical_potentials=chemical_potentials,
             temperature=temperature,
             temperatures=temperatures,
+            sigma=sigma,
+            broadening=broadening,
+            frequency_floor=frequency_floor,
             kpoint_weights=kpoint_weights,
             spin_degeneracy=spin_degeneracy,
             dimension=dimension,
@@ -313,6 +332,7 @@ def eph(
             area=area,
             velocity_delta=velocity_delta,
             velocity_source=velocity_source,
+            linewidth_scan_convention=linewidth_scan_convention,
             use_scc=use_scc,
             system=system,
         )
@@ -644,6 +664,7 @@ def eph_path_linewidth(
 
 def eph_mesh_linewidth(
     epc_data: str,
+    epc_artifact: Optional[str],
     output: str,
     chemical_potential: float,
     temperature: float,
@@ -652,9 +673,11 @@ def eph_mesh_linewidth(
     mode_resolved: bool = False,
     frequency_floor: float = 1e-5,
 ) -> LinewidthMeshData:
-    """Calculate mesh linewidth data from an EPCMeshData NPZ file."""
-    if epc_data is None:
-        raise ValueError("epc_data is required for dptb eph --task mesh-linewidth.")
+    """Calculate mesh linewidth data from an EPCMeshData NPZ file or artifact."""
+    if epc_artifact is not None and epc_data is not None:
+        raise ValueError("epc_data must not be set when epc_artifact is used for dptb eph --task mesh-linewidth.")
+    if epc_artifact is None and epc_data is None:
+        raise ValueError("epc_data or epc_artifact is required for dptb eph --task mesh-linewidth.")
     if chemical_potential is None:
         raise ValueError("chemical_potential is required for dptb eph --task mesh-linewidth.")
     if temperature is None:
@@ -662,15 +685,26 @@ def eph_mesh_linewidth(
     if sigma is None:
         raise ValueError("sigma is required for dptb eph --task mesh-linewidth.")
 
-    result = compute_linewidth_mesh(
-        EPCMeshData.load_npz(epc_data),
-        chemical_potential=chemical_potential,
-        temperature=temperature,
-        sigma=sigma,
-        broadening=broadening,
-        mode_resolved=mode_resolved,
-        frequency_floor=frequency_floor,
-    )
+    if epc_artifact is not None:
+        result = compute_linewidth_mesh_chunked_artifact(
+            epc_artifact,
+            chemical_potential=chemical_potential,
+            temperature=temperature,
+            sigma=sigma,
+            broadening=broadening,
+            mode_resolved=mode_resolved,
+            frequency_floor=frequency_floor,
+        )
+    else:
+        result = compute_linewidth_mesh(
+            EPCMeshData.load_npz(epc_data),
+            chemical_potential=chemical_potential,
+            temperature=temperature,
+            sigma=sigma,
+            broadening=broadening,
+            mode_resolved=mode_resolved,
+            frequency_floor=frequency_floor,
+        )
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result.save_npz(output_path)
@@ -733,27 +767,42 @@ def eph_transport(
     structure: Optional[str],
     init_model: Optional[str],
     epc_data: str,
+    epc_artifact: Optional[str],
     linewidth_data: str,
     output: str,
     chemical_potential: Optional[float],
     temperature: Optional[float],
     chemical_potentials: Optional[Sequence[float]] = None,
     temperatures: Optional[Sequence[float]] = None,
+    sigma: Optional[float] = None,
+    broadening: str = "gaussian",
+    frequency_floor: float = 1e-5,
     kpoint_weights: Optional[str] = None,
     spin_degeneracy: int = 1,
     volume: float = 1.0,
     velocity_delta: float = 1e-4,
     velocity_source: str = "finite_difference",
+    linewidth_scan_convention: str = "fixed",
     use_scc: bool = False,
     system=None,
 ) -> Union[TransportData, TransportScanData]:
     """Calculate SERTA transport data from EPC and linewidth NPZ files."""
     if use_scc:
         _reject_scc_v1("transport")
-    if epc_data is None:
-        raise ValueError("epc_data is required for dptb eph --task transport.")
-    if linewidth_data is None:
-        raise ValueError("linewidth_data is required for dptb eph --task transport.")
+    if epc_artifact is not None:
+        if epc_data is not None:
+            raise ValueError("epc_data must not be set when epc_artifact is used for dptb eph --task transport.")
+        if linewidth_data is not None:
+            raise ValueError("linewidth_data must not be set when epc_artifact is used for dptb eph --task transport.")
+        if kpoint_weights is not None:
+            raise ValueError("kpoint_weights must not be set when epc_artifact is used; artifact weights are used.")
+        if sigma is None:
+            raise ValueError("sigma is required when epc_artifact is used for dptb eph --task transport.")
+    else:
+        if epc_data is None:
+            raise ValueError("epc_data is required for dptb eph --task transport.")
+        if linewidth_data is None:
+            raise ValueError("linewidth_data is required for dptb eph --task transport.")
     chemical_potential_values, use_scan_mu = _resolve_scan_axis(
         single_value=chemical_potential,
         multiple_values=chemical_potentials,
@@ -776,6 +825,60 @@ def eph_transport(
         if init_model is None:
             raise ValueError("init_model is required for dptb eph --task transport.")
         system = TBSystem(data=structure, calculator=init_model)
+
+    scan_convention = _normalize_linewidth_scan_convention(linewidth_scan_convention)
+    if epc_artifact is not None:
+        if use_scan:
+            if scan_convention == "fixed":
+                result = compute_serta_transport_scan_from_epc_mesh_chunked_artifact(
+                    system=system,
+                    directory=epc_artifact,
+                    chemical_potentials=chemical_potential_values,
+                    temperatures=temperature_values,
+                    sigma=sigma,
+                    broadening=broadening,
+                    frequency_floor=frequency_floor,
+                    spin_degeneracy=spin_degeneracy,
+                    volume=volume,
+                    velocity_delta=velocity_delta,
+                    velocity_source=velocity_source,
+                    use_scc=use_scc,
+                )
+            else:
+                result = compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(
+                    system=system,
+                    directory=epc_artifact,
+                    chemical_potentials=chemical_potential_values,
+                    temperatures=temperature_values,
+                    sigma=sigma,
+                    broadening=broadening,
+                    frequency_floor=frequency_floor,
+                    spin_degeneracy=spin_degeneracy,
+                    volume=volume,
+                    velocity_delta=velocity_delta,
+                    velocity_source=velocity_source,
+                    use_scc=use_scc,
+                )
+        else:
+            result = compute_serta_transport_from_epc_mesh_chunked_artifact(
+                system=system,
+                directory=epc_artifact,
+                chemical_potential=float(chemical_potential_values[0]),
+                temperature=float(temperature_values[0]),
+                sigma=sigma,
+                broadening=broadening,
+                frequency_floor=frequency_floor,
+                spin_degeneracy=spin_degeneracy,
+                volume=volume,
+                velocity_delta=velocity_delta,
+                velocity_source=velocity_source,
+                use_scc=use_scc,
+            )
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        result.save_npz(output_path)
+        log.info("Electron-phonon transport data written to %s", output_path)
+        return result
 
     weights = _load_kpoint_weights(kpoint_weights) if kpoint_weights is not None else None
     epc = EPCData.load_npz(epc_data)
@@ -856,12 +959,16 @@ def eph_mobility(
     structure: Optional[str],
     init_model: Optional[str],
     epc_data: str,
+    epc_artifact: Optional[str],
     linewidth_data: str,
     output: str,
     chemical_potential: Optional[float],
     temperature: Optional[float],
     chemical_potentials: Optional[Sequence[float]] = None,
     temperatures: Optional[Sequence[float]] = None,
+    sigma: Optional[float] = None,
+    broadening: str = "gaussian",
+    frequency_floor: float = 1e-5,
     kpoint_weights: Optional[str] = None,
     spin_degeneracy: int = 1,
     dimension: str = "3d",
@@ -869,16 +976,27 @@ def eph_mobility(
     area: Optional[float] = None,
     velocity_delta: float = 1e-4,
     velocity_source: str = "finite_difference",
+    linewidth_scan_convention: str = "fixed",
     use_scc: bool = False,
     system=None,
 ) -> Union[MobilityData, MobilityScanData]:
     """Calculate SI SERTA mobility data from EPC and linewidth NPZ files."""
     if use_scc:
         _reject_scc_v1("mobility")
-    if epc_data is None:
-        raise ValueError("epc_data is required for dptb eph --task mobility.")
-    if linewidth_data is None:
-        raise ValueError("linewidth_data is required for dptb eph --task mobility.")
+    if epc_artifact is not None:
+        if epc_data is not None:
+            raise ValueError("epc_data must not be set when epc_artifact is used for dptb eph --task mobility.")
+        if linewidth_data is not None:
+            raise ValueError("linewidth_data must not be set when epc_artifact is used for dptb eph --task mobility.")
+        if kpoint_weights is not None:
+            raise ValueError("kpoint_weights must not be set when epc_artifact is used; artifact weights are used.")
+        if sigma is None:
+            raise ValueError("sigma is required when epc_artifact is used for dptb eph --task mobility.")
+    else:
+        if epc_data is None:
+            raise ValueError("epc_data is required for dptb eph --task mobility.")
+        if linewidth_data is None:
+            raise ValueError("linewidth_data is required for dptb eph --task mobility.")
     chemical_potential_values, use_scan_mu = _resolve_scan_axis(
         single_value=chemical_potential,
         multiple_values=chemical_potentials,
@@ -901,6 +1019,71 @@ def eph_mobility(
         if init_model is None:
             raise ValueError("init_model is required for dptb eph --task mobility.")
         system = TBSystem(data=structure, calculator=init_model)
+
+    reciprocal_cell = _reciprocal_cell_from_system(system)
+    scan_convention = _normalize_linewidth_scan_convention(linewidth_scan_convention)
+    if epc_artifact is not None:
+        if use_scan:
+            if scan_convention == "fixed":
+                result = compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(
+                    system=system,
+                    directory=epc_artifact,
+                    reciprocal_cell=reciprocal_cell,
+                    chemical_potentials=chemical_potential_values,
+                    temperatures=temperature_values,
+                    sigma=sigma,
+                    broadening=broadening,
+                    frequency_floor=frequency_floor,
+                    spin_degeneracy=spin_degeneracy,
+                    dimension=dimension,
+                    volume=volume if str(dimension).lower() == "3d" else None,
+                    area=area,
+                    velocity_delta=velocity_delta,
+                    velocity_source=velocity_source,
+                    use_scc=use_scc,
+                )
+            else:
+                result = compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(
+                    system=system,
+                    directory=epc_artifact,
+                    reciprocal_cell=reciprocal_cell,
+                    chemical_potentials=chemical_potential_values,
+                    temperatures=temperature_values,
+                    sigma=sigma,
+                    broadening=broadening,
+                    frequency_floor=frequency_floor,
+                    spin_degeneracy=spin_degeneracy,
+                    dimension=dimension,
+                    volume=volume if str(dimension).lower() == "3d" else None,
+                    area=area,
+                    velocity_delta=velocity_delta,
+                    velocity_source=velocity_source,
+                    use_scc=use_scc,
+                )
+        else:
+            result = compute_serta_mobility_si_from_epc_mesh_chunked_artifact(
+                system=system,
+                directory=epc_artifact,
+                reciprocal_cell=reciprocal_cell,
+                chemical_potential=float(chemical_potential_values[0]),
+                temperature=float(temperature_values[0]),
+                sigma=sigma,
+                broadening=broadening,
+                frequency_floor=frequency_floor,
+                spin_degeneracy=spin_degeneracy,
+                dimension=dimension,
+                volume=volume if str(dimension).lower() == "3d" else None,
+                area=area,
+                velocity_delta=velocity_delta,
+                velocity_source=velocity_source,
+                use_scc=use_scc,
+            )
+        result.metadata.update({"reciprocal_cell_source": "2pi_times_ase_cell_reciprocal"})
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        result.save_npz(output_path)
+        log.info("Electron-phonon mobility data written to %s", output_path)
+        return result
 
     epc = EPCData.load_npz(epc_data)
     linewidth_result = LinewidthData.load_npz(linewidth_data)
@@ -928,7 +1111,6 @@ def eph_mobility(
             use_scc=use_scc,
         )
 
-    reciprocal_cell = _reciprocal_cell_from_system(system)
     if use_scan:
         result = compute_serta_mobility_scan_si(
             eigenvalues=epc.eigenvalues_k,
@@ -1157,6 +1339,17 @@ def _normalize_velocity_source(velocity_source: str) -> str:
     if source not in {"finite_difference", "hamiltonian_derivative"}:
         raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
     return source
+
+
+def _normalize_linewidth_scan_convention(linewidth_scan_convention: str) -> str:
+    if not isinstance(linewidth_scan_convention, str):
+        raise ValueError("linewidth_scan_convention must be 'fixed' or 'recompute'.")
+    convention = linewidth_scan_convention.replace("-", "_").lower()
+    if convention in {"fixed", "fixed_linewidth"}:
+        return "fixed"
+    if convention in {"recompute", "per_scan_point_recomputed"}:
+        return "recompute"
+    raise ValueError("linewidth_scan_convention must be 'fixed' or 'recompute'.")
 
 
 def _resolve_scan_axis(

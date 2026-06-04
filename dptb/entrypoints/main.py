@@ -630,6 +630,13 @@ def main_parser() -> argparse.ArgumentParser:
     )
 
     parser_eph.add_argument(
+        "--epc-artifact",
+        type=str,
+        default=None,
+        help="Input EPC mesh chunked artifact directory for summary-first transport or mobility postprocess.",
+    )
+
+    parser_eph.add_argument(
         "--linewidth-data",
         type=str,
         default=None,
@@ -661,7 +668,7 @@ def main_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=float,
         default=None,
-        help="Chemical-potential scan values in eV for mobility postprocess.",
+        help="Chemical-potential scan values in eV for transport or mobility postprocess.",
     )
 
     parser_eph.add_argument(
@@ -675,7 +682,7 @@ def main_parser() -> argparse.ArgumentParser:
         nargs="+",
         type=float,
         default=None,
-        help="Temperature scan values as kBT in eV for mobility postprocess.",
+        help="Temperature scan values as kBT in eV for transport or mobility postprocess.",
     )
 
     parser_eph.add_argument(
@@ -770,6 +777,13 @@ def main_parser() -> argparse.ArgumentParser:
         default="finite_difference",
         choices=["finite_difference", "finite-difference", "hamiltonian_derivative", "hamiltonian-derivative"],
         help="Band velocity provider for transport postprocess.",
+    )
+    parser_eph.add_argument(
+        "--linewidth-scan-convention",
+        type=str,
+        default="fixed",
+        choices=["fixed", "fixed_linewidth", "recompute", "per_scan_point_recomputed"],
+        help="Linewidth convention for chunked-artifact transport or mobility scans.",
     )
     parser_eph.add_argument(
         "--summary-unweighted",

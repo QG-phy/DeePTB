@@ -11,7 +11,7 @@
 
 下一阶段的开发主线是：
 
-1. 完成 v1 release hardening：默认 CI fixture、文档收敛、错误信息、API 稳定性，以及当前已实现 analysis slice 的 checkpoint。
+1. 完成 v1 release hardening：默认 CI fixture、文档收敛、错误信息、API 稳定性，以及当前已实现 feature slices 的 checkpoint。
 2. 稳定 DeePTB-native path workflow：沿 q path 输出 EPC、linewidth、relaxation-time 的可视化数据，并规划 k-path + fixed-q 后续切片。
 3. 稳定 DeePTB-native mesh workflow：面向 fine k/q mesh 的批量 EPC、linewidth、relaxation-time 和 transport 输入输出组织。
 4. 固化 transport/mobility 第一版：确认单位、速度 provider、2D/3D normalization、scan axes 和 metadata convention。
@@ -34,7 +34,8 @@
   - SI mobility, 2D/3D normalization, and multi-chemical-potential / multi-temperature mobility scans。
   - coupling-strength summary, scattering proxy maps, phonon DOS, and Eliashberg-like spectral diagnostic from existing NPZ data。
   - chunked mesh artifact save/load/reduce contract。
-  - chunked artifact summary-first linewidth, SERTA transport, SI mobility, and fixed-linewidth SI mobility scan helpers。
+  - chunked artifact summary-first linewidth, SERTA transport, fixed-linewidth transport scan, SI mobility, and fixed-linewidth SI mobility scan helpers。
+  - explicit per-scan-point linewidth recomputation helpers for chunked-artifact transport and SI mobility scans, with CLI exposure through `--linewidth-scan-convention recompute`。
   - first serial streaming mesh artifact producer through `TBSystem.eph.compute_mesh_chunked_artifact(...)`。
 - Still needs hardening before merge/release:
   - a minimal in-repo synthetic EPC fixture now covers default linewidth reference testing; broader coupling/FD fixtures still need release hardening。
@@ -42,14 +43,12 @@
   - import/export smoke tests for all new public symbols。
   - docs/index integration and CLI examples verified against current parser。
   - final review of unit metadata, temperature convention, and reciprocal-cell convention。
-  - focused parity tests and checkpoint commit for the current uncommitted chunked artifact SI mobility scan helper。
   - artifact metadata and docs review for summary-first scan semantics。
 - Still design-only:
   - SCC EPC implementation; the design document now lives in `docs/epc_scc_design.md`。
   - multiprocessing/MPI executors。
   - torch CUDA EPC backend。
   - multi-axis streaming artifact production and parallel artifact writers。
-  - per-scan-point linewidth recomputation。
   - SOC/spinful EPC, polar correction, and full degenerate-band gauge tracking。
 
 ## Design Position
@@ -85,7 +84,7 @@
   - 当前不添加 `mpi4py` 为必需依赖，也不优先写 CUDA 专用 workflow。
   - 先实现 serial executor + deterministic chunk/reducer API。
   - MPI/multiprocessing 是外层 executor，CUDA/torch 是内层 backend；两者不冲突，也不应互相污染接口。
-  - 当前实现目标是 serial k-chunk reference path；MPI/CUDA 只通过接口预留进入，不在本轮变成必需依赖或默认路径。
+  - 当前实现目标是 serial k/q chunk reference path、chunked artifact contract、summary-first consumers 和清晰 metadata；MPI/CUDA 只通过接口预留进入，不在本轮变成必需依赖或默认路径。
   - 下一步实现时优先把 task spec、chunk metadata、reducer 语义和 backend selection 写清楚；不要先引入 `mpi4py` 或 CUDA kernel。
   - 如果后续需要实际加速，推荐顺序是：serial chunked summaries -> chunked artifact -> multiprocessing/MPI executor -> torch CUDA backend。这样 MPI 和 CUDA 可以组合使用，而不是二选一。
   - 当前开发波次的工程判断是：先不要在默认路径里实现 MPI 或 CUDA；先把 serial/chunk contract 做到足够清晰，使后续 MPI executor 和 CUDA backend 都能接入而不改公共 API。
@@ -104,9 +103,10 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 
 - Gate B: transport/mobility completion
   - 当前已有 finite-difference velocity、Hamiltonian-derivative velocity、SI mobility 和 mobility scan 第一版。
-  - 下一步重点是 release hardening：单位 metadata、`temperature` convention、2D/3D normalization、reciprocal-cell `2*pi` convention 和 CLI examples。
+  - 下一步重点是 release hardening：单位 metadata、`temperature` convention、2D/3D normalization、reciprocal-cell `2*pi` convention、fixed-linewidth/recomputed-linewidth scan convention 和 CLI examples。
   - `finite_difference` velocity 保留为 fallback/reference。
   - `hamiltonian_derivative` velocity 复用 `get_hk(..., with_derivative=True)` 相关路径，但仍需要审查 gauge、`2*pi` 因子、overlap correction 和单位 convention。
+  - 已有 `compute_serta_transport_scan(...)` 和固定 linewidth artifact scan helpers 不应被静默改成 per-scan-point linewidth；当前 recomputed-linewidth 能力必须继续通过显式函数名、CLI flag 和 metadata 区分。
 
 - Gate C: SCC EPC design
   - SCC EPC design doc 已创建为 `docs/epc_scc_design.md`；后续需要 review 后再实现。
@@ -124,6 +124,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - chunk spec、chunked artifact 和 reducer 先稳定，再接 multiprocessing/MPI。
   - summary-first artifact consumers 先覆盖 linewidth/transport/mobility，再推进 true streaming producer。
   - backend/kernel 再决定是否使用 torch CUDA。
+  - 本 gate 的完成标准不是“有并行代码”，而是 serial/chunk path 的 schema、metadata、reducer、测试和文档稳定到后续并行化不需要改公共 API。
 
 ## Repository Compatibility Checklist
 
@@ -364,14 +365,15 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - Both k-axis and q-axis chunk execution are reference serial paths today; they are intentionally structured as future multiprocessing/MPI task specs, not as parallel execution yet.
   - `save_epc_mesh_chunked_artifact(...)` and `load_epc_mesh_chunked_artifact(...)` now provide a directory artifact contract for splitting/reducing materialized `EPCMeshData`.
   - `compute_linewidth_mesh_chunked_artifact(...)` supports summary-first linewidth reduction without loading the full coupling tensor at once.
-  - `compute_serta_transport_from_epc_mesh_chunked_artifact(...)`, `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)`, and `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` consume the artifact contract and reuse the existing velocity providers.
-  - The scan helper currently follows the fixed-linewidth scan convention: linewidth is computed at the first requested chemical-potential/temperature point, then reused across the scan.
+  - `dptb eph --task mesh-linewidth --epc-artifact ...` now consumes the artifact contract directly for summary-first linewidth output.
+  - `compute_serta_transport_from_epc_mesh_chunked_artifact(...)`, `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)`, and scan helpers consume the artifact contract and reuse the existing velocity providers.
+  - Fixed-linewidth scan helpers compute linewidth at the first requested chemical-potential/temperature point and reuse it across the scan; recomputed-linewidth helpers recompute linewidth at every scan point.
 
 ### CLI
 
 - `dptb eph --task mesh-coupling` 已支持 serial full-mesh EPC。
 - `dptb eph --task mesh-artifact` 已支持 serial streaming chunked artifact 输出。
-- `dptb eph --task mesh-linewidth` 已支持从 `EPCMeshData` 计算 mesh linewidth。
+- `dptb eph --task mesh-linewidth` 已支持从 `EPCMeshData` 或 chunked artifact 计算 mesh linewidth。
 - `dptb eph --task mesh-relaxation-time` 已支持从 `LinewidthMeshData` 计算 mesh relaxation time。
 
 ### Open Design Questions
@@ -436,9 +438,11 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 
 - `dptb eph --task transport` 已支持 `--velocity-source finite_difference|hamiltonian_derivative`。
 - transport CLI 已支持 `--chemical-potentials`、`--temperatures` scan 参数，并写出 `TransportScanData`。
+- transport CLI 已支持 `--epc-artifact --linewidth-scan-convention recompute`，从 chunked artifact 进行 per-scan-point linewidth recomputation scan。
 - `dptb eph --task mobility` 已支持单个 chemical potential / temperature 的 SI mobility 输出。
 - mobility CLI 已支持 `--dimension 2d/3d`、`--area`、`--volume`。
 - mobility CLI 已支持 `--chemical-potentials`、`--temperatures` scan 参数。
+- mobility CLI 已支持 `--epc-artifact --linewidth-scan-convention recompute`，从 chunked artifact 进行 per-scan-point linewidth recomputation scan。
 
 ### Current Implementation Status
 
@@ -451,7 +455,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - scans chemical-potential and temperature axes.
   - stores conductivity shape `(nmu, ntemperatures, 3, 3)`.
   - stores carrier-density shape `(nmu, ntemperatures)`.
-  - uses the existing fixed-linewidth convention; per-scan-point linewidth recomputation remains a separate future API.
+  - uses the existing fixed-linewidth convention; per-scan-point linewidth recomputation is only available through the explicit chunked-artifact helper below.
 - Implemented `compute_serta_mobility_si(...)` as a Python SI mobility helper:
   - converts fractional reciprocal-coordinate velocities to m/s through an explicit reciprocal cell.
   - computes SI conductivity, carrier density, and mobility.
@@ -466,17 +470,62 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - stores conductivity/mobility shape `(nmu, ntemperatures, 3, 3)`.
   - stores carrier-density shape `(nmu, ntemperatures)`.
   - uses the existing fixed-linewidth convention: the caller supplies one linewidth array, and the scan varies occupation/carrier-density/transport weighting.
+- Implemented `compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`:
+  - recomputes chunked linewidth at each scan point.
+  - reuses the selected velocity provider once for artifact k-points.
+  - stores `linewidth_scan_convention="per_scan_point_recomputed"`.
 - Added CLI scan output:
   - `dptb eph --task transport --chemical-potentials ... --temperatures ...` writes `TransportScanData`.
+  - `dptb eph --task transport --epc-artifact ... --linewidth-scan-convention recompute` writes recomputed-linewidth `TransportScanData` from chunked artifacts.
   - `dptb eph --task mobility --chemical-potentials ... --temperatures ...` writes `MobilityScanData`.
+  - `dptb eph --task mobility --epc-artifact ... --linewidth-scan-convention recompute` writes recomputed-linewidth `MobilityScanData` from chunked artifacts.
   - singular and plural chemical-potential/temperature arguments are mutually exclusive per axis.
 - Implemented chunked artifact consumers for transport/mobility:
   - `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` computes chunked linewidth first, then computes transport with the selected velocity provider.
   - `compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)` computes chunked linewidth at the first scan point and reuses the fixed-linewidth transport scan convention.
+  - `compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` recomputes chunked linewidth at each scan point and records `linewidth_scan_convention="per_scan_point_recomputed"`.
   - `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)` computes single-point SI mobility from a chunked mesh artifact.
   - `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` computes chunked linewidth at the first scan point and reuses the fixed-linewidth scan convention.
+  - `compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` recomputes chunked linewidth at each scan point and reuses the SI mobility conversion.
 - SCC-corrected velocity remains unsupported in v1.
-- Per-scan-point linewidth recomputation remains future work and should use an explicit name/metadata if implemented, to avoid silently changing the meaning of existing scan helpers.
+- Existing fixed-linewidth scan helpers keep their public meaning; recomputed-linewidth scan behavior uses an explicit function name and metadata.
+
+### Recomputed-Linewidth Transport Scan Slice
+
+The current transport hardening slice adds explicit per-scan-point linewidth recomputation without changing any existing fixed-linewidth behavior.
+
+Implemented API shape:
+
+- `compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`
+  - reads a chunked EPC mesh artifact;
+  - loops over all requested chemical potentials and temperatures;
+  - recomputes `compute_linewidth_mesh_chunked_artifact(...)` for each scan point;
+  - computes velocities once per artifact k mesh, because velocity is independent of `(mu, temperature)` in the current non-SCC v1 convention;
+  - returns `TransportScanData`.
+- SI mobility uses the separate explicit helper `compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` instead of overloading the existing fixed-linewidth helper.
+
+Required metadata:
+
+- `linewidth_scan_convention: "per_scan_point_recomputed"`
+- `source` or `producer` with the explicit function name。
+- `chunked_artifact: True`
+- `artifact_axis`
+- `artifact_chunk_count`
+- velocity source/convention/unit metadata copied from the selected velocity provider。
+- chemical-potential and temperature units; current implementation uses eV temperature/kBT convention, so this must remain explicit。
+
+Implemented tests:
+
+- q-axis artifact plus finite-difference velocity: compare against a manual loop that calls `compute_linewidth_mesh(...)` at every scan point on the full in-memory mesh。
+- k-axis artifact plus Hamiltonian-derivative velocity: compare against the same manual full-mesh recomputation。
+- metadata test proving fixed-linewidth and recomputed-linewidth scans carry different `linewidth_scan_convention` values。
+- import/export smoke test for the new explicit public helper。
+
+Non-goals for this slice:
+
+- Do not modify `compute_serta_transport_scan(...)` semantics。
+- Do not add MPI, multiprocessing, or CUDA。
+- Do not claim SCC-corrected linewidth recomputation; SCC remains unsupported。
 
 ### Acceptance
 
@@ -673,14 +722,21 @@ Current Phase 1 status:
   - the helper returns `TransportData` without materializing the full mesh coupling tensor.
 - Implemented first summary-first transport scan helper:
   - `compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)` uses chunked linewidth at the first requested scan point and reuses the existing fixed-linewidth scan convention.
+  - `compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` recomputes chunked linewidth at every requested `(chemical_potential, temperature)` point and records `linewidth_scan_convention="per_scan_point_recomputed"`.
 - Implemented first summary-first SI mobility helper:
   - `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)` combines chunked linewidth reduction, existing velocity providers, and SI mobility conversion.
   - 2D/3D normalization and reciprocal-cell conventions are inherited from `compute_serta_mobility_si(...)`.
 - Implemented first summary-first SI mobility scan helper:
   - `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` uses chunked linewidth at the first requested scan point and reuses the existing fixed-linewidth scan convention.
+  - `compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` recomputes linewidth at every scan point and reuses the same SI mobility conversion path.
+- Implemented artifact CLI exposure:
+  - `dptb eph --task mesh-linewidth --epc-artifact ...` writes `LinewidthMeshData` directly from a chunked artifact.
+  - `dptb eph --task transport --epc-artifact ... --linewidth-scan-convention fixed|recompute` writes `TransportData` or `TransportScanData`.
+  - `dptb eph --task mobility --epc-artifact ... --linewidth-scan-convention fixed|recompute` writes `MobilityData` or `MobilityScanData`.
+  - artifact workflows use artifact weights directly and reject conflicting `--epc-data`, `--linewidth-data`, and `--kpoint-weights` inputs.
 - Current limitation:
   - summary-first artifact consumers are available, and the first serial streaming producer is available, but multi-axis q/k streaming and parallel writers remain future work.
-  - per-scan-point linewidth recomputation remains future Phase 1/transport hardening work.
+  - per-scan-point linewidth recomputation is implemented only for explicit chunked-artifact transport/mobility scan helpers; existing fixed-linewidth scan semantics must remain unchanged.
   - no multiprocessing, MPI, or CUDA runtime has been added.
 
 Phase 2, CPU parallel execution:
@@ -696,6 +752,8 @@ Phase 3, GPU backend:
 - CUDA must not own chunk scheduling, file writing, or persistent schema decisions.
 
 Practical recommendation for this codebase: implement Phase 1 before MPI or CUDA. If the next wave must pick one acceleration feature after Phase 1, pick multiprocessing/MPI executor before CUDA unless profiling shows a single chunk's contraction/eigensolve dominates wall time.
+
+Current recommendation for the next coding sprint: do not add `mpi4py`, multiprocessing, or CUDA yet. Spend the sprint on release hardening the serial/chunked artifact path, because that is the contract future MPI and CUDA paths must preserve.
 
 ### MPI and CUDA Position
 
@@ -764,35 +822,43 @@ For the next implementation wave, the correct preparation is interface-level:
 
 ## Suggested Implementation Order
 
-1. Checkpoint the current implemented feature set if not already committed:
+1. Confirm the current implemented feature set is checkpointed:
    - v1 coupling / linewidth / relaxation-time / transport / subspace。
    - path/mesh workflows。
    - serial k/q chunk executor boundary。
    - chunked mesh artifact save/load/reduce contract。
    - chunked artifact linewidth/transport/mobility/mobility-scan consumers。
+   - serial streaming mesh artifact producer and mesh-artifact CLI。
    - Hamiltonian-derivative velocity。
-   - SI mobility and mobility scan。
+   - SI mobility, mobility scan, and transport scan。
    - coupling-summary / scattering-map / phonon-DOS / Eliashberg-like diagnostic analysis。
-2. Release hardening:
+2. Harden the explicit per-scan-point linewidth recomputation artifact scans:
+   - keep existing fixed-linewidth scan helpers unchanged。
+   - Python helper and metadata convention are implemented。
+   - q-axis artifact + finite-difference velocity and k-axis artifact + Hamiltonian-derivative velocity tests are implemented。
+   - CLI artifact exposure is implemented through `--epc-artifact --linewidth-scan-convention recompute`。
+   - single-point artifact entrypoint tests must use synthetic parameters that produce finite positive linewidth; if a temporary hardcoded development fixture is used, keep `TODO(epc-fixture)` nearby。
+3. Release hardening:
    - lightweight default EPC fixture。
    - public export smoke tests。
    - CLI/doc schema drift check。
    - strict NPZ validation tests。
-3. Review and finalize the SCC EPC design doc:
+4. Review and finalize the SCC EPC design doc:
    - frozen-charge vs relaxed-charge definitions。
    - provider boundary。
    - reference strategy。
    - tests required before enabling `use_scc=True`。
-4. Continue Phase 1 scaling:
+5. Continue Phase 1 scaling:
    - continue hardening the chunked artifact contract as new artifact consumers are added.
    - harden summary-first linewidth/transport/mobility helpers and consider per-point-linewidth accumulators.
-   - design true streaming mesh producer separately from the current materialized-mesh artifact splitter.
-5. Add optional plot helpers from existing NPZ objects.
-6. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.
-7. Add optional `mpi4py` executor only after multiprocessing/serial reducer semantics are stable and default tests remain MPI-free.
-8. Add torch CUDA backend only after serial and CPU/MPI executor semantics are fixed and profiling shows per-chunk kernels dominate.
-9. Implement SCC EPC only after design, reference data, and tests are ready.
-10. Advance SOC/spinful, polar correction, and full gauge tracking as separate design-backed workstreams.
+   - design multi-axis q/k streaming separately from the current one-axis serial streaming producer.
+   - keep executor/backend choices outside persistent NPZ schema and outside core physics functions.
+6. Add optional plot helpers from existing NPZ objects.
+7. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.
+8. Add optional `mpi4py` executor only after multiprocessing/serial reducer semantics are stable and default tests remain MPI-free.
+9. Add torch CUDA backend only after serial and CPU/MPI executor semantics are fixed and profiling shows per-chunk kernels dominate.
+10. Implement SCC EPC only after design, reference data, and tests are ready.
+11. Advance SOC/spinful, polar correction, and full gauge tracking as separate design-backed workstreams.
 
 ## Testing Strategy
 
@@ -820,35 +886,43 @@ This sprint is a stabilization and design sprint for the current implementation,
 1. Verify current branch state:
    - `git status --short --branch`
    - confirm no unrelated dirty files before editing implementation。
-2. Finish and checkpoint the current feature slice:
-   - run `git diff --check`。
-   - run focused chunked artifact mobility scan parity tests。
-   - run `uv run pytest dptb/tests/test_electron_phonon.py -q`。
-   - commit the current chunked artifact SI mobility scan workflow once focused tests pass。
-3. Verify current exports:
+2. Verify the recomputed-linewidth transport and mobility scan slices:
+   - `compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` is implemented and exported。
+   - `compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)` is implemented and exported。
+   - q-axis artifact + finite-difference velocity is tested against manual full-mesh per-point recomputation。
+   - k-axis artifact + Hamiltonian-derivative velocity is tested against manual full-mesh per-point recomputation。
+   - fixed-linewidth vs recomputed-linewidth metadata convention is tested。
+   - invalid scan axes and artifact validation reuse existing error paths。
+3. Verify CLI exposure for recomputed-linewidth artifact scans:
+   - parser accepts `--epc-artifact` and `--linewidth-scan-convention recompute`。
+   - entrypoint writes `TransportScanData` with `linewidth_scan_convention="per_scan_point_recomputed"`。
+   - entrypoint writes `MobilityScanData` with `linewidth_scan_convention="per_scan_point_recomputed"`。
+   - `--epc-artifact` rejects conflicting `--epc-data`, `--linewidth-data`, and `--kpoint-weights` inputs。
+4. Verify current exports:
    - `dptb.postprocess.unified.eph`
    - `dptb.postprocess.unified`
-   - import smoke tests for EPC data objects, linewidth/relaxation/transport/mobility objects, analysis helpers, velocity helpers, and executor helpers。
-4. Run focused checks:
+   - import smoke tests for EPC data objects, linewidth/relaxation/transport/mobility objects, scan helpers, analysis helpers, velocity helpers, and executor helpers。
+5. Run focused checks:
    - `git diff --check`
-   - `uv run pytest dptb/tests/test_electron_phonon.py::test_compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact_matches_full_mesh dptb/tests/test_electron_phonon.py::test_compute_serta_transport_from_epc_mesh_chunked_artifact_matches_full_mesh dptb/tests/test_electron_phonon.py::test_unified_postprocess_exports_epc_v1_symbols -q`
+   - focused tests for the recomputed-linewidth transport scan helper。
+   - existing fixed-linewidth scan tests, including `test_compute_serta_transport_scan_from_epc_mesh_chunked_artifact_matches_full_mesh` and mobility scan parity tests。
    - `uv run pytest dptb/tests/test_electron_phonon.py -q`
-5. Add direct executor tests if they are not already present:
+6. Add direct executor tests if they are not already present:
    - full single chunk
    - multiple deterministic chunks
    - invalid chunk settings
    - concat rejection for inconsistent chunk inputs
-6. Add a short scaling design check before implementing new mesh features:
+7. Add a short scaling design check before implementing new mesh features:
    - identify the intended split axis: q chunk, k chunk, band group, chemical-potential axis, or temperature axis。
    - state whether the work produces a full coupling artifact or summary accumulators。
    - state whether the implementation is executor-only, backend-only, or data-contract work。
    - keep MPI and CUDA out of the default path until Phase 1 chunked artifact/reducer behavior is stable。
-7. Audit hardcoded development reference usage:
+8. Audit hardcoded development reference usage:
    - keep full Graphene reference opt-in and untracked if desired。
    - every hardcoded development reference must carry `TODO(epc-fixture)`。
    - default tests must move toward lightweight self-contained fixtures before merge。
-8. Update `docs/epc_v1_workflow.md` and docs index if schema/API drift exists.
-9. Review and finalize `docs/epc_scc_design.md` before touching SCC implementation.
-10. Create a checkpoint commit once docs and focused tests pass.
+9. Update `docs/epc_v1_workflow.md` and docs index if schema/API drift exists.
+10. Review and finalize `docs/epc_scc_design.md` before touching SCC implementation.
+11. Create a checkpoint commit once docs and focused tests pass.
 
-The immediate merge target is: stable EPC v1 plus DeePTB-native path/mesh workflows, serial k/q chunk executor boundary, chunked mesh artifact reduction, first serial streaming artifact producer, summary-first artifact consumers, Hamiltonian-derivative velocity, SI mobility, mobility scan, and JSON analysis helpers from existing NPZ objects. SCC EPC, MPI, CUDA, SOC/spinful, polar correction, multi-axis/parallel artifact production, and per-scan-point linewidth recomputation remain planned follow-up workstreams.
+The immediate merge target is: stable EPC v1 plus DeePTB-native path/mesh workflows, serial k/q chunk executor boundary, chunked mesh artifact reduction, first serial streaming artifact producer, summary-first artifact consumers, fixed-linewidth and explicit recomputed-linewidth transport scan conventions, Hamiltonian-derivative velocity, SI mobility, mobility scan, and JSON analysis helpers from existing NPZ objects. SCC EPC, MPI, CUDA, SOC/spinful, polar correction, and multi-axis/parallel artifact production remain planned follow-up workstreams.

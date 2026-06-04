@@ -36,6 +36,9 @@ linewidth from those artifacts one chunk at a time.
 transport from the chunked linewidth reduction plus the existing velocity
 providers. `compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)`
 extends this to fixed-linewidth chemical-potential/temperature scans.
+`compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`
+exposes the explicit per-scan-point linewidth recomputation convention for
+chunked artifacts.
 `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)` does the same
 for SI mobility, and
 `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` extends it
@@ -166,8 +169,17 @@ through the supplied `TBSystem`.
 `compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)` reuses the
 same chunked linewidth at the first requested chemical-potential/temperature
 point, then applies the non-SI SERTA transport scan helper over the requested
-axes. This is a fixed-linewidth scan convention; per-scan-point linewidth
-recomputation is intentionally a future API.
+axes. This is a fixed-linewidth scan convention.
+
+`compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`
+is the explicit helper for the alternative convention: it recomputes chunked
+linewidth at every requested chemical-potential/temperature point, computes
+the selected band velocities once for the artifact k-points, and returns
+`TransportScanData` with
+`linewidth_scan_convention="per_scan_point_recomputed"`. Existing
+fixed-linewidth scan helpers are intentionally not overloaded. The CLI exposes
+this artifact workflow through `--epc-artifact` plus
+`--linewidth-scan-convention recompute`.
 
 `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(system, directory, ...)`
 uses the same chunked linewidth and velocity path, then applies the existing SI
@@ -179,6 +191,12 @@ same chunked linewidth at the first requested chemical-potential/temperature
 point, then applies the existing mobility scan helper over the requested axes.
 This matches the current `compute_serta_mobility_scan_si(...)` convention where
 linewidth is supplied as a fixed scan input.
+
+`compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`
+is the SI mobility counterpart of the recomputed-linewidth transport scan. It
+recomputes chunked linewidth at each scan point and records
+`linewidth_scan_convention="per_scan_point_recomputed"`. The CLI exposes this
+through `--task mobility --epc-artifact ... --linewidth-scan-convention recompute`.
 
 ### Postprocess NPZ
 
@@ -236,7 +254,10 @@ chemical-potential and temperature axes. The Python helper
 `compute_serta_transport_scan(...)` returns arrays with shape
 `(nmu, ntemperatures, 3, 3)` for conductivity and `(nmu, ntemperatures)` for
 carrier density. It uses a fixed linewidth input, matching the mobility scan
-convention.
+convention. For chunked EPC mesh artifacts, the explicit helper
+`compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`
+can recompute linewidth at each scan point and records
+`linewidth_scan_convention="per_scan_point_recomputed"` in metadata.
 
 `MobilityData` stores SI SERTA conductivity, carrier density, and mobility.
 The Python helper `compute_serta_mobility_si(...)` converts band velocities
@@ -390,7 +411,18 @@ dptb eph \
 ```
 
 This task reads `EPCMeshData` and writes `LinewidthMeshData`, preserving
-electronic k-points and k-point weights.
+electronic k-points and k-point weights. It can also consume a chunked artifact
+directory directly:
+
+```bash
+dptb eph \
+  --task mesh-linewidth \
+  --epc-artifact epc_mesh_artifact \
+  --chemical-potential 0.15 \
+  --temperature 0.025 \
+  --sigma 0.01 \
+  -o mesh_linewidth.npz
+```
 
 ### Relaxation Time
 
@@ -482,8 +514,27 @@ dptb eph \
 When `--chemical-potentials` or `--temperatures` is used with
 `--task transport`, the CLI writes a `TransportScanData` NPZ. The singular and
 plural forms for the same axis are mutually exclusive. The scan uses fixed
-linewidth values from `--linewidth-data`; per-scan-point linewidth
-recomputation is a separate future API.
+linewidth values from `--linewidth-data`.
+
+Per-scan-point linewidth recomputation is exposed through chunked artifacts:
+
+```bash
+dptb eph \
+  --task transport \
+  -i model.pth \
+  -stu structure.vasp \
+  --epc-artifact epc_mesh_artifact \
+  --chemical-potentials 0.10 0.15 0.20 \
+  --temperatures 0.025 0.050 \
+  --sigma 0.01 \
+  --linewidth-scan-convention recompute \
+  --spin-degeneracy 2 \
+  --volume 1.0 \
+  -o transport_recompute_scan.npz
+```
+
+For `--epc-artifact`, artifact k-point weights are used directly; do not pass
+`--kpoint-weights`, `--epc-data`, or `--linewidth-data` on the same command.
 
 Supported k-point weights file formats:
 
@@ -541,6 +592,28 @@ dptb eph \
 When `--chemical-potentials` or `--temperatures` is used, the CLI writes a
 `MobilityScanData` NPZ. The singular and plural forms for the same axis are
 mutually exclusive.
+
+For chunked artifacts, per-scan-point linewidth recomputation uses the same
+explicit convention flag as transport:
+
+```bash
+dptb eph \
+  --task mobility \
+  -i model.pth \
+  -stu structure.vasp \
+  --epc-artifact epc_mesh_artifact \
+  --chemical-potentials 0.10 0.15 0.20 \
+  --temperatures 0.025 0.050 \
+  --sigma 0.01 \
+  --linewidth-scan-convention recompute \
+  --dimension 3d \
+  --volume 1.0 \
+  -o mobility_recompute_scan.npz
+```
+
+As with artifact transport, artifact k-point weights are used directly; do not
+pass `--kpoint-weights`, `--epc-data`, or `--linewidth-data` on the same
+command.
 
 ### Subspace Coupling
 
@@ -647,10 +720,17 @@ theory. For `EPCMeshData`, summaries use normalized k/q weights by default; add
   `compute_serta_mobility_si(...)` and `dptb eph --task mobility`; multi-mu /
   multi-temperature scans are available through the Python helper
   `compute_serta_mobility_scan_si(...)` and the CLI scan arguments
-  `--chemical-potentials` / `--temperatures`.
+  `--chemical-potentials` / `--temperatures`. The chunked-artifact API and CLI
+  also provide
+  `compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`
+  / `--epc-artifact --linewidth-scan-convention recompute` for explicit
+  per-scan-point linewidth recomputation.
 - Non-SI transport scans are available through
   `compute_serta_transport_scan(...)` and the same CLI scan arguments on
-  `--task transport`.
+  `--task transport`. The chunked-artifact API and CLI also provide
+  `compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(...)`
+  / `--epc-artifact --linewidth-scan-convention recompute` for explicit
+  per-scan-point linewidth recomputation.
 
 ## Development Validation
 

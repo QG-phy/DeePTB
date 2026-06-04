@@ -2062,6 +2062,160 @@ def compute_serta_transport_scan_from_epc_mesh_chunked_artifact(
     return result
 
 
+def compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(
+    system,
+    directory: Union[str, Path],
+    chemical_potentials: Sequence[float],
+    temperatures: Sequence[float],
+    sigma: float,
+    broadening: str = "gaussian",
+    frequency_floor: float = 1e-5,
+    spin_degeneracy: int = 1,
+    volume: float = 1.0,
+    velocity_delta: float = 1e-4,
+    velocity_source: str = "finite_difference",
+    use_scc: bool = False,
+    **solver_kwargs,
+) -> TransportScanData:
+    """Compute artifact SERTA scan with linewidth recomputed at each scan point.
+
+    This is intentionally separate from
+    :func:`compute_serta_transport_scan_from_epc_mesh_chunked_artifact`, whose
+    public meaning is the fixed-linewidth scan convention.
+    """
+    chemical_potentials = np.atleast_1d(np.asarray(chemical_potentials, dtype=float))
+    temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
+    if chemical_potentials.ndim != 1 or chemical_potentials.size == 0:
+        raise ValueError("chemical_potentials must be a one-dimensional non-empty array.")
+    if temperatures.ndim != 1 or temperatures.size == 0:
+        raise ValueError("temperatures must be a one-dimensional non-empty array.")
+    if not np.all(np.isfinite(chemical_potentials)):
+        raise ValueError("chemical_potentials must contain finite values.")
+    if not np.all(np.isfinite(temperatures)) or np.any(temperatures <= 0.0):
+        raise ValueError("temperatures must contain finite positive values.")
+    if not isinstance(velocity_source, str):
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = velocity_source.replace("-", "_").lower()
+    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+
+    first_linewidth_data = compute_linewidth_mesh_chunked_artifact(
+        directory,
+        chemical_potential=float(chemical_potentials[0]),
+        temperature=float(temperatures[0]),
+        sigma=sigma,
+        broadening=broadening,
+        mode_resolved=False,
+        frequency_floor=frequency_floor,
+    )
+
+    if velocity_source == "finite_difference":
+        velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
+        velocities = compute_band_velocities_finite_difference(
+            system=system,
+            kpoints=first_linewidth_data.kpoints,
+            bands=first_linewidth_data.band_indices,
+            delta=velocity_delta,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "finite_difference",
+            "velocity_delta": velocity_delta,
+            "velocity_convention": "central_difference_band_energy",
+        }
+    else:
+        velocities = compute_band_velocities_hamiltonian_derivative(
+            system=system,
+            kpoints=first_linewidth_data.kpoints,
+            bands=first_linewidth_data.band_indices,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "hamiltonian_derivative",
+            "velocity_convention": "diag_Cdagger_dH_minus_EdS_C",
+            "overlap_correction": "dH_minus_E_dS_diagonal",
+        }
+
+    eigenvalues = _get_system_eigenvalues(
+        system,
+        first_linewidth_data.kpoints,
+        use_scc=use_scc,
+        **solver_kwargs,
+    )[:, first_linewidth_data.band_indices]
+
+    nmu = chemical_potentials.shape[0]
+    ntemperatures = temperatures.shape[0]
+    conductivity = np.zeros((nmu, ntemperatures, 3, 3), dtype=float)
+    carrier_density = np.zeros((nmu, ntemperatures), dtype=float)
+    metadata = None
+    for imu, chemical_potential in enumerate(chemical_potentials):
+        for itemperature, temperature in enumerate(temperatures):
+            if imu == 0 and itemperature == 0:
+                linewidth_data = first_linewidth_data
+            else:
+                linewidth_data = compute_linewidth_mesh_chunked_artifact(
+                    directory,
+                    chemical_potential=float(chemical_potential),
+                    temperature=float(temperature),
+                    sigma=sigma,
+                    broadening=broadening,
+                    mode_resolved=False,
+                    frequency_floor=frequency_floor,
+                )
+                if not np.array_equal(linewidth_data.band_indices, first_linewidth_data.band_indices):
+                    raise ValueError("chunked artifact linewidth band indices changed during scan.")
+                if not np.allclose(linewidth_data.kpoints, first_linewidth_data.kpoints):
+                    raise ValueError("chunked artifact kpoints changed during scan.")
+                if not np.allclose(linewidth_data.kpoint_weights, first_linewidth_data.kpoint_weights):
+                    raise ValueError("chunked artifact kpoint weights changed during scan.")
+            point = compute_serta_conductivity(
+                eigenvalues=eigenvalues,
+                velocities=velocities,
+                linewidth=linewidth_data.linewidth,
+                chemical_potential=float(chemical_potential),
+                temperature=float(temperature),
+                kpoint_weights=linewidth_data.kpoint_weights,
+                spin_degeneracy=spin_degeneracy,
+                volume=volume,
+            )
+            conductivity[imu, itemperature] = point.conductivity
+            carrier_density[imu, itemperature] = point.carrier_density
+            if metadata is None:
+                metadata = dict(point.metadata)
+
+    scan_metadata = dict(metadata or {})
+    scan_metadata.pop("schema", None)
+    scan_metadata.pop("schema_version", None)
+    scan_metadata.pop("chemical_potential", None)
+    scan_metadata.pop("temperature", None)
+    scan_metadata.update(
+        {
+            "chemical_potential_count": int(nmu),
+            "temperature_count": int(ntemperatures),
+            "scan_axes": ["chemical_potential", "temperature"],
+            "linewidth_scan_convention": "per_scan_point_recomputed",
+            "source": "deeptb.eph.compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact",
+            "velocity_unit": "eV/fractional_reciprocal_coordinate",
+            "band_indices": first_linewidth_data.band_indices,
+            "linewidth_schema": first_linewidth_data.metadata.get("schema"),
+            "chunked_artifact": True,
+            "artifact_axis": first_linewidth_data.metadata.get("artifact_axis"),
+            "artifact_chunk_count": first_linewidth_data.metadata.get("artifact_chunk_count"),
+            "summary_first": True,
+        }
+    )
+    scan_metadata.update(velocity_metadata)
+    return TransportScanData(
+        conductivity=conductivity,
+        carrier_density=carrier_density,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        metadata=scan_metadata,
+    )
+
+
 def compute_serta_mobility_si_from_epc_mesh_chunked_artifact(
     system,
     directory: Union[str, Path],
@@ -2263,6 +2417,162 @@ def compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(
     )
     result.metadata.update(velocity_metadata)
     return result
+
+
+def compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact(
+    system,
+    directory: Union[str, Path],
+    reciprocal_cell: np.ndarray,
+    chemical_potentials: Sequence[float],
+    temperatures: Sequence[float],
+    sigma: float,
+    broadening: str = "gaussian",
+    frequency_floor: float = 1e-5,
+    spin_degeneracy: int = 1,
+    dimension: str = "3d",
+    volume: Optional[float] = None,
+    area: Optional[float] = None,
+    velocity_delta: float = 1e-4,
+    velocity_source: str = "finite_difference",
+    use_scc: bool = False,
+    **solver_kwargs,
+) -> MobilityScanData:
+    """Compute SI mobility scan with linewidth recomputed at each scan point."""
+    chemical_potentials = np.atleast_1d(np.asarray(chemical_potentials, dtype=float))
+    temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
+    if chemical_potentials.ndim != 1 or chemical_potentials.size == 0:
+        raise ValueError("chemical_potentials must be a one-dimensional non-empty array.")
+    if temperatures.ndim != 1 or temperatures.size == 0:
+        raise ValueError("temperatures must be a one-dimensional non-empty array.")
+    if not np.all(np.isfinite(chemical_potentials)):
+        raise ValueError("chemical_potentials must contain finite values.")
+    if not np.all(np.isfinite(temperatures)) or np.any(temperatures <= 0.0):
+        raise ValueError("temperatures must contain finite positive values.")
+    if not isinstance(velocity_source, str):
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = velocity_source.replace("-", "_").lower()
+    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+
+    first_linewidth_data = compute_linewidth_mesh_chunked_artifact(
+        directory,
+        chemical_potential=float(chemical_potentials[0]),
+        temperature=float(temperatures[0]),
+        sigma=sigma,
+        broadening=broadening,
+        mode_resolved=False,
+        frequency_floor=frequency_floor,
+    )
+    if velocity_source == "finite_difference":
+        velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
+        velocities = compute_band_velocities_finite_difference(
+            system=system,
+            kpoints=first_linewidth_data.kpoints,
+            bands=first_linewidth_data.band_indices,
+            delta=velocity_delta,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "finite_difference",
+            "velocity_delta": velocity_delta,
+            "velocity_convention": "central_difference_band_energy",
+        }
+    else:
+        velocities = compute_band_velocities_hamiltonian_derivative(
+            system=system,
+            kpoints=first_linewidth_data.kpoints,
+            bands=first_linewidth_data.band_indices,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "hamiltonian_derivative",
+            "velocity_convention": "diag_Cdagger_dH_minus_EdS_C",
+            "overlap_correction": "dH_minus_E_dS_diagonal",
+        }
+
+    eigenvalues = _get_system_eigenvalues(
+        system,
+        first_linewidth_data.kpoints,
+        use_scc=use_scc,
+        **solver_kwargs,
+    )[:, first_linewidth_data.band_indices]
+
+    nmu = chemical_potentials.shape[0]
+    ntemperatures = temperatures.shape[0]
+    conductivity = np.zeros((nmu, ntemperatures, 3, 3), dtype=float)
+    mobility = np.zeros((nmu, ntemperatures, 3, 3), dtype=float)
+    carrier_density = np.zeros((nmu, ntemperatures), dtype=float)
+    metadata = None
+    for imu, chemical_potential in enumerate(chemical_potentials):
+        for itemperature, temperature in enumerate(temperatures):
+            if imu == 0 and itemperature == 0:
+                linewidth_data = first_linewidth_data
+            else:
+                linewidth_data = compute_linewidth_mesh_chunked_artifact(
+                    directory,
+                    chemical_potential=float(chemical_potential),
+                    temperature=float(temperature),
+                    sigma=sigma,
+                    broadening=broadening,
+                    mode_resolved=False,
+                    frequency_floor=frequency_floor,
+                )
+                if not np.array_equal(linewidth_data.band_indices, first_linewidth_data.band_indices):
+                    raise ValueError("chunked artifact linewidth band indices changed during scan.")
+                if not np.allclose(linewidth_data.kpoints, first_linewidth_data.kpoints):
+                    raise ValueError("chunked artifact kpoints changed during scan.")
+                if not np.allclose(linewidth_data.kpoint_weights, first_linewidth_data.kpoint_weights):
+                    raise ValueError("chunked artifact kpoint weights changed during scan.")
+            point = compute_serta_mobility_si(
+                eigenvalues=eigenvalues,
+                velocities=velocities,
+                linewidth=linewidth_data.linewidth,
+                reciprocal_cell=reciprocal_cell,
+                chemical_potential=float(chemical_potential),
+                temperature=float(temperature),
+                kpoint_weights=linewidth_data.kpoint_weights,
+                spin_degeneracy=spin_degeneracy,
+                dimension=dimension,
+                volume=volume,
+                area=area,
+            )
+            conductivity[imu, itemperature] = point.conductivity
+            mobility[imu, itemperature] = point.mobility
+            carrier_density[imu, itemperature] = point.carrier_density
+            if metadata is None:
+                metadata = dict(point.metadata)
+
+    scan_metadata = dict(metadata or {})
+    scan_metadata.pop("schema", None)
+    scan_metadata.pop("schema_version", None)
+    scan_metadata.pop("chemical_potential", None)
+    scan_metadata.pop("temperature", None)
+    scan_metadata.update(
+        {
+            "chemical_potential_count": int(nmu),
+            "temperature_count": int(ntemperatures),
+            "scan_axes": ["chemical_potential", "temperature"],
+            "linewidth_scan_convention": "per_scan_point_recomputed",
+            "source": "deeptb.eph.compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact",
+            "band_indices": first_linewidth_data.band_indices,
+            "linewidth_schema": first_linewidth_data.metadata.get("schema"),
+            "chunked_artifact": True,
+            "artifact_axis": first_linewidth_data.metadata.get("artifact_axis"),
+            "artifact_chunk_count": first_linewidth_data.metadata.get("artifact_chunk_count"),
+            "summary_first": True,
+        }
+    )
+    scan_metadata.update(velocity_metadata)
+    return MobilityScanData(
+        conductivity=conductivity,
+        mobility=mobility,
+        carrier_density=carrier_density,
+        chemical_potentials=chemical_potentials,
+        temperatures=temperatures,
+        metadata=scan_metadata,
+    )
 
 
 def find_degenerate_band_groups(eigenvalues: np.ndarray, tolerance: float = 1e-5) -> list:
