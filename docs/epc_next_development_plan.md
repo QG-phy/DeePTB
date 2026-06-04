@@ -640,9 +640,12 @@ Current Phase 1 status:
   - `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` combines chunked linewidth reduction with existing velocity providers.
   - finite-difference and Hamiltonian-derivative velocity sources remain available.
   - the helper returns `TransportData` without materializing the full mesh coupling tensor.
+- Implemented first summary-first SI mobility helper:
+  - `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)` combines chunked linewidth reduction, existing velocity providers, and SI mobility conversion.
+  - 2D/3D normalization and reciprocal-cell conventions are inherited from `compute_serta_mobility_si(...)`.
 - Current limitation:
   - this is not yet a streaming compute path; it chunks an already materialized `EPCMeshData`.
-  - SI mobility summary-first and transport scan accumulators remain future Phase 1/transport hardening work.
+  - mobility/transport scan accumulators remain future Phase 1/transport hardening work.
   - no multiprocessing, MPI, or CUDA runtime has been added.
 
 Phase 2, CPU parallel execution:
@@ -745,7 +748,7 @@ For the next implementation wave, the correct preparation is interface-level:
    - tests required before enabling `use_scc=True`。
 4. Continue Phase 1 scaling:
    - continue hardening the chunked artifact contract as new artifact consumers are added.
-   - harden summary-first linewidth/transport helpers and consider SI mobility/scan accumulators.
+   - harden summary-first linewidth/transport/mobility helpers and consider scan accumulators.
 5. Add optional plot helpers from existing NPZ objects.
 6. Add multiprocessing executor first, if profiling shows CPU task parallelism is needed and it can reuse the same chunk specs/reducers.
 7. Add optional `mpi4py` executor only after multiprocessing/serial reducer semantics are stable and default tests remain MPI-free.

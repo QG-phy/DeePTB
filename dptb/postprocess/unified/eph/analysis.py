@@ -1820,6 +1820,103 @@ def compute_serta_transport_from_epc_mesh_chunked_artifact(
     return result
 
 
+def compute_serta_mobility_si_from_epc_mesh_chunked_artifact(
+    system,
+    directory: Union[str, Path],
+    reciprocal_cell: np.ndarray,
+    chemical_potential: float,
+    temperature: float,
+    sigma: float,
+    broadening: str = "gaussian",
+    frequency_floor: float = 1e-5,
+    spin_degeneracy: int = 1,
+    dimension: str = "3d",
+    volume: Optional[float] = None,
+    area: Optional[float] = None,
+    velocity_delta: float = 1e-4,
+    velocity_source: str = "finite_difference",
+    use_scc: bool = False,
+    **solver_kwargs,
+) -> MobilityData:
+    """Compute SI SERTA mobility from an EPC mesh chunked artifact."""
+    linewidth_data = compute_linewidth_mesh_chunked_artifact(
+        directory,
+        chemical_potential=chemical_potential,
+        temperature=temperature,
+        sigma=sigma,
+        broadening=broadening,
+        mode_resolved=False,
+        frequency_floor=frequency_floor,
+    )
+    if not isinstance(velocity_source, str):
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = velocity_source.replace("-", "_").lower()
+    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+
+    if velocity_source == "finite_difference":
+        velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
+        velocities = compute_band_velocities_finite_difference(
+            system=system,
+            kpoints=linewidth_data.kpoints,
+            bands=linewidth_data.band_indices,
+            delta=velocity_delta,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "finite_difference",
+            "velocity_delta": velocity_delta,
+            "velocity_convention": "central_difference_band_energy",
+        }
+    else:
+        velocities = compute_band_velocities_hamiltonian_derivative(
+            system=system,
+            kpoints=linewidth_data.kpoints,
+            bands=linewidth_data.band_indices,
+            use_scc=use_scc,
+            **solver_kwargs,
+        )
+        velocity_metadata = {
+            "velocity_source": "hamiltonian_derivative",
+            "velocity_convention": "diag_Cdagger_dH_minus_EdS_C",
+            "overlap_correction": "dH_minus_E_dS_diagonal",
+        }
+
+    eigenvalues = _get_system_eigenvalues(
+        system,
+        linewidth_data.kpoints,
+        use_scc=use_scc,
+        **solver_kwargs,
+    )[:, linewidth_data.band_indices]
+    result = compute_serta_mobility_si(
+        eigenvalues=eigenvalues,
+        velocities=velocities,
+        linewidth=linewidth_data.linewidth,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potential=chemical_potential,
+        temperature=temperature,
+        kpoint_weights=linewidth_data.kpoint_weights,
+        spin_degeneracy=spin_degeneracy,
+        dimension=dimension,
+        volume=volume,
+        area=area,
+    )
+    result.metadata.update(
+        {
+            "source": "deeptb.eph.compute_serta_mobility_si_from_epc_mesh_chunked_artifact",
+            "band_indices": linewidth_data.band_indices,
+            "linewidth_schema": linewidth_data.metadata.get("schema"),
+            "chunked_artifact": True,
+            "artifact_axis": linewidth_data.metadata.get("artifact_axis"),
+            "artifact_chunk_count": linewidth_data.metadata.get("artifact_chunk_count"),
+            "summary_first": True,
+        }
+    )
+    result.metadata.update(velocity_metadata)
+    return result
+
+
 def find_degenerate_band_groups(eigenvalues: np.ndarray, tolerance: float = 1e-5) -> list:
     """Group adjacent bands whose energies are degenerate within ``tolerance``.
 

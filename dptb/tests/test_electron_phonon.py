@@ -80,6 +80,7 @@ from dptb.postprocess.unified.eph import (
     compute_relaxation_time_path,
     compute_scattering_maps,
     compute_serta_conductivity,
+    compute_serta_mobility_si_from_epc_mesh_chunked_artifact,
     compute_serta_transport_from_epc_mesh_chunked_artifact,
     compute_serta_transport_from_epc,
     compute_coupling_strength_summary,
@@ -184,6 +185,10 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.compute_eliashberg_spectral_function is compute_eliashberg_spectral_function
     assert unified_postprocess.compute_scattering_maps is compute_scattering_maps
     assert unified_postprocess.compute_serta_mobility_si is compute_serta_mobility_si
+    assert (
+        unified_postprocess.compute_serta_mobility_si_from_epc_mesh_chunked_artifact
+        is compute_serta_mobility_si_from_epc_mesh_chunked_artifact
+    )
     assert unified_postprocess.compute_serta_mobility_scan_si is compute_serta_mobility_scan_si
     assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
     assert (
@@ -3301,6 +3306,71 @@ def test_compute_serta_transport_from_epc_mesh_chunked_artifact_matches_full_mes
     assert result.metadata["artifact_axis"] == axis
     assert result.metadata["velocity_source"] == velocity_source
     assert result.metadata["source"] == "deeptb.eph.compute_serta_transport_from_epc_mesh_chunked_artifact"
+
+
+@pytest.mark.parametrize(
+    ("axis", "velocity_source", "system_cls", "dimension", "normalization_kwargs"),
+    [
+        ("q", "finite_difference", _LinearBandSystem, "3d", {"volume": 5.0}),
+        ("k", "hamiltonian_derivative", _DerivativeBandSystem, "2d", {"area": 7.0}),
+    ],
+)
+def test_compute_serta_mobility_si_from_epc_mesh_chunked_artifact_matches_full_mesh(
+    axis,
+    velocity_source,
+    system_cls,
+    dimension,
+    normalization_kwargs,
+    tmp_path,
+):
+    system = system_cls()
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / f"{axis}_artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis=axis, chunk_size=1)
+    reciprocal_cell = 2.0 * np.pi * np.eye(3)
+
+    result = compute_serta_mobility_si_from_epc_mesh_chunked_artifact(
+        system=system,
+        directory=artifact_dir,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potential=0.2,
+        temperature=0.03,
+        sigma=0.05,
+        spin_degeneracy=2,
+        dimension=dimension,
+        velocity_source=velocity_source,
+        **normalization_kwargs,
+    )
+    linewidth = compute_linewidth_mesh(
+        mesh_data,
+        chemical_potential=0.2,
+        temperature=0.03,
+        sigma=0.05,
+    )
+    eigenvalues = (
+        system.band_offsets[None, mesh_data.band_indices]
+        + mesh_data.kpoints @ system.band_slopes[mesh_data.band_indices].T
+    )
+    expected = compute_serta_mobility_si(
+        eigenvalues=eigenvalues,
+        velocities=np.repeat(system.band_slopes[mesh_data.band_indices][None, :, :], mesh_data.kpoints.shape[0], axis=0),
+        linewidth=linewidth.linewidth,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potential=0.2,
+        temperature=0.03,
+        kpoint_weights=mesh_data.kpoint_weights,
+        spin_degeneracy=2,
+        dimension=dimension,
+        **normalization_kwargs,
+    )
+
+    np.testing.assert_allclose(result.conductivity, expected.conductivity)
+    np.testing.assert_allclose(result.mobility, expected.mobility)
+    np.testing.assert_allclose(result.carrier_density, expected.carrier_density)
+    assert result.metadata["summary_first"] is True
+    assert result.metadata["artifact_axis"] == axis
+    assert result.metadata["velocity_source"] == velocity_source
+    assert result.metadata["source"] == "deeptb.eph.compute_serta_mobility_si_from_epc_mesh_chunked_artifact"
 
 
 def test_compute_serta_transport_from_epc_rejects_invalid_velocity_delta():

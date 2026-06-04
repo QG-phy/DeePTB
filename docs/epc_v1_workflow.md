@@ -32,8 +32,9 @@ experiments. `compute_linewidth_mesh_chunked_artifact(...)` computes mesh
 linewidth from those artifacts one chunk at a time.
 `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` computes SERTA
 transport from the chunked linewidth reduction plus the existing velocity
-providers. EPC unit constants are centralized in `dptb.utils.constants` and
-re-exported from the EPC namespace.
+providers. `compute_serta_mobility_si_from_epc_mesh_chunked_artifact(...)`
+does the same for SI mobility. EPC unit constants are centralized in
+`dptb.utils.constants` and re-exported from the EPC namespace.
 
 ### Phonons NPZ
 
@@ -149,6 +150,11 @@ artifact k-points through the existing finite-difference or Hamiltonian-
 derivative velocity providers, and returns `TransportData`. It avoids
 materializing the full mesh coupling tensor but still evaluates velocities
 through the supplied `TBSystem`.
+
+`compute_serta_mobility_si_from_epc_mesh_chunked_artifact(system, directory, ...)`
+uses the same chunked linewidth and velocity path, then applies the existing SI
+mobility conversion. It supports the same 2D/3D normalization and reciprocal
+cell conventions as `compute_serta_mobility_si(...)`.
 
 ### Postprocess NPZ
 
