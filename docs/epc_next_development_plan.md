@@ -2,7 +2,7 @@
 
 ## Summary
 
-当前 EPC v1 已经完成核心 coupling、NPZ 数据契约、`dptb eph` 基础 CLI、linewidth、relaxation time、基础 SERTA transport、有限差分 velocity bridge 和 degenerate-subspace diagnostic。本轮扩展已经进一步补上 DeePTB-native path workflow、mesh workflow、mesh/path linewidth、mesh/path relaxation-time，以及 serial k-point chunk execution 的第一版。
+当前 EPC v1 已经完成核心 coupling、NPZ 数据契约、`dptb eph` 基础 CLI、linewidth、relaxation time、基础 SERTA transport、有限差分 velocity bridge、Hamiltonian-derivative velocity bridge、SI mobility、mobility scan 和 degenerate-subspace diagnostic。本轮扩展已经进一步补上 DeePTB-native path workflow、mesh workflow、mesh/path linewidth、mesh/path relaxation-time，以及 serial k-point chunk execution 的第一版。
 
 下一阶段的目标不是复刻 dftbephy 的 DFTB+ workflow 外壳，而是把 EPC 能力扩展成 DeePTB-native 的稳定工作流。开发节奏应分成两个层次：
 
@@ -14,10 +14,35 @@
 1. 完成 v1 release hardening：默认 CI fixture、文档收敛、错误信息和 API 稳定性。
 2. 稳定 DeePTB-native path workflow：沿 q path 输出 EPC、linewidth、relaxation-time 的可视化数据，并规划 k-path + fixed-q 后续切片。
 3. 稳定 DeePTB-native mesh workflow：面向 fine k/q mesh 的批量 EPC、linewidth、relaxation-time 和 transport 输入输出组织。
-4. 补齐 transport/mobility 的完整单位和物理量定义。
+4. 固化 transport/mobility 第一版：确认单位、速度 provider、2D/3D normalization、scan axes 和 metadata convention。
 5. 设计 SCC EPC，不在没有公式和 reference 的情况下直接实现。
 6. 把单位、k/q sampling、occupation、velocity provider、executor/backend 等接口对齐到 DeePTB 现有代码，而不是在 EPC 层重复造一套平行体系。
-7. 按需推进 SOC/spinful、polar correction、full gauge tracking 和性能优化。
+7. 按需推进 SOC/spinful、polar correction、full gauge tracking、mode-resolved analysis 和性能优化。
+
+## Current Roadmap Status
+
+截至当前分支，下一阶段计划已经不是从零开始，而是进入“已有能力稳定化 + 下一层能力设计”的状态：
+
+- Done in code:
+  - v1 coupling / linewidth / relaxation-time / transport / subspace diagnostic。
+  - DeePTB phonon-mode NPZ reader/writer and EPC NPZ data objects。
+  - q-path EPC、path linewidth、path relaxation-time。
+  - mesh EPC、mesh linewidth、mesh relaxation-time。
+  - serial k-chunk task specs and deterministic k-axis reducer。
+  - finite-difference and Hamiltonian-derivative velocity providers。
+  - SI mobility, 2D/3D normalization, and multi-chemical-potential / multi-temperature mobility scans。
+- Still needs hardening before merge/release:
+  - default in-repo lightweight fixture replacing hardcoded development references。
+  - opt-in full Graphene reference kept outside git for development and benchmark。
+  - import/export smoke tests for all new public symbols。
+  - docs/index integration and CLI examples verified against current parser。
+  - final review of unit metadata, temperature convention, and reciprocal-cell convention。
+- Still design-only:
+  - SCC EPC implementation; the design document now lives in `docs/epc_scc_design.md`。
+  - multiprocessing/MPI executors。
+  - torch CUDA EPC backend。
+  - chunked artifact format for large mesh outputs。
+  - SOC/spinful EPC, polar correction, and full degenerate-band gauge tracking。
 
 ## Design Position
 
@@ -53,6 +78,8 @@
   - 先实现 serial executor + deterministic chunk/reducer API。
   - MPI/multiprocessing 是外层 executor，CUDA/torch 是内层 backend；两者不冲突，也不应互相污染接口。
   - 当前实现目标是 serial k-chunk reference path；MPI/CUDA 只通过接口预留进入，不在本轮变成必需依赖或默认路径。
+  - 下一步实现时优先把 task spec、chunk metadata、reducer 语义和 backend selection 写清楚；不要先引入 `mpi4py` 或 CUDA kernel。
+  - 如果后续需要实际加速，推荐顺序是：serial chunked summaries -> chunked artifact -> multiprocessing/MPI executor -> torch CUDA backend。这样 MPI 和 CUDA 可以组合使用，而不是二选一。
 
 ## Stage Gates
 
@@ -64,13 +91,15 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - 所有临时 hardcoded Graphene reference 或开发期路径必须带 `TODO(epc-fixture)`。
 
 - Gate B: transport/mobility completion
-  - 先统一速度 provider、单位和 normalization，再扩展 mobility 输出。
+  - 当前已有 finite-difference velocity、Hamiltonian-derivative velocity、SI mobility 和 mobility scan 第一版。
+  - 下一步重点是 release hardening：单位 metadata、`temperature` convention、2D/3D normalization、reciprocal-cell `2*pi` convention 和 CLI examples。
   - `finite_difference` velocity 保留为 fallback/reference。
-  - `hamiltonian_derivative` velocity 复用 `get_hk(..., with_derivative=True)` 相关路径，但必须先审查 gauge、`2*pi` 因子、overlap correction 和单位 convention。
+  - `hamiltonian_derivative` velocity 复用 `get_hk(..., with_derivative=True)` 相关路径，但仍需要审查 gauge、`2*pi` 因子、overlap correction 和单位 convention。
 
 - Gate C: SCC EPC design
-  - 先完成 SCC EPC design doc 和 reference strategy，再实现。
+  - SCC EPC design doc 已创建为 `docs/epc_scc_design.md`；后续需要 review 后再实现。
   - 没有 charge response 公式和 reference 前，`use_scc=True` 继续保持 unsupported。
+  - 该 design doc 通过前，不允许为了“功能开关”而简单把 `use_scc=True` 透传给现有 coupling/velocity provider。
 
 - Gate D: parity and advanced physics
   - 只吸收 dftbephy 中对 DeePTB 用户有价值的能力切片，例如 mode-resolved scattering、path/mesh summaries、mobility scans、reference benchmarks。
@@ -424,20 +453,36 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - 写出 SCC EPC 公式：
   - non-SCC term
   - overlap correction
-  - SCC Hamiltonian derivative term
-  - charge response / self-consistent response term
+  - frozen-charge SCC Hamiltonian derivative term
+  - relaxed-charge / self-consistent charge-response term
   - 是否需要 finite-difference self-consistent charges
 - 设计 provider boundary：
   - `SCCEPCProvider`
+  - `FrozenChargeSCCProvider`
   - charge-response provider
   - finite-difference SCC derivative provider
 - 明确哪些核心代码不能改；如需改 SCC engine，先写 ADR。
+- 明确 frozen-charge SCC EPC 和 relaxed-charge SCC EPC 是两个不同定义：
+  - frozen-charge SCC EPC 固定已收敛的 charge / shift，只对 SCC Hamiltonian 的显式结构依赖求导。
+  - relaxed-charge SCC EPC 还包含 `d(delta_q)/dR` 或等价的 self-consistent response。
+  - 如果只做 frozen-charge，必须在 API、metadata 和文档中明确不能冒充 full SCC EPC。
+- 解释为什么直接调用 `get_hk(..., use_scc=True)` 或 `get_hk(..., with_derivative=True, use_scc=True)` 不足以定义 SCC EPC。
+- 确认现有 DeePTB SCC 代码的边界：
+  - `TBSystem.enable_scc(...)` / `run_scc(...)` / `get_hk(use_scc=True)` 已存在。
+  - `get_hk(..., with_derivative=True, use_scc=True)` 当前明确 unsupported。
+  - EPC 当前应继续拒绝 `use_scc=True`，直到公式、reference 和测试一起落地。
 
 ### Reference and Tests
 
 - 需要 SCC reference case；不能用当前 non-SCC Graphene reference 证明 SCC EPC。
-- 建议先构造小体系 SCC finite-difference smoke test。
+- 建议先构造小体系 SCC finite-difference smoke test，例如 tiny hBN-like SCC case；如果没有可靠数据，先只写设计，不伪造 reference。
 - 后续再寻找或生成 dftbephy SCC benchmark。
+- dftbephy SCC benchmark 只有在确认其 SCC convention 后才用于对齐；否则只能作为 exploratory reference。
+- 至少需要覆盖：
+  - SCC unsupported rejection remains explicit before implementation。
+  - frozen-charge SCC derivative fixture, if implemented。
+  - relaxed-charge finite-difference response fixture, if implemented。
+  - non-SCC Graphene reference 不作为 SCC 通过依据。
 
 ### Acceptance
 
@@ -508,6 +553,23 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - Add torch-CUDA backend only after serial chunked API and reducer semantics are stable。
 - Keep Cython/CUDA as future option, not first response.
 
+### MPI and CUDA Position
+
+MPI and CUDA are not competing designs here:
+
+- MPI/multiprocessing answer "which independent chunks run on which rank/process?"
+- CUDA/torch backend answers "how does one rank/process compute one chunk efficiently?"
+- The public EPC data contract should not depend on either one.
+- A future production run may use MPI ranks across q/k chunks and CUDA inside each rank.
+
+For the next implementation wave, the correct preparation is interface-level:
+
+- keep `EPCKChunkSpec` and future `EPCQChunkSpec` rank-independent;
+- make reducers deterministic and independent of file/rank order;
+- preserve backend metadata in outputs;
+- avoid putting device objects, MPI rank IDs, or process-local assumptions into NPZ files;
+- keep serial execution as the reference path for all tests.
+
 ### Parallelization Axes
 
 - Coupling:
@@ -553,15 +615,28 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 
 ## Suggested Implementation Order
 
-1. Verify and checkpoint the current v1/path/mesh/chunk implementation.
-2. Release hardening and lightweight default fixture.
-3. Executor boundary tests and public export smoke tests.
-4. Transport/mobility unit design and implementation.
-5. Analytic velocity provider design and implementation.
-6. SCC EPC design document.
-7. SCC EPC implementation only after reference is ready.
-8. Advanced physics and mode-resolved analysis.
-9. Scaling optimization: chunked artifacts, multiprocessing/MPI executors, then torch CUDA backend.
+1. Checkpoint the current implemented feature set if not already committed:
+   - v1 coupling / linewidth / relaxation-time / transport / subspace。
+   - path/mesh workflows。
+   - serial k-chunk executor boundary。
+   - Hamiltonian-derivative velocity。
+   - SI mobility and mobility scan。
+2. Release hardening:
+   - lightweight default EPC fixture。
+   - public export smoke tests。
+   - CLI/doc schema drift check。
+   - strict NPZ validation tests。
+3. Review and finalize the SCC EPC design doc:
+   - frozen-charge vs relaxed-charge definitions。
+   - provider boundary。
+   - reference strategy。
+   - tests required before enabling `use_scc=True`。
+4. Implement chunked summary/artifact design for large mesh workflows.
+5. Add mode-resolved and q/band-resolved analysis summaries from existing NPZ objects.
+6. Add multiprocessing/MPI executor only after chunk specs and reducers are stable.
+7. Add torch CUDA backend only after serial and MPI executor semantics are fixed.
+8. Implement SCC EPC only after design, reference data, and tests are ready.
+9. Advance SOC/spinful, polar correction, and full gauge tracking as separate design-backed workstreams.
 
 ## Testing Strategy
 
@@ -584,25 +659,29 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 
 ## Immediate Next Sprint
 
-This sprint is a stabilization sprint for the current implementation, not another feature-expansion sprint.
+This sprint is a stabilization and design sprint for the current implementation, not another broad feature-expansion sprint.
 
-1. Verify current exports after executor extraction:
+1. Verify current branch state:
+   - `git status --short --branch`
+   - confirm no unrelated dirty files before editing implementation。
+2. Verify current exports:
    - `dptb.postprocess.unified.eph`
    - `dptb.postprocess.unified`
-   - import smoke tests for `EPCKChunkSpec`, `build_k_chunk_specs`, and `concat_epc_k_chunks`
-2. Run focused checks:
+   - import smoke tests for EPC data objects, linewidth/relaxation/transport/mobility objects, velocity helpers, and executor helpers。
+3. Run focused checks:
    - `git diff --check`
    - `uv run pytest dptb/tests/test_electron_phonon.py -q`
-3. Add direct executor tests if they are not already present:
+4. Add direct executor tests if they are not already present:
    - full single chunk
    - multiple deterministic chunks
    - invalid chunk settings
    - concat rejection for inconsistent chunk inputs
-4. Update `docs/epc_v1_workflow.md` only if tests or exports reveal schema/API drift.
-5. Create a checkpoint commit for the path/mesh/chunk extension once tests pass.
-6. Start the next feature slice only after the checkpoint:
-   - transport/mobility units and data contract
-   - velocity provider interface
-   - `hamiltonian_derivative` velocity review against existing `dH/dk` path
+5. Audit hardcoded development reference usage:
+   - keep full Graphene reference opt-in and untracked if desired。
+   - every hardcoded development reference must carry `TODO(epc-fixture)`。
+   - default tests must move toward lightweight self-contained fixtures before merge。
+6. Update `docs/epc_v1_workflow.md` and docs index if schema/API drift exists.
+7. Review and finalize `docs/epc_scc_design.md` before touching SCC implementation.
+8. Create a checkpoint commit once docs and focused tests pass.
 
-The immediate merge target is: stable EPC v1 plus DeePTB-native path/mesh workflows and serial k-chunk executor boundary. Transport/mobility completion and SCC EPC remain planned follow-up workstreams.
+The immediate merge target is: stable EPC v1 plus DeePTB-native path/mesh workflows, serial k-chunk executor boundary, Hamiltonian-derivative velocity, SI mobility, and mobility scan. SCC EPC, MPI, CUDA, SOC/spinful, polar correction, and large chunked artifacts remain planned follow-up workstreams.

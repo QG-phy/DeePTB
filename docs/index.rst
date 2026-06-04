@@ -59,6 +59,7 @@ For more details, see our papers:
    advanced/elec_properties/index
    advanced/interface/index
    epc_v1_workflow
+   epc_scc_design
 
 .. toctree::
    :maxdepth: 2

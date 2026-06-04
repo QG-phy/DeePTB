@@ -352,8 +352,10 @@ Transport v1 supports two band-velocity providers:
   `system.get_hk(k_points=..., with_derivative=True)`, using
   `<n|dH/dk|n> - E_n <n|dS/dk|n>` when overlap derivatives are present.
 
-Velocity metadata is stored as `eV/fractional_reciprocal_coordinate`. Full SI
-mobility/conductivity unit conversion is not part of v1.
+Transport velocity metadata is stored as
+`eV/fractional_reciprocal_coordinate`; the `TransportData` task remains an
+intermediate SERTA conductivity workflow in DeePTB's fractional-k convention.
+Use `--task mobility` for SI conductivity, carrier density, and mobility.
 
 Supported k-point weights file formats:
 
@@ -441,7 +443,8 @@ band subspaces. Groups use `start:stop` ranges and are stored in the NPZ as
 - Full degenerate-band gauge fixing and k/q-path continuous gauge tracking are
   not implemented.
 - Transport supports finite-difference and Hamiltonian-derivative velocity
-  providers, but does not perform full SI unit conversion.
+  providers and keeps velocities in `eV/fractional_reciprocal_coordinate`.
+  SI conversion is handled by the mobility workflow.
 - SI mobility is available through the Python helper
   `compute_serta_mobility_si(...)` and `dptb eph --task mobility`; multi-mu /
   multi-temperature scans are available through the Python helper

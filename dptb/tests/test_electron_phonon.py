@@ -81,6 +81,8 @@ from dptb.postprocess.unified.eph.utils import (
 from dptb.utils import constants as dptb_constants
 
 
+# TODO(epc-fixture): keep these development-only defaults out of default CI and
+# replace/supplement them with lightweight in-repo EPC fixtures before release.
 DEFAULT_EPH_REFERENCE_ROOT = Path("/Users/aisiqg/Desktop/work/github/dftbephy")
 DEFAULT_EPH_SKDATA_ROOT = Path("/Users/aisiqg/Desktop/work/github/matsci-0-3")
 
@@ -1060,6 +1062,220 @@ def test_npz_metadata_json_must_be_scalar_json_object(tmp_path):
     np.savez(non_object_json, **payload, metadata_json=np.array("[]"))
     with pytest.raises(ValueError, match="JSON object"):
         Phonons.load_npz(non_object_json)
+
+
+def test_epc_npz_loaders_use_pickle_free_numpy_loading(monkeypatch, tmp_path):
+    persistent_data_classes = [
+        Phonons,
+        EPCData,
+        EPCMeshData,
+        EPCPathData,
+        LinewidthData,
+        LinewidthMeshData,
+        LinewidthPathData,
+        RelaxationTimeData,
+        RelaxationTimeMeshData,
+        RelaxationTimePathData,
+        TransportData,
+        MobilityData,
+        MobilityScanData,
+        SubspaceCouplingData,
+    ]
+
+    load_kwargs = []
+
+    def fake_load(*args, **kwargs):
+        load_kwargs.append(kwargs)
+        raise RuntimeError("stop after checking np.load options")
+
+    monkeypatch.setattr(np, "load", fake_load)
+
+    for data_cls in persistent_data_classes:
+        with pytest.raises(RuntimeError, match="stop after checking"):
+            data_cls.load_npz(tmp_path / f"{data_cls.__name__}.npz")
+
+    assert len(load_kwargs) == len(persistent_data_classes)
+    for kwargs in load_kwargs:
+        assert kwargs.get("allow_pickle") is False
+
+
+def test_epc_npz_loader_rejects_object_arrays_without_pickle(tmp_path):
+    payload = {
+        "ph_qpoints": np.array([[0.0, 0.0, 0.0]], dtype=object),
+        "ph_frequencies": np.array([[1.0]]),
+        "el_kpoints": np.array([[0.0, 0.0, 0.0]]),
+        "el_band_indices": np.array([0]),
+        "el_eigenvalues_k": np.array([[0.0]]),
+        "el_eigenvalues_kq": np.array([[[0.0]]]),
+        "elph_coupling_matrix": np.ones((1, 1, 1, 1, 1), dtype=complex),
+        "elph_coupling_strength": np.ones((1, 1, 1, 1, 1)),
+        "metadata_json": np.array('{"schema": "deeptb.epc_data"}'),
+    }
+    path = tmp_path / "object_array_epc.npz"
+    np.savez(path, **payload)
+
+    with pytest.raises(ValueError, match="Object arrays cannot be loaded"):
+        EPCData.load_npz(path)
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        pytest.param(
+            lambda metadata: Phonons(
+                qpoints=np.array([[0.0, 0.0, 0.0]]),
+                frequencies=np.array([[1.0]]),
+                eigenvectors=np.ones((1, 1, 1, 3), dtype=complex),
+                masses=np.array([1.0]),
+                metadata=metadata,
+            ),
+            id="phonons",
+        ),
+        pytest.param(
+            lambda metadata: EPCData(
+                kpoints=np.array([[0.0, 0.0, 0.0]]),
+                qpoints=np.array([[0.0, 0.0, 0.0]]),
+                band_indices=np.array([0]),
+                frequencies=np.array([[1.0]]),
+                eigenvalues_k=np.array([[0.0]]),
+                eigenvalues_kq=np.array([[[0.0]]]),
+                coupling_matrix=np.ones((1, 1, 1, 1, 1), dtype=complex),
+                coupling_strength=np.ones((1, 1, 1, 1, 1)),
+                metadata=metadata,
+            ),
+            id="epc",
+        ),
+        pytest.param(
+            lambda metadata: EPCMeshData(
+                kpoints=np.array([[0.0, 0.0, 0.0]]),
+                qpoints=np.array([[0.0, 0.0, 0.0]]),
+                band_indices=np.array([0]),
+                frequencies=np.array([[1.0]]),
+                eigenvalues_k=np.array([[0.0]]),
+                eigenvalues_kq=np.array([[[0.0]]]),
+                coupling_matrix=np.ones((1, 1, 1, 1, 1), dtype=complex),
+                coupling_strength=np.ones((1, 1, 1, 1, 1)),
+                kpoint_weights=np.array([1.0]),
+                qpoint_weights=np.array([1.0]),
+                metadata=metadata,
+            ),
+            id="epc_mesh",
+        ),
+        pytest.param(
+            lambda metadata: EPCPathData(
+                kpoints=np.array([[0.0, 0.0, 0.0]]),
+                qpoints=np.array([[0.0, 0.0, 0.0]]),
+                band_indices=np.array([0]),
+                frequencies=np.array([[1.0]]),
+                eigenvalues_k=np.array([[0.0]]),
+                eigenvalues_kq=np.array([[[0.0]]]),
+                coupling_matrix=np.ones((1, 1, 1, 1, 1), dtype=complex),
+                coupling_strength=np.ones((1, 1, 1, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0]),
+                metadata=metadata,
+            ),
+            id="epc_path",
+        ),
+        pytest.param(
+            lambda metadata: LinewidthData(
+                linewidth=np.ones((1, 1)) * 2.0,
+                absorption=np.ones((1, 1)),
+                emission=np.ones((1, 1)),
+                metadata=metadata,
+            ),
+            id="linewidth",
+        ),
+        pytest.param(
+            lambda metadata: LinewidthMeshData(
+                linewidth=np.ones((1, 1)) * 2.0,
+                absorption=np.ones((1, 1)),
+                emission=np.ones((1, 1)),
+                kpoints=np.array([[0.0, 0.0, 0.0]]),
+                kpoint_weights=np.array([1.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            id="linewidth_mesh",
+        ),
+        pytest.param(
+            lambda metadata: LinewidthPathData(
+                linewidth=np.ones((1, 1, 1)) * 2.0,
+                absorption=np.ones((1, 1, 1)),
+                emission=np.ones((1, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            id="linewidth_path",
+        ),
+        pytest.param(
+            lambda metadata: RelaxationTimeData(relaxation_time=np.ones((1, 1)), metadata=metadata),
+            id="relaxation",
+        ),
+        pytest.param(
+            lambda metadata: RelaxationTimeMeshData(
+                relaxation_time=np.ones((1, 1)),
+                kpoints=np.array([[0.0, 0.0, 0.0]]),
+                kpoint_weights=np.array([1.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            id="relaxation_mesh",
+        ),
+        pytest.param(
+            lambda metadata: RelaxationTimePathData(
+                relaxation_time=np.ones((1, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0]),
+                band_indices=np.array([0]),
+                metadata=metadata,
+            ),
+            id="relaxation_path",
+        ),
+        pytest.param(
+            lambda metadata: TransportData(
+                conductivity=np.eye(3),
+                carrier_density=np.array(1.0),
+                metadata=metadata,
+            ),
+            id="transport",
+        ),
+        pytest.param(
+            lambda metadata: MobilityData(
+                conductivity=np.eye(3),
+                mobility=np.eye(3),
+                carrier_density=np.array(1.0),
+                metadata=metadata,
+            ),
+            id="mobility",
+        ),
+        pytest.param(
+            lambda metadata: MobilityScanData(
+                conductivity=np.ones((1, 1, 3, 3)),
+                mobility=np.ones((1, 1, 3, 3)),
+                carrier_density=np.ones((1, 1)),
+                chemical_potentials=np.array([0.0]),
+                temperatures=np.array([0.1]),
+                metadata=metadata,
+            ),
+            id="mobility_scan",
+        ),
+        pytest.param(
+            lambda metadata: SubspaceCouplingData(
+                strength=np.ones((1, 1)),
+                final_group_bounds=np.array([[0, 1]]),
+                initial_group_bounds=np.array([[0, 1]]),
+                metadata=metadata,
+            ),
+            id="subspace",
+        ),
+    ],
+)
+def test_persistent_epc_data_rejects_conflicting_schema_metadata(factory):
+    with pytest.raises(ValueError, match="schema"):
+        factory({"schema": "wrong.schema"})
 
 
 def test_phonons_accepts_scalar_mass_for_single_atom():
@@ -4082,6 +4298,7 @@ def test_eph_entrypoint_writes_transport_npz_from_epc_and_linewidth_data(tmp_pat
         kpoint_weights=str(weights_path),
         spin_degeneracy=2,
         volume=5.0,
+        velocity_source="finite-difference",
         system=system,
     )
     loaded = TransportData.load_npz(output_path)
@@ -4140,6 +4357,7 @@ def test_eph_entrypoint_writes_mobility_npz_from_epc_and_linewidth_data(tmp_path
         temperature=0.03,
         spin_degeneracy=2,
         volume=5.0,
+        velocity_source="finite-difference",
         system=system,
     )
     loaded = MobilityData.load_npz(output_path)
@@ -4199,6 +4417,7 @@ def test_eph_entrypoint_writes_mobility_scan_npz_from_epc_and_linewidth_data(tmp
         temperatures=[0.03, 0.04],
         spin_degeneracy=2,
         volume=5.0,
+        velocity_source="finite-difference",
         system=system,
     )
     loaded = MobilityScanData.load_npz(output_path)
@@ -4363,8 +4582,8 @@ def test_graphene_reference_case_coupling_strength():
         pytest.skip("Set DEEPTB_RUN_REFERENCE_EPH=1 to run the external Graphene reference regression.")
     phonopy = pytest.importorskip("phonopy")
 
-    # TODO before merge/release: replace the external Graphene reference with
-    # a lightweight in-repo fixture for default CI.
+    # TODO(epc-fixture): replace the external Graphene reference with a
+    # lightweight in-repo fixture for default CI.
     reference_root = _external_reference_root()
     graphene_root = reference_root / "examples" / "Graphene"
     if not graphene_root.exists():
@@ -4572,8 +4791,8 @@ def test_graphene_reference_case_supercell_fd_provider():
     from dptb.nn.build import build_model
     from dptb.postprocess.unified import TBSystem
 
-    # TODO before merge/release: replace these external references with
-    # lightweight in-repo fixtures for default CI.
+    # TODO(epc-fixture): replace these external references with lightweight
+    # in-repo fixtures for default CI.
     reference_root = _external_reference_root()
     graphene_root = reference_root / "examples" / "Graphene"
     skdata = _external_skdata_root()

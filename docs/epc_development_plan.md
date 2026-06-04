@@ -11,7 +11,7 @@
 - EPC v1 core, NPZ data contracts, `dptb eph` workflow entrypoint, linewidth, relaxation-time, basic SERTA transport, finite-difference velocity bridge, and degenerate-subspace diagnostic are implemented in `dptb/postprocess/unified/eph/` and `dptb/entrypoints/eph.py`.
 - Public Python APIs are exported from both `dptb.postprocess.unified.eph` and `dptb.postprocess.unified`; CLI and NPZ loaders reject malformed or empty k/q-point inputs early.
 - Default EPC tests, Graphene coupling-strength reference, and slow Graphene supercell finite-difference reference are the current acceptance gates for v1 physics and workflow stability.
-- Development-stage Graphene reference remains external/untracked. TODO before merge/release: replace or supplement it with a lightweight in-repo fixture or a CI-specific reference strategy.
+- Development-stage Graphene reference remains external/untracked. TODO(epc-fixture): replace or supplement it with a lightweight in-repo fixture or a CI-specific reference strategy before merge/release.
 - SCC-corrected EPC, SOC/spinful EPC, polar correction, full degenerate-band gauge tracking, and full SI mobility/unit conversion remain future milestones, not v1 implementation claims.
 
 ## Current Wave: Stabilize EPC v1 Workflow
@@ -83,7 +83,7 @@
 - Milestone 2: Development validation
   - 开发阶段使用完整 dftbephy Graphene reference 做强验证，包括 reference matrices、finite-difference derivatives、phonon modes 和 EPC 输出。
   - Graphene reference 资产不进入 git 追踪；开发阶段通过 `DEEPTB_EPH_REFERENCE_ROOT` 和 `DEEPTB_EPH_SKDATA_ROOT` 指向本机 reference 资产。
-  - TODO before merge/release: 设计仓库内轻量 fixture 或 CI 专用 reference 策略，避免默认测试依赖外部 checkout。
+  - TODO(epc-fixture): 设计仓库内轻量 fixture 或 CI 专用 reference 策略，避免默认测试依赖外部 checkout。
   - 功能稳定后再设计 DeePTB 仓库内自包含小 fixture，用于默认单元测试和 CI。
 
 - Milestone 3: CLI and workflow entrypoint
@@ -145,7 +145,7 @@
     `DEEPTB_RUN_REFERENCE_EPH=1 MPLCONFIGDIR=/private/tmp/matplotlib-cache OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 ./.venv/bin/python -m pytest dptb/tests/test_electron_phonon.py::test_graphene_reference_case_coupling_strength -q`
   - 如果修改 phase convention、Fourier projection、finite difference provider、overlap correction 或 unit prefactor，必须额外跑 slow Graphene supercell finite-difference reference：
     `DEEPTB_RUN_REFERENCE_EPH=1 DEEPTB_RUN_SLOW_EPH=1 MPLCONFIGDIR=/private/tmp/matplotlib-cache OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 ./.venv/bin/python -m pytest dptb/tests/test_electron_phonon.py::test_graphene_reference_case_supercell_fd_provider -q`
-  - TODO before merge/release: 审查外部 reference 路径策略，避免默认 CI 依赖本机 checkout。
+  - TODO(epc-fixture): 审查外部 reference 路径策略，避免默认 CI 依赖本机 checkout。
   - slow supercell finite-difference reference 继续作为 opt-in benchmark。
 
 - CLI tests:
