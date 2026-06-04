@@ -4547,6 +4547,8 @@ def test_epc_k_chunk_specs_are_deterministic():
         (0, 1, "nk"),
         (3, 0, "chunk_size"),
         (3, True, "chunk_size"),
+        (3, 1.5, "chunk_size"),
+        (3, "2", "chunk_size"),
     ],
 )
 def test_epc_k_chunk_specs_reject_invalid_inputs(nk, chunk_size, match):
@@ -4638,6 +4640,8 @@ def test_epc_q_chunk_specs_are_deterministic():
         (0, 1, "nq"),
         (3, 0, "chunk_size"),
         (3, True, "chunk_size"),
+        (3, 1.5, "chunk_size"),
+        (3, "2", "chunk_size"),
     ],
 )
 def test_epc_q_chunk_specs_reject_invalid_inputs(nq, chunk_size, match):

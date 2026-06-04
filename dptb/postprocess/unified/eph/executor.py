@@ -80,11 +80,13 @@ def build_k_chunk_specs(nk: int, chunk_size: Optional[int]) -> Sequence[EPCKChun
     if isinstance(nk, bool) or not isinstance(nk, (int, np.integer)) or nk <= 0:
         raise ValueError("nk must be a positive integer.")
     nk = int(nk)
-    if chunk_size is None or chunk_size >= nk:
+    if chunk_size is None:
         return [EPCKChunkSpec(chunk_index=0, k_start=0, k_stop=nk)]
     if isinstance(chunk_size, bool) or not isinstance(chunk_size, (int, np.integer)) or chunk_size <= 0:
         raise ValueError("chunk_size must be a positive integer.")
     chunk_size = int(chunk_size)
+    if chunk_size >= nk:
+        return [EPCKChunkSpec(chunk_index=0, k_start=0, k_stop=nk)]
     return [
         EPCKChunkSpec(chunk_index=ichunk, k_start=start, k_stop=min(start + chunk_size, nk))
         for ichunk, start in enumerate(range(0, nk, chunk_size))
@@ -96,11 +98,13 @@ def build_q_chunk_specs(nq: int, chunk_size: Optional[int]) -> Sequence[EPCQChun
     if isinstance(nq, bool) or not isinstance(nq, (int, np.integer)) or nq <= 0:
         raise ValueError("nq must be a positive integer.")
     nq = int(nq)
-    if chunk_size is None or chunk_size >= nq:
+    if chunk_size is None:
         return [EPCQChunkSpec(chunk_index=0, q_start=0, q_stop=nq)]
     if isinstance(chunk_size, bool) or not isinstance(chunk_size, (int, np.integer)) or chunk_size <= 0:
         raise ValueError("chunk_size must be a positive integer.")
     chunk_size = int(chunk_size)
+    if chunk_size >= nq:
+        return [EPCQChunkSpec(chunk_index=0, q_start=0, q_stop=nq)]
     return [
         EPCQChunkSpec(chunk_index=ichunk, q_start=start, q_stop=min(start + chunk_size, nq))
         for ichunk, start in enumerate(range(0, nq, chunk_size))
