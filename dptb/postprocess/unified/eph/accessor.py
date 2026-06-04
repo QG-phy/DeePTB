@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Union
 
@@ -12,8 +13,10 @@ from dptb.postprocess.unified.eph.data import (
     EPCPathData,
     Phonons,
     cumulative_path_coordinates,
+    _metadata_to_json,
 )
 from dptb.postprocess.unified.eph.executor import (
+    EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION,
     build_k_chunk_specs,
     build_q_chunk_specs,
     concat_epc_k_chunks,
@@ -318,6 +321,124 @@ class EPhAccessor:
         if output_npz is not None:
             result.save_npz(output_npz)
         return result
+
+    def compute_mesh_chunked_artifact(
+        self,
+        mesh_spec: EPCMeshSpec,
+        phonons: Phonons,
+        directory: Union[str, Path],
+        axis: str = "q",
+        chunk_size: Optional[int] = None,
+        bands: Optional[Sequence[int]] = None,
+        displacement: float = 1e-3,
+        use_scc: bool = False,
+        derivative_provider: Optional[FDProvider] = None,
+    ) -> dict:
+        """Compute serial EPC mesh chunks directly into a directory artifact.
+
+        This is the first streaming artifact producer: it writes each EPC chunk
+        as it is computed and only keeps manifest metadata in memory. It reuses
+        the same chunked artifact contract as
+        ``save_epc_mesh_chunked_artifact(...)``.
+        """
+        if not isinstance(mesh_spec, EPCMeshSpec):
+            raise ValueError("mesh_spec must be an EPCMeshSpec instance.")
+        if use_scc:
+            raise NotImplementedError("SCC-corrected electron-phonon coupling is not supported in v1.")
+        if not isinstance(axis, str):
+            raise ValueError("axis must be 'k' or 'q'.")
+        axis = axis.lower()
+        if axis not in {"k", "q"}:
+            raise ValueError("axis must be 'k' or 'q'.")
+
+        kpoints, kpoint_weights = mesh_spec.resolve_kpoints_and_weights()
+        qpoint_weights = mesh_spec.resolve_qpoint_weights(phonons)
+        if axis == "k":
+            effective_chunk_size = chunk_size if chunk_size is not None else mesh_spec.chunk_size
+            specs = build_k_chunk_specs(kpoints.shape[0], effective_chunk_size)
+            effective_chunk_size = kpoints.shape[0] if effective_chunk_size is None else int(effective_chunk_size)
+            reducer = "concat_epc_k_chunks"
+        else:
+            effective_chunk_size = chunk_size if chunk_size is not None else mesh_spec.q_chunk_size
+            specs = build_q_chunk_specs(phonons.qpoints.shape[0], effective_chunk_size)
+            effective_chunk_size = phonons.qpoints.shape[0] if effective_chunk_size is None else int(effective_chunk_size)
+            reducer = "concat_epc_q_chunks"
+
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        chunks = []
+        for spec in specs:
+            if axis == "k":
+                epc_chunk = self.compute_coupling(
+                    kpoints=kpoints[spec.slice],
+                    phonons=phonons,
+                    bands=bands,
+                    displacement=displacement,
+                    use_scc=use_scc,
+                    derivative_provider=derivative_provider,
+                )
+            else:
+                epc_chunk = self.compute_coupling(
+                    kpoints=kpoints,
+                    phonons=_slice_phonons(phonons, spec.slice, spec.metadata()),
+                    bands=bands,
+                    displacement=displacement,
+                    use_scc=use_scc,
+                    derivative_provider=derivative_provider,
+                )
+            epc_chunk.metadata.update(
+                {
+                    "source": "deeptb.eph.compute_mesh_chunked_artifact.chunk",
+                    "artifact_axis": axis,
+                    "artifact_chunk": spec.metadata(),
+                }
+            )
+            filename = f"{axis}_chunk_{spec.chunk_index:06d}.npz"
+            epc_chunk.save_npz(directory / filename)
+            chunks.append(
+                {
+                    "filename": filename,
+                    "axis": axis,
+                    "spec": spec.metadata(),
+                }
+            )
+
+        np.savez_compressed(
+            directory / "weights.npz",
+            el_kpoint_weights=kpoint_weights,
+            ph_qpoint_weights=qpoint_weights,
+            metadata_json=np.array(
+                json.dumps(
+                    {
+                        "schema": "deeptb.epc_mesh_chunked_artifact.weights",
+                        "schema_version": EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION,
+                    },
+                    sort_keys=True,
+                )
+            ),
+        )
+        manifest = {
+            "schema": "deeptb.epc_mesh_chunked_artifact",
+            "schema_version": EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION,
+            "axis": axis,
+            "chunk_size": effective_chunk_size,
+            "chunk_count": len(chunks),
+            "chunks": chunks,
+            "weights_filename": "weights.npz",
+            "mesh_metadata": {
+                "source": "deeptb.eph.compute_mesh_chunked_artifact",
+                "mesh_spec": mesh_spec.metadata_payload(),
+                "execution": "serial_streaming_artifact",
+                "artifact_axis": axis,
+                "streaming_artifact": True,
+            },
+            "reducer": reducer,
+        }
+        (directory / "manifest.json").write_text(
+            json.dumps(json.loads(_metadata_to_json(manifest)), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        return manifest
 
     def _block_phase_kwargs(self, phonons: Phonons, h_derivatives_k: np.ndarray) -> Dict[str, Any]:
         try:

@@ -35,6 +35,7 @@
   - coupling-strength summary, scattering proxy maps, phonon DOS, and Eliashberg-like spectral diagnostic from existing NPZ data。
   - chunked mesh artifact save/load/reduce contract。
   - chunked artifact summary-first linewidth, SERTA transport, SI mobility, and fixed-linewidth SI mobility scan helpers。
+  - first serial streaming mesh artifact producer through `TBSystem.eph.compute_mesh_chunked_artifact(...)`。
 - Still needs hardening before merge/release:
   - a minimal in-repo synthetic EPC fixture now covers default linewidth reference testing; broader coupling/FD fixtures still need release hardening。
   - opt-in full Graphene reference kept outside git for development and benchmark。
@@ -47,8 +48,8 @@
   - SCC EPC implementation; the design document now lives in `docs/epc_scc_design.md`。
   - multiprocessing/MPI executors。
   - torch CUDA EPC backend。
-  - true streaming compute directly into chunked artifacts, without first materializing `EPCMeshData`。
-  - transport scan accumulators and per-scan-point linewidth recomputation。
+  - multi-axis streaming artifact production and parallel artifact writers。
+  - per-scan-point linewidth recomputation。
   - SOC/spinful EPC, polar correction, and full degenerate-band gauge tracking。
 
 ## Design Position
@@ -655,6 +656,10 @@ Current Phase 1 status:
   - chunks are stored as pickle-free `EPCData` NPZ files plus global k/q weights.
   - artifact reducers reuse the existing deterministic `concat_epc_k_chunks(...)` / `concat_epc_q_chunks(...)` helpers.
   - manifest/weights validation rejects schema drift, unsafe filenames, reducer mismatch, bad chunk counts, non-contiguous ranges, and bad weights metadata.
+- Implemented first serial streaming producer:
+  - `TBSystem.eph.compute_mesh_chunked_artifact(...)` computes one q-axis or k-axis chunk at a time and writes directly to the artifact directory.
+  - this avoids first materializing a full `EPCMeshData`.
+  - it remains serial Python execution; no multiprocessing, MPI, or CUDA runtime has been added.
 - Implemented first summary-first postprocess helper:
   - `compute_linewidth_mesh_chunked_artifact(...)` reads chunk NPZ files one at a time and returns `LinewidthMeshData`.
   - q-axis artifacts accumulate q contributions with global q weights.
@@ -671,7 +676,7 @@ Current Phase 1 status:
 - Implemented first summary-first SI mobility scan helper:
   - `compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(...)` uses chunked linewidth at the first requested scan point and reuses the existing fixed-linewidth scan convention.
 - Current limitation:
-  - this is not yet a streaming compute path; it chunks an already materialized `EPCMeshData`.
+  - summary-first artifact consumers are available, and the first serial streaming producer is available, but multi-axis q/k streaming and parallel writers remain future work.
   - per-scan-point linewidth recomputation remains future Phase 1/transport hardening work.
   - no multiprocessing, MPI, or CUDA runtime has been added.
 
@@ -843,4 +848,4 @@ This sprint is a stabilization and design sprint for the current implementation,
 9. Review and finalize `docs/epc_scc_design.md` before touching SCC implementation.
 10. Create a checkpoint commit once docs and focused tests pass.
 
-The immediate merge target is: stable EPC v1 plus DeePTB-native path/mesh workflows, serial k/q chunk executor boundary, chunked mesh artifact reduction, summary-first artifact consumers, Hamiltonian-derivative velocity, SI mobility, mobility scan, and JSON analysis helpers from existing NPZ objects. SCC EPC, MPI, CUDA, SOC/spinful, polar correction, true streaming mesh artifact production, and per-scan-point linewidth recomputation remain planned follow-up workstreams.
+The immediate merge target is: stable EPC v1 plus DeePTB-native path/mesh workflows, serial k/q chunk executor boundary, chunked mesh artifact reduction, first serial streaming artifact producer, summary-first artifact consumers, Hamiltonian-derivative velocity, SI mobility, mobility scan, and JSON analysis helpers from existing NPZ objects. SCC EPC, MPI, CUDA, SOC/spinful, polar correction, multi-axis/parallel artifact production, and per-scan-point linewidth recomputation remain planned follow-up workstreams.

@@ -140,6 +140,12 @@ reducers, and returns an `EPCMeshData`. This is a storage/reducer contract for
 large mesh workflows. It is not a parallel executor, does not require `mpi4py`,
 and does not change the public `EPCMeshData` NPZ schema.
 
+`TBSystem.eph.compute_mesh_chunked_artifact(...)` is the first serial streaming
+producer for this artifact contract. It computes one q-axis or k-axis chunk at
+a time and writes each chunk directly to the artifact directory, instead of
+first materializing a full `EPCMeshData` and then splitting it. It is still a
+serial Python API, not a multiprocessing/MPI/CUDA executor.
+
 The loader rejects malformed artifacts: inconsistent schema/version, invalid
 chunk counts, non-contiguous chunk ranges, wrong reducer names, unsafe
 filenames, and invalid weights metadata.
@@ -604,8 +610,10 @@ theory. For `EPCMeshData`, summaries use normalized k/q weights by default; add
   k-path plus fixed-q is not implemented.
 - Mesh workflows currently use serial in-memory execution. K-point and q-point
   chunking are available for `mesh-coupling`; chunked artifacts and
-  summary-first artifact consumers are available as Python APIs. True streaming
-  artifact production, multiprocessing, MPI, and CUDA backends are future work.
+  summary-first artifact consumers are available as Python APIs. A first serial
+  streaming artifact producer is available as `TBSystem.eph.compute_mesh_chunked_artifact(...)`.
+  Multiprocessing, MPI, CUDA backends, and multi-axis streaming artifact
+  production are future work.
 - SOC/spinful EPC is not implemented.
 - Polar correction is not implemented.
 - Full degenerate-band gauge fixing and k/q-path continuous gauge tracking are

@@ -4240,6 +4240,74 @@ def test_electron_phonon_accessor_compute_mesh_qk_chunked_matches_full_mesh():
     ]
 
 
+@pytest.mark.parametrize(("axis", "chunk_size"), [("q", 1), ("k", 1)])
+def test_electron_phonon_accessor_compute_mesh_chunked_artifact_matches_full_mesh(axis, chunk_size, tmp_path):
+    phonons = Phonons(
+        qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+        frequencies=np.array([[1.0], [2.0]]),
+        eigenvectors=np.array([[[[1.0, 0.0, 0.0]]], [[[1.0, 0.0, 0.0]]]], dtype=complex),
+        masses=np.array([1.0]),
+    )
+    accessor = EPhAccessor(_FakeSystem())
+    mesh_spec = EPCMeshSpec(k_mesh=[3, 1, 1])
+    artifact_dir = tmp_path / f"{axis}_streaming_artifact"
+
+    full = accessor.compute_mesh(
+        mesh_spec=mesh_spec,
+        phonons=phonons,
+        bands=[0],
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+    manifest = accessor.compute_mesh_chunked_artifact(
+        mesh_spec=mesh_spec,
+        phonons=phonons,
+        directory=artifact_dir,
+        axis=axis,
+        chunk_size=chunk_size,
+        bands=[0],
+        derivative_provider=_FakeDerivativeProvider(),
+    )
+    loaded = load_epc_mesh_chunked_artifact(artifact_dir)
+
+    assert manifest["schema"] == "deeptb.epc_mesh_chunked_artifact"
+    assert manifest["axis"] == axis
+    assert manifest["mesh_metadata"]["source"] == "deeptb.eph.compute_mesh_chunked_artifact"
+    assert manifest["mesh_metadata"]["streaming_artifact"] is True
+    assert (artifact_dir / "manifest.json").exists()
+    assert (artifact_dir / "weights.npz").exists()
+    np.testing.assert_allclose(loaded.kpoints, full.kpoints)
+    np.testing.assert_allclose(loaded.qpoints, full.qpoints)
+    np.testing.assert_allclose(loaded.kpoint_weights, full.kpoint_weights)
+    np.testing.assert_allclose(loaded.qpoint_weights, full.qpoint_weights)
+    np.testing.assert_allclose(loaded.eigenvalues_k, full.eigenvalues_k)
+    np.testing.assert_allclose(loaded.eigenvalues_kq, full.eigenvalues_kq)
+    np.testing.assert_allclose(loaded.coupling_matrix, full.coupling_matrix)
+    np.testing.assert_allclose(loaded.coupling_strength, full.coupling_strength)
+    assert loaded.metadata["source"] == "deeptb.eph.epc_mesh_chunked_artifact"
+    assert loaded.metadata["streaming_artifact"] is True
+    assert loaded.metadata["artifact_axis"] == axis
+
+
+def test_electron_phonon_accessor_compute_mesh_chunked_artifact_rejects_invalid_inputs(tmp_path):
+    accessor = EPhAccessor(_FakeSystem())
+    phonons = _single_mode_phonons()
+    with pytest.raises(ValueError, match="EPCMeshSpec"):
+        accessor.compute_mesh_chunked_artifact(
+            mesh_spec=object(),
+            phonons=phonons,
+            directory=tmp_path / "bad_spec",
+            derivative_provider=_FakeDerivativeProvider(),
+        )
+    with pytest.raises(ValueError, match="axis"):
+        accessor.compute_mesh_chunked_artifact(
+            mesh_spec=EPCMeshSpec(k_mesh=[1, 1, 1]),
+            phonons=phonons,
+            directory=tmp_path / "bad_axis",
+            axis="mode",
+            derivative_provider=_FakeDerivativeProvider(),
+        )
+
+
 def test_epc_k_chunk_specs_are_deterministic():
     full = build_k_chunk_specs(3, None)
     assert full == [EPCKChunkSpec(chunk_index=0, k_start=0, k_stop=3)]
