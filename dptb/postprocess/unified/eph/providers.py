@@ -6,10 +6,12 @@ from ase import Atoms
 from dptb.postprocess.unified.eph.utils import (
     as_array,
     assemble_directed_hk_from_blocks,
+    normalize_integer_array,
     normalize_kpoints,
     normalize_orbital_slices,
-    orbital_slices_from_atom_orbs,
+    orbital_slices_from_system,
     strip_single_k_matrix,
+    validate_finite_positive_scalar,
 )
 
 
@@ -27,6 +29,7 @@ class FDProvider:
             raise NotImplementedError("SCC-corrected electron-phonon coupling is not supported in v1.")
         if derivative_mode not in {"row", "full"}:
             raise ValueError("derivative_mode must be either 'row' or 'full'.")
+        displacement = validate_finite_positive_scalar(displacement, "displacement")
         self.system = system
         self.displacement = float(displacement)
         self.use_scc = use_scc
@@ -76,7 +79,7 @@ class FDProvider:
     def _compute_row_derivatives(self, kpoints: np.ndarray) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         kpoints = normalize_kpoints(kpoints)
         atoms0 = self.system.atoms.copy()
-        orbital_slices = normalize_orbital_slices(orbital_slices_from_atom_orbs(self.system.atom_orbs))
+        orbital_slices = normalize_orbital_slices(orbital_slices_from_system(self.system))
         num_atoms = len(atoms0)
         if len(orbital_slices) != num_atoms:
             raise RuntimeError("Cannot infer atom-resolved orbital slices for finite-difference EPC.")
@@ -138,15 +141,32 @@ class SupercellFD:
     ):
         if use_scc:
             raise NotImplementedError("SCC-corrected electron-phonon coupling is not supported in v1.")
+        displacement = validate_finite_positive_scalar(displacement, "displacement")
         self.system = system
         self.supercell_atoms = supercell_atoms.copy()
-        self.primitive_to_supercell_atom = np.asarray(primitive_to_supercell_atom, dtype=int)
-        self.supercell_to_primitive_atom = np.asarray(supercell_to_primitive_atom, dtype=int)
-        self.supercell_atom_to_cell = np.asarray(supercell_atom_to_cell, dtype=int)
-        self.primitive_orbital_offsets = np.asarray(primitive_orbital_offsets, dtype=int)
-        self.supercell_orbital_offsets = np.asarray(supercell_orbital_offsets, dtype=int)
+        self.primitive_to_supercell_atom = normalize_integer_array(
+            primitive_to_supercell_atom,
+            "primitive_to_supercell_atom",
+        )
+        self.supercell_to_primitive_atom = normalize_integer_array(
+            supercell_to_primitive_atom,
+            "supercell_to_primitive_atom",
+        )
+        self.supercell_atom_to_cell = normalize_integer_array(supercell_atom_to_cell, "supercell_atom_to_cell")
+        self.primitive_orbital_offsets = normalize_integer_array(primitive_orbital_offsets, "primitive_orbital_offsets")
+        self.supercell_orbital_offsets = normalize_integer_array(supercell_orbital_offsets, "supercell_orbital_offsets")
         self.shortest_vectors = np.asarray(shortest_vectors, dtype=float)
-        self.vector_multiplicity = np.asarray(vector_multiplicity, dtype=int)
+        self.vector_multiplicity = normalize_integer_array(vector_multiplicity, "vector_multiplicity")
+        _validate_supercell_mapping_inputs(
+            num_supercell_atoms=len(self.supercell_atoms),
+            primitive_to_supercell_atom=self.primitive_to_supercell_atom,
+            supercell_to_primitive_atom=self.supercell_to_primitive_atom,
+            supercell_atom_to_cell=self.supercell_atom_to_cell,
+            primitive_orbital_offsets=self.primitive_orbital_offsets,
+            supercell_orbital_offsets=self.supercell_orbital_offsets,
+            shortest_vectors=self.shortest_vectors,
+            vector_multiplicity=self.vector_multiplicity,
+        )
         self.displacement = float(displacement)
         self.use_scc = use_scc
         self._supercell_h_derivatives = None
@@ -332,12 +352,66 @@ def _strip_batch(arr: np.ndarray) -> np.ndarray:
 
 
 def _length_unit_scale_to_angstrom(length_unit: str) -> float:
+    if not isinstance(length_unit, str):
+        raise ValueError("length_unit must be 'angstrom' or 'bohr'.")
     normalized = length_unit.lower()
     if normalized in {"angstrom", "ang", "a"}:
         return 1.0
     if normalized in {"bohr", "au", "a.u.", "atomic_unit"}:
         return 0.529177249
     raise ValueError("length_unit must be 'angstrom' or 'bohr'.")
+
+
+def _validate_supercell_mapping_inputs(
+    num_supercell_atoms: int,
+    primitive_to_supercell_atom: np.ndarray,
+    supercell_to_primitive_atom: np.ndarray,
+    supercell_atom_to_cell: np.ndarray,
+    primitive_orbital_offsets: np.ndarray,
+    supercell_orbital_offsets: np.ndarray,
+    shortest_vectors: np.ndarray,
+    vector_multiplicity: np.ndarray,
+) -> None:
+    if primitive_to_supercell_atom.ndim != 1 or primitive_to_supercell_atom.size == 0:
+        raise ValueError("primitive_to_supercell_atom must be a one-dimensional non-empty array.")
+    if supercell_to_primitive_atom.shape != (num_supercell_atoms,):
+        raise ValueError("supercell_to_primitive_atom must have one entry per supercell atom.")
+    if supercell_atom_to_cell.shape != (num_supercell_atoms,):
+        raise ValueError("supercell_atom_to_cell must have one entry per supercell atom.")
+    if np.any(primitive_to_supercell_atom < 0) or np.any(primitive_to_supercell_atom >= num_supercell_atoms):
+        raise ValueError("primitive_to_supercell_atom contains an index outside the supercell atom range.")
+
+    num_primitive_atoms = primitive_to_supercell_atom.shape[0]
+    if np.any(supercell_to_primitive_atom < 0) or np.any(supercell_to_primitive_atom >= num_primitive_atoms):
+        raise ValueError("supercell_to_primitive_atom contains an index outside the primitive atom range.")
+    if primitive_orbital_offsets.shape != (num_primitive_atoms + 1,):
+        raise ValueError("primitive_orbital_offsets must have length nprimitive + 1.")
+    if supercell_orbital_offsets.shape != (num_supercell_atoms + 1,):
+        raise ValueError("supercell_orbital_offsets must have length nsupercell + 1.")
+    _validate_orbital_offsets(primitive_orbital_offsets, "primitive_orbital_offsets")
+    _validate_orbital_offsets(supercell_orbital_offsets, "supercell_orbital_offsets")
+
+    if vector_multiplicity.ndim != 2:
+        raise ValueError("vector_multiplicity must have shape (ncells, nprimitive).")
+    if shortest_vectors.ndim != 4 or shortest_vectors.shape[-1] != 3:
+        raise ValueError("shortest_vectors must have shape (ncells, nprimitive, max_multiplicity, 3).")
+    if shortest_vectors.shape[:2] != vector_multiplicity.shape:
+        raise ValueError("shortest_vectors and vector_multiplicity must agree on (ncells, nprimitive).")
+    if not np.all(np.isfinite(shortest_vectors)):
+        raise ValueError("shortest_vectors must contain finite values.")
+    if np.any(vector_multiplicity <= 0) or np.any(vector_multiplicity > shortest_vectors.shape[2]):
+        raise ValueError("vector_multiplicity must be positive and no larger than shortest_vectors max multiplicity.")
+    if np.any(supercell_atom_to_cell < 0) or np.any(supercell_atom_to_cell >= vector_multiplicity.shape[0]):
+        raise ValueError("supercell_atom_to_cell contains an index outside the cell range.")
+    if vector_multiplicity.shape[1] != num_primitive_atoms:
+        raise ValueError("vector_multiplicity primitive axis must match primitive_to_supercell_atom.")
+
+
+def _validate_orbital_offsets(offsets: np.ndarray, name: str) -> None:
+    if offsets.ndim != 1 or offsets[0] != 0:
+        raise ValueError(f"{name} must be a one-dimensional array starting at 0.")
+    if np.any(np.diff(offsets) <= 0):
+        raise ValueError(f"{name} must be strictly increasing.")
 
 
 def _phonopy_supercell_maps(phonopy_obj):

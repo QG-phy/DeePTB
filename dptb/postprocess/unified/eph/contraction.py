@@ -5,8 +5,10 @@ from scipy import constants as scipy_constants
 
 from dptb.postprocess.unified.eph.utils import (
     as_array,
+    normalize_integer_indices,
     normalize_kpoints,
     normalize_orbital_slices,
+    validate_finite_positive_scalar,
 )
 
 
@@ -50,7 +52,37 @@ def compute_coupling_matrix(
     h_derivatives_k = as_array(h_derivatives_k, dtype=complex)
     h_derivatives_kq = as_array(h_derivatives_kq, dtype=complex)
     phonon_eigenvectors = as_array(phonon_eigenvectors, dtype=complex)
-    masses = as_array(masses, dtype=float)
+    masses = np.atleast_1d(as_array(masses, dtype=float))
+    if derivative_mode not in {"full", "row"}:
+        raise ValueError("derivative_mode must be either 'full' or 'row'.")
+    prefactor_amu_thz = validate_finite_positive_scalar(prefactor_amu_thz, "prefactor_amu_thz")
+    omega_floor = validate_finite_positive_scalar(omega_floor, "omega_floor")
+    if eigenvalues_k.ndim != 2:
+        raise ValueError("eigenvalues_k must have shape (nk, nbands).")
+    if eigenvalues_kq.ndim != 3:
+        raise ValueError("eigenvalues_kq must have shape (nq, nk, nbands).")
+    if eigenvectors_k.ndim != 3:
+        raise ValueError("eigenvectors_k must have shape (nk, norb, nbands).")
+    if eigenvectors_kq.ndim != 4:
+        raise ValueError("eigenvectors_kq must have shape (nq, nk, norb, nbands).")
+    if phonon_eigenvectors.ndim != 4 or phonon_eigenvectors.shape[-1] != 3:
+        raise ValueError("phonon_eigenvectors must have shape (nq, nmodes, natoms, 3).")
+    if not np.all(np.isfinite(eigenvalues_k)):
+        raise ValueError("eigenvalues_k must be finite.")
+    if not np.all(np.isfinite(eigenvalues_kq)):
+        raise ValueError("eigenvalues_kq must be finite.")
+    if not np.all(np.isfinite(eigenvectors_k)):
+        raise ValueError("eigenvectors_k must be finite.")
+    if not np.all(np.isfinite(eigenvectors_kq)):
+        raise ValueError("eigenvectors_kq must be finite.")
+    if not np.all(np.isfinite(h_derivatives_k)):
+        raise ValueError("h_derivatives_k must be finite.")
+    if not np.all(np.isfinite(h_derivatives_kq)):
+        raise ValueError("h_derivatives_kq must be finite.")
+    if not np.all(np.isfinite(phonon_eigenvectors)):
+        raise ValueError("phonon_eigenvectors must be finite.")
+    if not np.all(np.isfinite(masses)) or np.any(masses <= 0.0):
+        raise ValueError("masses must be finite and positive.")
 
     if overlap_derivatives_k is None:
         overlap_derivatives_k = np.zeros_like(h_derivatives_k)
@@ -60,26 +92,60 @@ def compute_coupling_matrix(
         overlap_derivatives_kq = np.zeros_like(h_derivatives_kq)
     else:
         overlap_derivatives_kq = as_array(overlap_derivatives_kq, dtype=complex)
+    if overlap_derivatives_k.shape != h_derivatives_k.shape:
+        raise ValueError("overlap_derivatives_k must have the same shape as h_derivatives_k.")
+    if overlap_derivatives_kq.shape != h_derivatives_kq.shape:
+        raise ValueError("overlap_derivatives_kq must have the same shape as h_derivatives_kq.")
+    if not np.all(np.isfinite(overlap_derivatives_k)):
+        raise ValueError("overlap_derivatives_k must be finite.")
+    if not np.all(np.isfinite(overlap_derivatives_kq)):
+        raise ValueError("overlap_derivatives_kq must be finite.")
 
     nk, nbands = eigenvalues_k.shape
     nq, _, nbands_kq = eigenvalues_kq.shape
+    nmodes = phonon_eigenvectors.shape[1]
+    natoms = masses.shape[0]
+    norb = eigenvectors_k.shape[1]
+    if nmodes == 0:
+        raise ValueError("phonon_eigenvectors must contain at least one phonon mode.")
+    if eigenvalues_kq.shape[1] != nk:
+        raise ValueError("eigenvalues_kq must agree with eigenvalues_k on nk.")
     if nbands_kq != nbands:
         raise ValueError("eigenvalues_k and eigenvalues_kq must have the same band count.")
+    if eigenvectors_k.shape != (nk, norb, nbands):
+        raise ValueError("eigenvectors_k must have shape (nk, norb, nbands).")
+    if eigenvectors_kq.shape != (nq, nk, norb, nbands):
+        raise ValueError("eigenvectors_kq must have shape (nq, nk, norb, nbands).")
+    if phonon_eigenvectors.shape[0] != nq:
+        raise ValueError("phonon_eigenvectors must agree with eigenvalues_kq on nq.")
+    if phonon_eigenvectors.shape[2] != natoms:
+        raise ValueError("phonon_eigenvectors natoms dimension must match masses.")
+    if derivative_mode == "full":
+        if h_derivatives_k.shape != (nk, natoms, 3, norb, norb):
+            raise ValueError("full h_derivatives_k must have shape (nk, natoms, 3, norb, norb).")
+        if h_derivatives_kq.shape != (nq, nk, natoms, 3, norb, norb):
+            raise ValueError("full h_derivatives_kq must have shape (nq, nk, natoms, 3, norb, norb).")
+    else:
+        if h_derivatives_k.shape != (nk, 3, norb, norb):
+            raise ValueError("row h_derivatives_k must have shape (nk, 3, norb, norb).")
+        if h_derivatives_kq.shape != (nq, nk, 3, norb, norb):
+            raise ValueError("row h_derivatives_kq must have shape (nq, nk, 3, norb, norb).")
 
     if band_indices is None:
         band_indices = np.arange(nbands, dtype=int)
     else:
-        band_indices = np.asarray(band_indices, dtype=int)
+        band_indices = normalize_integer_indices(band_indices, "band_indices")
+    if np.any(band_indices < 0) or np.any(band_indices >= nbands):
+        raise ValueError("band_indices contains an index outside the available band range.")
 
-    nmodes = phonon_eigenvectors.shape[1]
     nsel = len(band_indices)
     coupling_matrix = np.zeros((nq, nk, nmodes, nsel, nsel), dtype=complex)
 
     use_block_phase = orbital_slices is not None or scaled_positions is not None or qpoints is not None
     if use_block_phase and (orbital_slices is None or scaled_positions is None or qpoints is None):
         raise ValueError("orbital_slices, scaled_positions and qpoints must be provided together.")
-    if derivative_mode not in {"full", "row"}:
-        raise ValueError("derivative_mode must be either 'full' or 'row'.")
+    if derivative_mode == "row" and not use_block_phase:
+        raise ValueError("derivative_mode='row' requires orbital_slices, scaled_positions and qpoints.")
 
     inv_sqrt_mass = 1.0 / np.sqrt(masses)
     if not use_block_phase:
@@ -151,7 +217,12 @@ def compute_coupling_matrix(
         frequencies = as_array(frequencies, dtype=float)
         if frequencies.shape != (nq, nmodes):
             raise ValueError("frequencies must have shape (nq, nmodes).")
-        prefactor = prefactor_amu_thz / np.maximum(2.0 * frequencies, omega_floor)
+        if not np.all(np.isfinite(frequencies)):
+            raise ValueError("frequencies must be finite.")
+        if np.any(frequencies < 0.0):
+            raise ValueError("frequencies must be non-negative; imaginary modes are not supported in EPC v1.")
+        regularized_frequencies = np.maximum(frequencies, omega_floor)
+        prefactor = prefactor_amu_thz / (2.0 * regularized_frequencies)
         coupling_matrix = coupling_matrix * np.sqrt(prefactor)[:, None, :, None, None]
         coupling_strength = np.abs(coupling_matrix) ** 2
 

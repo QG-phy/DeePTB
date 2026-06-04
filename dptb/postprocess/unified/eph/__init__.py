@@ -1,7 +1,27 @@
 from dptb.postprocess.unified.eph.accessor import EPhAccessor
+from dptb.postprocess.unified.eph.analysis import (
+    HBAR_EV_S,
+    LINEWIDTH_NPZ_SCHEMA_VERSION,
+    LinewidthData,
+    RELAXATION_TIME_NPZ_SCHEMA_VERSION,
+    RelaxationTimeData,
+    SUBSPACE_COUPLING_NPZ_SCHEMA_VERSION,
+    SubspaceCouplingData,
+    TRANSPORT_NPZ_SCHEMA_VERSION,
+    THZ_TO_EV,
+    TransportData,
+    compute_band_velocities_finite_difference,
+    compute_linewidth,
+    compute_relaxation_time,
+    compute_serta_conductivity,
+    compute_serta_transport_from_epc,
+    compute_subspace_coupling_data,
+    compute_subspace_coupling_strength,
+    find_degenerate_band_groups,
+)
 from dptb.postprocess.unified.eph.benchmark import DFTBPlusGauge
 from dptb.postprocess.unified.eph.contraction import EPC_PREFAC_AMU_THZ, compute_coupling_matrix
-from dptb.postprocess.unified.eph.data import EPCData, Phonons
+from dptb.postprocess.unified.eph.data import EPCData, EPC_NPZ_SCHEMA_VERSION, PHONON_NPZ_SCHEMA_VERSION, Phonons
 from dptb.postprocess.unified.eph.providers import FDProvider, SupercellFD
 
 __all__ = [
@@ -10,7 +30,27 @@ __all__ = [
     "EPhAccessor",
     "FDProvider",
     "EPC_PREFAC_AMU_THZ",
+    "EPC_NPZ_SCHEMA_VERSION",
+    "HBAR_EV_S",
+    "LINEWIDTH_NPZ_SCHEMA_VERSION",
+    "LinewidthData",
     "Phonons",
+    "PHONON_NPZ_SCHEMA_VERSION",
+    "RELAXATION_TIME_NPZ_SCHEMA_VERSION",
+    "RelaxationTimeData",
+    "SUBSPACE_COUPLING_NPZ_SCHEMA_VERSION",
     "SupercellFD",
+    "SubspaceCouplingData",
+    "TRANSPORT_NPZ_SCHEMA_VERSION",
+    "THZ_TO_EV",
+    "TransportData",
+    "compute_band_velocities_finite_difference",
     "compute_coupling_matrix",
+    "compute_linewidth",
+    "compute_relaxation_time",
+    "compute_serta_conductivity",
+    "compute_serta_transport_from_epc",
+    "compute_subspace_coupling_data",
+    "compute_subspace_coupling_strength",
+    "find_degenerate_band_groups",
 ]

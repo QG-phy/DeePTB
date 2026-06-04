@@ -12,9 +12,11 @@ from dptb.postprocess.unified.eph.providers import (
 )
 from dptb.postprocess.unified.eph.utils import (
     as_array,
+    normalize_integer_indices,
     normalize_kpoints,
-    orbital_slices_from_atom_orbs,
+    orbital_slices_from_system,
     strip_batch,
+    validate_finite_positive_scalar,
 )
 
 
@@ -36,20 +38,37 @@ class EPhAccessor:
     ) -> EPCData:
         if use_scc:
             raise NotImplementedError("SCC-corrected electron-phonon coupling is not supported in v1.")
+        displacement = validate_finite_positive_scalar(displacement, "displacement")
 
         kpoints = normalize_kpoints(kpoints)
         qpoints = phonons.qpoints
         kqpoints = (kpoints[None, :, :] + qpoints[:, None, :]).reshape(-1, 3)
 
-        _, eigenvalues_k, eigenvectors_k = self._system.get_eigenstates(k_points=kpoints, use_scc=use_scc)
-        _, eigenvalues_kq, eigenvectors_kq = self._system.get_eigenstates(k_points=kqpoints, use_scc=use_scc)
-
-        eigenvalues_k = strip_batch(as_array(eigenvalues_k, dtype=float))
-        eigenvectors_k = strip_batch(as_array(eigenvectors_k, dtype=complex))
-        eigenvalues_kq = strip_batch(as_array(eigenvalues_kq, dtype=float)).reshape(
-            qpoints.shape[0], kpoints.shape[0], -1
+        _, eigenvalues_k, eigenvectors_k = _unpack_eigenstate_payload(
+            self._system.get_eigenstates(k_points=kpoints, use_scc=use_scc),
+            name="system.get_eigenstates(k)",
         )
-        eigenvectors_kq = strip_batch(as_array(eigenvectors_kq, dtype=complex)).reshape(
+        _, eigenvalues_kq_flat, eigenvectors_kq_flat = _unpack_eigenstate_payload(
+            self._system.get_eigenstates(k_points=kqpoints, use_scc=use_scc),
+            name="system.get_eigenstates(k+q)",
+        )
+
+        eigenvalues_k, eigenvectors_k = _validate_eigenstate_arrays(
+            eigenvalues_k,
+            eigenvectors_k,
+            expected_kpoints=kpoints.shape[0],
+            name="system.get_eigenstates(k)",
+        )
+        eigenvalues_kq_flat, eigenvectors_kq_flat = _validate_eigenstate_arrays(
+            eigenvalues_kq_flat,
+            eigenvectors_kq_flat,
+            expected_kpoints=kqpoints.shape[0],
+            name="system.get_eigenstates(k+q)",
+            reference_norb=eigenvectors_k.shape[-2],
+            reference_nbands=eigenvectors_k.shape[-1],
+        )
+        eigenvalues_kq = eigenvalues_kq_flat.reshape(qpoints.shape[0], kpoints.shape[0], eigenvalues_k.shape[-1])
+        eigenvectors_kq = eigenvectors_kq_flat.reshape(
             qpoints.shape[0], kpoints.shape[0], eigenvectors_k.shape[-2], eigenvectors_k.shape[-1]
         )
 
@@ -59,8 +78,28 @@ class EPhAccessor:
                 displacement=displacement,
                 use_scc=use_scc,
             )
-        h_derivatives_k, overlap_derivatives_k = derivative_provider.compute(kpoints)
-        h_derivatives_kq_flat, overlap_derivatives_kq_flat = derivative_provider.compute(kqpoints)
+        derivative_provider_name = type(derivative_provider).__name__
+        h_derivatives_k, overlap_derivatives_k = _unpack_derivative_payload(
+            derivative_provider.compute(kpoints),
+            name="derivative_provider.compute(kpoints)",
+        )
+        h_derivatives_k, overlap_derivatives_k = _validate_derivative_payload(
+            h_derivatives_k,
+            overlap_derivatives_k,
+            expected_kpoints=kpoints.shape[0],
+            name="derivative_provider.compute(kpoints)",
+        )
+        h_derivatives_kq_flat, overlap_derivatives_kq_flat = _unpack_derivative_payload(
+            derivative_provider.compute(kqpoints),
+            name="derivative_provider.compute(k+q)",
+        )
+        h_derivatives_kq_flat, overlap_derivatives_kq_flat = _validate_derivative_payload(
+            h_derivatives_kq_flat,
+            overlap_derivatives_kq_flat,
+            expected_kpoints=kqpoints.shape[0],
+            name="derivative_provider.compute(k+q)",
+            reference_trailing_shape=h_derivatives_k.shape[1:],
+        )
         h_derivatives_kq = h_derivatives_kq_flat.reshape(
             qpoints.shape[0], kpoints.shape[0], *h_derivatives_kq_flat.shape[1:]
         )
@@ -90,7 +129,7 @@ class EPhAccessor:
         if bands is None:
             band_indices = np.arange(eigenvalues_k.shape[-1], dtype=int)
         else:
-            band_indices = np.asarray(bands, dtype=int)
+            band_indices = normalize_integer_indices(bands, "bands")
 
         result = EPCData(
             kpoints=kpoints,
@@ -102,10 +141,13 @@ class EPhAccessor:
             coupling_matrix=coupling_matrix,
             coupling_strength=coupling_strength,
             metadata={
+                "source": "deeptb.eph.compute_coupling",
                 "displacement": displacement,
                 "use_scc": use_scc,
                 "frequency_unit": "THz",
                 "epc_prefac_amu_thz": EPC_PREFAC_AMU_THZ,
+                "derivative_provider": derivative_provider_name,
+                "phonon_metadata": phonons.metadata,
             },
         )
         if output_npz is not None:
@@ -113,10 +155,10 @@ class EPhAccessor:
         return result
 
     def _block_phase_kwargs(self, phonons: Phonons, h_derivatives_k: np.ndarray) -> Dict[str, Any]:
-        if not hasattr(self._system, "atom_orbs"):
+        try:
+            orbital_slices = orbital_slices_from_system(self._system)
+        except RuntimeError:
             return {}
-
-        orbital_slices = orbital_slices_from_atom_orbs(self._system.atom_orbs)
         if len(orbital_slices) != len(phonons.masses):
             return {}
 
@@ -133,6 +175,86 @@ class EPhAccessor:
             "orbital_slices": orbital_slices,
             "derivative_mode": "row" if h_derivatives_k.ndim == 4 else "full",
         }
+
+
+def _unpack_derivative_payload(payload, name: str):
+    if not isinstance(payload, tuple) or len(payload) != 2:
+        raise ValueError(f"{name} must return a (h_derivatives, overlap_derivatives) tuple.")
+    return payload
+
+
+def _unpack_eigenstate_payload(payload, name: str):
+    if not isinstance(payload, (tuple, list)) or len(payload) != 3:
+        raise ValueError(f"{name} must return a (metadata, eigenvalues, eigenvectors) tuple.")
+    return payload
+
+
+def _validate_eigenstate_arrays(
+    eigenvalues,
+    eigenvectors,
+    expected_kpoints: int,
+    name: str,
+    reference_norb: Optional[int] = None,
+    reference_nbands: Optional[int] = None,
+):
+    eigenvalues = strip_batch(as_array(eigenvalues, dtype=float))
+    eigenvectors = strip_batch(as_array(eigenvectors, dtype=complex))
+    if eigenvalues.ndim != 2:
+        raise ValueError(f"{name} must return eigenvalues with shape (nk, nbands).")
+    if eigenvectors.ndim != 3:
+        raise ValueError(f"{name} must return eigenvectors with shape (nk, norb, nbands).")
+    if eigenvalues.shape[0] != expected_kpoints:
+        raise ValueError(f"{name} returned eigenvalues with an inconsistent k-point count.")
+    if eigenvectors.shape[0] != expected_kpoints:
+        raise ValueError(f"{name} returned eigenvectors with an inconsistent k-point count.")
+    if eigenvalues.shape[1] == 0:
+        raise ValueError(f"{name} must return at least one electronic band.")
+    if eigenvectors.shape[1] == 0:
+        raise ValueError(f"{name} must return at least one orbital.")
+    if eigenvectors.shape[2] != eigenvalues.shape[1]:
+        raise ValueError(f"{name} eigenvectors and eigenvalues must have the same band count.")
+    if reference_norb is not None and eigenvectors.shape[1] != reference_norb:
+        raise ValueError(f"{name} returned eigenvectors with an inconsistent orbital count.")
+    if reference_nbands is not None and eigenvalues.shape[1] != reference_nbands:
+        raise ValueError(f"{name} returned eigenvalues with an inconsistent band count.")
+    if not np.all(np.isfinite(eigenvalues)):
+        raise ValueError(f"{name} eigenvalues must contain finite values.")
+    if not np.all(np.isfinite(eigenvectors)):
+        raise ValueError(f"{name} eigenvectors must contain finite values.")
+    return eigenvalues, eigenvectors
+
+
+def _validate_derivative_payload(
+    h_derivatives,
+    overlap_derivatives,
+    expected_kpoints: int,
+    name: str,
+    reference_trailing_shape=None,
+):
+    h_derivatives = as_array(h_derivatives, dtype=complex)
+    if h_derivatives.ndim not in {4, 5}:
+        raise ValueError(f"{name} must return h_derivatives with shape (nk, 3, norb, norb) or (nk, natoms, 3, norb, norb).")
+    if h_derivatives.shape[0] != expected_kpoints:
+        raise ValueError(f"{name} returned h_derivatives with an inconsistent k-point count.")
+    if reference_trailing_shape is not None and h_derivatives.shape[1:] != tuple(reference_trailing_shape):
+        raise ValueError(f"{name} returned h_derivatives with an inconsistent derivative shape.")
+    if h_derivatives.ndim == 4 and h_derivatives.shape[1] != 3:
+        raise ValueError(f"{name} row h_derivatives must have Cartesian axis size 3.")
+    if h_derivatives.ndim == 5 and h_derivatives.shape[2] != 3:
+        raise ValueError(f"{name} full h_derivatives must have Cartesian axis size 3.")
+    if h_derivatives.shape[-1] != h_derivatives.shape[-2]:
+        raise ValueError(f"{name} h_derivatives must contain square orbital matrices.")
+    if not np.all(np.isfinite(h_derivatives)):
+        raise ValueError(f"{name} h_derivatives must contain finite values.")
+
+    if overlap_derivatives is None:
+        return h_derivatives, None
+    overlap_derivatives = as_array(overlap_derivatives, dtype=complex)
+    if overlap_derivatives.shape != h_derivatives.shape:
+        raise ValueError(f"{name} overlap_derivatives must have the same shape as h_derivatives.")
+    if not np.all(np.isfinite(overlap_derivatives)):
+        raise ValueError(f"{name} overlap_derivatives must contain finite values.")
+    return h_derivatives, overlap_derivatives
 
 
 __all__ = [

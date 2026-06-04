@@ -31,6 +31,14 @@ Correctness depends on tensor semantics, orbital indexing, physical invariants, 
 
 **Overlap** is optional but must remain consistent with the Hamiltonian path when enabled. Tests should cover overlap behavior when a change touches shared matrix construction logic.
 
+## EPC Concepts
+
+**External phonon mode data** is the required phonon-side input for DeePTB electron-phonon coupling: q-points, phonon frequencies, phonon eigenvectors, and atomic masses, with cell and scaled positions when phase conventions need them. DeePTB reads and validates these mode data; it does not generate force constants or compute phonon modes.
+_Avoid_: phonon calculation, force-constant calculation, DeePTB phonon solver
+
+**EPC orbital mapping** is the relationship between atoms, basis functions, and orbital matrix rows/columns used by electron-phonon coupling. It follows DeePTB's OrbitalMapper authority; benchmark convention adapters may translate signs or labels for comparison, but they do not define the production mapping.
+_Avoid_: atom-orb string parsing as the source of truth, benchmark gauge as production mapping
+
 ## Model Types
 
 Model type is determined from `model_options`.
@@ -54,4 +62,3 @@ When reviewing a PR, focus first on:
 - Config schema, defaults, docs, and examples staying aligned.
 - Checkpoint and dataset backward compatibility.
 - Tests that cover changed scientific behavior, not just import success.
-

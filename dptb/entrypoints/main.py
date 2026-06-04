@@ -17,6 +17,7 @@ from dptb.entrypoints.collectskf import skf2pth, skf2nnsk
 from dptb.entrypoints.emp_sk import to_empsk
 from dptb.entrypoints.export import export
 from dptb.entrypoints.pdso import pdso
+from dptb.entrypoints.eph import eph
 
 from dptb import __version__
 
@@ -494,6 +495,191 @@ def main_parser() -> argparse.ArgumentParser:
         help="Target format: wannier90 (default) or pythtb."
     )
 
+    # electron-phonon coupling parser
+    parser_eph = subparsers.add_parser(
+        "eph",
+        parents=[parser_log],
+        help="Calculate electron-phonon coupling from external phonon-mode data.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    parser_eph.add_argument(
+        "--task",
+        choices=["coupling", "linewidth", "relaxation-time", "relaxation", "transport", "subspace"],
+        default="coupling",
+        help="EPC workflow task. coupling computes EPCData; other tasks postprocess NPZ data.",
+    )
+
+    parser_eph.add_argument(
+        "-i",
+        "--init-model",
+        dest="init_model",
+        type=str,
+        default=None,
+        help="Path to DeePTB model checkpoint.",
+    )
+
+    parser_eph.add_argument(
+        "-stu",
+        "--structure",
+        type=str,
+        default=None,
+        help="Structure file for the electronic system.",
+    )
+
+    parser_eph.add_argument(
+        "-ph",
+        "--phonons",
+        type=str,
+        default=None,
+        help="DeePTB phonon-mode NPZ file.",
+    )
+
+    parser_eph.add_argument(
+        "-k",
+        "--kpoints",
+        type=str,
+        default=None,
+        help="Electronic k-points file. Supports JSON, NPY, NPZ with 'kpoints', or text.",
+    )
+
+    parser_eph.add_argument(
+        "-b",
+        "--bands",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Band indices to keep. Defaults to all bands.",
+    )
+
+    parser_eph.add_argument(
+        "-d",
+        "--displacement",
+        type=float,
+        default=1e-3,
+        help="Finite-difference displacement in Angstrom.",
+    )
+
+    parser_eph.add_argument(
+        "--use-scc",
+        action="store_true",
+        help="Request SCC-corrected EPC. Unsupported in v1 and raises NotImplementedError.",
+    )
+
+    parser_eph.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default=None,
+        help=(
+            "Output NPZ path. Defaults by task: epc_data.npz, linewidth.npz, "
+            "relaxation_time.npz, transport.npz, or subspace_coupling.npz."
+        ),
+    )
+
+    parser_eph.add_argument(
+        "--epc-data",
+        type=str,
+        default=None,
+        help="Input EPCData NPZ for linewidth, transport, or subspace postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--linewidth-data",
+        type=str,
+        default=None,
+        help="Input LinewidthData NPZ for relaxation-time or transport postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--final-groups",
+        nargs="+",
+        default=None,
+        help="Final-band subspace ranges for subspace task, formatted as start:stop.",
+    )
+
+    parser_eph.add_argument(
+        "--initial-groups",
+        nargs="+",
+        default=None,
+        help="Initial-band subspace ranges for subspace task. Defaults to final groups.",
+    )
+
+    parser_eph.add_argument(
+        "--chemical-potential",
+        type=float,
+        default=None,
+        help="Chemical potential in eV for linewidth or transport postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Temperature as kBT in eV for linewidth or transport postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--sigma",
+        type=float,
+        default=None,
+        help="Energy broadening in eV for linewidth postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--broadening",
+        choices=["gaussian", "lorentzian"],
+        default="gaussian",
+        help="Energy-conservation broadening for linewidth postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--mode-resolved",
+        action="store_true",
+        help="Write mode-resolved linewidth arrays.",
+    )
+
+    parser_eph.add_argument(
+        "--sum-modes",
+        action="store_true",
+        help="Sum the final mode axis before relaxation-time postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--frequency-floor",
+        type=float,
+        default=1e-5,
+        help="Minimum phonon frequency in THz used by linewidth postprocess to regularize acoustic zero modes.",
+    )
+
+    parser_eph.add_argument(
+        "--kpoint-weights",
+        type=str,
+        default=None,
+        help="Optional k-point weights file for transport. Supports JSON, NPY, NPZ with 'kpoint_weights', or text.",
+    )
+
+    parser_eph.add_argument(
+        "--spin-degeneracy",
+        type=int,
+        default=1,
+        help="Spin degeneracy for transport postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--volume",
+        type=float,
+        default=1.0,
+        help="Cell or normalization volume for transport postprocess.",
+    )
+
+    parser_eph.add_argument(
+        "--velocity-delta",
+        type=float,
+        default=1e-4,
+        help="Central finite-difference step in fractional reciprocal coordinates for transport velocity.",
+    )
+
     # pdso parser (Julia/Pardiso Backend)
     parser_pdso = subparsers.add_parser(
         "pdso",
@@ -623,6 +809,9 @@ def main():
 
     elif args.command == 'export':
         export(**dict_args)
+
+    elif args.command == 'eph':
+        eph(**dict_args)
 
     elif args.command == 'pdso':
         pdso(**dict_args)
