@@ -42,7 +42,7 @@
 - Still needs hardening before merge/release:
   - a minimal in-repo synthetic EPC fixture now covers default linewidth, coupling-contraction, coupling-summary, and scattering-map reference testing; broader FD fixtures still need release hardening。
   - opt-in full Graphene reference kept outside git for development and benchmark。
-  - current public API export smoke coverage exists for the new EPC data objects/helpers, but any new public symbol added after this point must extend that smoke test immediately。
+  - current public API export smoke coverage now asserts every symbol in `dptb.postprocess.unified.eph.__all__` is re-exported from `dptb.postprocess.unified`, so new public symbols must be added to the EPC namespace intentionally。
   - docs index now links the v1 workflow and SCC design docs; CLI task examples and chunk-executor public symbol docs now have drift checks, while remaining CLI examples still need a final parser/API drift pass before merge。
   - unit metadata, single-point/scan transport and mobility unit metadata, linewidth/relaxation mesh/path unit metadata, temperature convention, reciprocal-cell convention, and mobility persistent unit-string validation now have focused regression coverage; keep a final physical-convention review before release。
   - artifact metadata validation now covers weights metadata JSON, weights shape/finite/non-negative/positive-sum checks, missing chunk/weights files, fixed-vs-recomputed linewidth scan convention guards, missing required array diagnostics for persistent EPC NPZ loaders, representative metadata JSON scalar/object validation, representative object-array rejection under pickle-free loading, CLI array-loader missing-field diagnostics, summary-loader metadata/schema rejection, and strict `EPCMeshSpec` chunk-size type validation; continue strict NPZ loader audit for remaining edge cases。
@@ -260,7 +260,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - 当前已新增最小 synthetic EPC fixture，用于默认 linewidth、coupling-contraction、coupling-summary 和 scattering-map reference regression。
 - 保留完整 Graphene reference 作为 opt-in benchmark，不进入 git 追踪。
 - 梳理 `docs/epc_v1_workflow.md`，确保所有 CLI 示例和 NPZ schema 与当前实现一致。
-- 当前 public API import smoke tests 已覆盖主要 EPC data objects、analysis helpers、transport/mobility helpers、velocity helper 和 chunked artifact helpers；新增 public API 时必须同步更新。
+- 当前 public API import smoke tests 已覆盖主要 EPC data objects、analysis helpers、transport/mobility helpers、velocity helper 和 chunked artifact helpers，并且会自动检查 `dptb.postprocess.unified.eph.__all__` 是否完整 re-export 到 `dptb.postprocess.unified`；新增 public API 时必须先进入 EPC namespace。
 - 继续检查所有 EPC NPZ loader 是否拒绝 pickle/object arrays、空数组、非有限值、非 scalar/object `metadata_json`、schema metadata conflict 和缺失 required arrays。
 - 统一 error message 风格：输入 shape、单位、SCC unsupported、phonon boundary 等错误需要可诊断。
 - docs index 已加入 EPC v1 workflow 和 SCC design 入口；`CONTEXT.md` 是否需要 EPC domain summary 仍可在 release review 时决定。

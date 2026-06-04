@@ -11,6 +11,7 @@ from scipy import linalg
 from scipy import constants as scipy_constants
 
 import dptb.postprocess.unified.eph.providers as eph_providers
+import dptb.postprocess.unified.eph as eph_public
 from dptb.postprocess.unified.eph.providers import _length_unit_scale_to_angstrom
 from dptb.postprocess import unified as unified_postprocess
 from dptb.entrypoints.eph import (
@@ -170,6 +171,10 @@ def test_epc_public_constants_are_centralized():
 
 
 def test_unified_postprocess_exports_epc_v1_symbols():
+    for name in eph_public.__all__:
+        assert hasattr(unified_postprocess, name), f"dptb.postprocess.unified must re-export {name}"
+        assert getattr(unified_postprocess, name) is getattr(eph_public, name)
+
     assert unified_postprocess.DFTBPlusGauge is DFTBPlusGauge
     assert unified_postprocess.EPCData is EPCData
     assert unified_postprocess.EPCMeshData is EPCMeshData
