@@ -1194,6 +1194,29 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata(tmp_path):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
 
+@pytest.mark.parametrize(
+    ("metadata_json", "match"),
+    [
+        (np.array(["{}", "{}"]), "scalar JSON object"),
+        (np.array("{not-json"), "valid JSON"),
+        (np.array("[]"), "JSON object"),
+    ],
+)
+def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata_json(metadata_json, match, tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="k", chunk_size=1)
+    np.savez_compressed(
+        artifact_dir / "weights.npz",
+        el_kpoint_weights=mesh_data.kpoint_weights,
+        ph_qpoint_weights=mesh_data.qpoint_weights,
+        metadata_json=metadata_json,
+    )
+
+    with pytest.raises(ValueError, match=match):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
 def test_epc_mesh_chunked_artifact_rejects_bad_weights_schema_version(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
     artifact_dir = tmp_path / "artifact"
