@@ -1,13 +1,15 @@
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 
+from dptb.kpoints.mesh import kmesh_sampling, time_symmetry_reduce
 from dptb.postprocess.unified.eph.utils import (
     as_array,
     normalize_integer_indices,
+    validate_finite_positive_scalar,
     normalize_kpoints,
     reshape_phonopy_eigenvectors,
 )
@@ -15,6 +17,8 @@ from dptb.postprocess.unified.eph.utils import (
 
 PHONON_NPZ_SCHEMA_VERSION = 1
 EPC_NPZ_SCHEMA_VERSION = 1
+EPC_PATH_NPZ_SCHEMA_VERSION = 1
+EPC_MESH_NPZ_SCHEMA_VERSION = 1
 
 
 @dataclass
@@ -265,6 +269,375 @@ class EPCData:
             )
 
 
+@dataclass
+class EPCMeshSpec:
+    """DeePTB-native EPC mesh specification.
+
+    Phonon modes are still read externally through ``Phonons``. ``q_mesh`` is
+    only a validation/metadata aid; it does not generate phonons inside DeePTB.
+    """
+
+    kpoints: Optional[np.ndarray] = None
+    k_mesh: Optional[Sequence[int]] = None
+    q_mesh: Optional[Sequence[int]] = None
+    gamma_centered: bool = True
+    time_reversal: bool = False
+    kpoint_weights: Optional[np.ndarray] = None
+    qpoint_weights: Optional[np.ndarray] = None
+    chunk_size: Optional[int] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.kpoints is None and self.k_mesh is None:
+            raise ValueError("EPCMeshSpec requires either kpoints or k_mesh.")
+        if self.kpoints is not None and self.k_mesh is not None:
+            raise ValueError("EPCMeshSpec accepts either kpoints or k_mesh, not both.")
+        self.gamma_centered = _validate_bool(self.gamma_centered, "gamma_centered")
+        self.time_reversal = _validate_bool(self.time_reversal, "time_reversal")
+        if self.kpoints is not None:
+            self.kpoints = normalize_kpoints(self.kpoints)
+        if self.k_mesh is not None:
+            self.k_mesh = _normalize_mesh(self.k_mesh, "k_mesh")
+        if self.q_mesh is not None:
+            self.q_mesh = _normalize_mesh(self.q_mesh, "q_mesh")
+        if self.kpoint_weights is not None:
+            self.kpoint_weights = _normalize_weights(self.kpoint_weights, "kpoint_weights")
+        if self.qpoint_weights is not None:
+            self.qpoint_weights = _normalize_weights(self.qpoint_weights, "qpoint_weights")
+        if self.chunk_size is not None:
+            self.chunk_size = int(validate_finite_positive_scalar(self.chunk_size, "chunk_size"))
+
+    def resolve_kpoints_and_weights(self) -> tuple:
+        if self.kpoints is not None:
+            kpoints = self.kpoints
+            weights = self.kpoint_weights
+            if weights is None:
+                weights = np.full(kpoints.shape[0], 1.0 / kpoints.shape[0], dtype=float)
+            elif weights.shape != (kpoints.shape[0],):
+                raise ValueError("kpoint_weights must match the explicit kpoints count.")
+            return kpoints, _normalize_weights(weights, "kpoint_weights")
+
+        if self.time_reversal:
+            kpoints, weights = time_symmetry_reduce(self.k_mesh, is_gamma_center=self.gamma_centered)
+        else:
+            kpoints = kmesh_sampling(self.k_mesh, is_gamma_center=self.gamma_centered)
+            weights = np.full(kpoints.shape[0], 1.0 / kpoints.shape[0], dtype=float)
+        if self.kpoint_weights is not None:
+            if self.kpoint_weights.shape != (kpoints.shape[0],):
+                raise ValueError("kpoint_weights must match the generated k mesh point count.")
+            weights = self.kpoint_weights
+        return normalize_kpoints(kpoints), _normalize_weights(weights, "kpoint_weights")
+
+    def resolve_qpoint_weights(self, phonons: Phonons) -> np.ndarray:
+        if self.q_mesh is not None:
+            generated = kmesh_sampling(self.q_mesh, is_gamma_center=self.gamma_centered)
+            if generated.shape != phonons.qpoints.shape or not np.allclose(generated, phonons.qpoints):
+                raise ValueError("q_mesh must generate qpoints matching the external Phonons qpoints.")
+        if self.qpoint_weights is None:
+            weights = np.full(phonons.qpoints.shape[0], 1.0 / phonons.qpoints.shape[0], dtype=float)
+        else:
+            weights = self.qpoint_weights
+            if weights.shape != (phonons.qpoints.shape[0],):
+                raise ValueError("qpoint_weights must match the external Phonons qpoint count.")
+        return _normalize_weights(weights, "qpoint_weights")
+
+    def metadata_payload(self) -> Dict[str, Any]:
+        payload = dict(self.metadata)
+        payload.update(
+            {
+                "k_mesh": self.k_mesh,
+                "q_mesh": self.q_mesh,
+                "gamma_centered": self.gamma_centered,
+                "time_reversal": self.time_reversal,
+                "chunk_size": self.chunk_size,
+            }
+        )
+        return payload
+
+
+@dataclass
+class EPCMeshData:
+    """Electron-phonon coupling data on a DeePTB-native k/q mesh."""
+
+    kpoints: np.ndarray
+    qpoints: np.ndarray
+    band_indices: np.ndarray
+    frequencies: np.ndarray
+    eigenvalues_k: np.ndarray
+    eigenvalues_kq: np.ndarray
+    coupling_matrix: np.ndarray
+    coupling_strength: np.ndarray
+    kpoint_weights: np.ndarray
+    qpoint_weights: np.ndarray
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_mesh_data",
+                "schema_version": EPC_MESH_NPZ_SCHEMA_VERSION,
+                "frequency_unit": "THz",
+                "energy_unit": "eV",
+                "coupling_unit": "eV",
+                "coupling_strength_unit": "eV^2",
+            },
+            self.metadata,
+        )
+        self._epc_data = EPCData(
+            kpoints=self.kpoints,
+            qpoints=self.qpoints,
+            band_indices=self.band_indices,
+            frequencies=self.frequencies,
+            eigenvalues_k=self.eigenvalues_k,
+            eigenvalues_kq=self.eigenvalues_kq,
+            coupling_matrix=self.coupling_matrix,
+            coupling_strength=self.coupling_strength,
+            metadata={
+                key: value
+                for key, value in self.metadata.items()
+                if key not in {"schema", "schema_version"}
+            },
+        )
+        self.kpoint_weights = _normalize_weights(self.kpoint_weights, "kpoint_weights")
+        self.qpoint_weights = _normalize_weights(self.qpoint_weights, "qpoint_weights")
+        if self.kpoint_weights.shape != (self.kpoints.shape[0],):
+            raise ValueError("kpoint_weights must match kpoints.")
+        if self.qpoint_weights.shape != (self.qpoints.shape[0],):
+            raise ValueError("qpoint_weights must match qpoints.")
+
+    @property
+    def epc_data(self) -> EPCData:
+        return self._epc_data
+
+    @classmethod
+    def from_epc_data(
+        cls,
+        epc_data: EPCData,
+        kpoint_weights: np.ndarray,
+        qpoint_weights: np.ndarray,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> "EPCMeshData":
+        mesh_metadata = {
+            key: value
+            for key, value in epc_data.metadata.items()
+            if key not in {"schema", "schema_version"}
+        }
+        if metadata:
+            mesh_metadata.update(metadata)
+        return cls(
+            kpoints=epc_data.kpoints,
+            qpoints=epc_data.qpoints,
+            band_indices=epc_data.band_indices,
+            frequencies=epc_data.frequencies,
+            eigenvalues_k=epc_data.eigenvalues_k,
+            eigenvalues_kq=epc_data.eigenvalues_kq,
+            coupling_matrix=epc_data.coupling_matrix,
+            coupling_strength=epc_data.coupling_strength,
+            kpoint_weights=kpoint_weights,
+            qpoint_weights=qpoint_weights,
+            metadata=mesh_metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        np.savez_compressed(
+            path,
+            ph_qpoints=self.qpoints,
+            ph_frequencies=self.frequencies,
+            ph_qpoint_weights=self.qpoint_weights,
+            el_kpoints=self.kpoints,
+            el_kpoint_weights=self.kpoint_weights,
+            el_band_indices=self.band_indices,
+            el_eigenvalues_k=self.eigenvalues_k,
+            el_eigenvalues_kq=self.eigenvalues_kq,
+            elph_coupling_matrix=self.coupling_matrix,
+            elph_coupling_strength=self.coupling_strength,
+            metadata_json=np.array(_metadata_to_json(self.metadata)),
+        )
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "EPCMeshData":
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            return cls(
+                kpoints=data["el_kpoints"],
+                qpoints=data["ph_qpoints"],
+                band_indices=data["el_band_indices"],
+                frequencies=data["ph_frequencies"],
+                eigenvalues_k=data["el_eigenvalues_k"],
+                eigenvalues_kq=data["el_eigenvalues_kq"],
+                coupling_matrix=data["elph_coupling_matrix"],
+                coupling_strength=data["elph_coupling_strength"],
+                kpoint_weights=data["el_kpoint_weights"],
+                qpoint_weights=data["ph_qpoint_weights"],
+                metadata=metadata,
+            )
+
+
+@dataclass
+class EPCPathData:
+    """Electron-phonon coupling data on a DeePTB-native path workflow."""
+
+    kpoints: np.ndarray
+    qpoints: np.ndarray
+    band_indices: np.ndarray
+    frequencies: np.ndarray
+    eigenvalues_k: np.ndarray
+    eigenvalues_kq: np.ndarray
+    coupling_matrix: np.ndarray
+    coupling_strength: np.ndarray
+    path_axis: str
+    path_coordinates: np.ndarray
+    path_segments: Optional[np.ndarray] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.path_axis = _normalize_path_axis(self.path_axis)
+        self.path_coordinates = as_array(self.path_coordinates, dtype=float)
+        if self.path_coordinates.ndim != 1 or self.path_coordinates.size == 0:
+            raise ValueError("path_coordinates must be a one-dimensional non-empty array.")
+        if not np.all(np.isfinite(self.path_coordinates)):
+            raise ValueError("path_coordinates must be finite.")
+
+        if self.path_segments is not None:
+            self.path_segments = as_array(self.path_segments)
+            if (
+                self.path_segments.ndim != 2
+                or self.path_segments.shape[1] != 2
+                or np.issubdtype(self.path_segments.dtype, np.bool_)
+                or not np.issubdtype(self.path_segments.dtype, np.integer)
+            ):
+                raise ValueError("path_segments must have shape (nsegments, 2).")
+            self.path_segments = self.path_segments.astype(int, copy=False)
+            if np.any(self.path_segments < 0):
+                raise ValueError("path_segments must be non-negative.")
+
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_path_data",
+                "schema_version": EPC_PATH_NPZ_SCHEMA_VERSION,
+                "frequency_unit": "THz",
+                "energy_unit": "eV",
+                "coupling_unit": "eV",
+                "coupling_strength_unit": "eV^2",
+                "path_coordinate_unit": "fractional_reciprocal_coordinate_distance",
+            },
+            self.metadata,
+        )
+
+        self._epc_data = EPCData(
+            kpoints=self.kpoints,
+            qpoints=self.qpoints,
+            band_indices=self.band_indices,
+            frequencies=self.frequencies,
+            eigenvalues_k=self.eigenvalues_k,
+            eigenvalues_kq=self.eigenvalues_kq,
+            coupling_matrix=self.coupling_matrix,
+            coupling_strength=self.coupling_strength,
+            metadata={
+                key: value
+                for key, value in self.metadata.items()
+                if key not in {"schema", "schema_version", "path_coordinate_unit"}
+            },
+        )
+
+        npath = self.qpoints.shape[0] if self.path_axis == "q" else self.kpoints.shape[0]
+        if self.path_coordinates.shape[0] != npath:
+            raise ValueError(f"path_coordinates length must match the {self.path_axis}-path point count.")
+        if self.path_segments is not None:
+            if np.any(self.path_segments[:, 1] <= self.path_segments[:, 0]):
+                raise ValueError("path_segments must contain increasing (start, stop) ranges.")
+            if np.any(self.path_segments > npath):
+                raise ValueError("path_segments must stay within the path point count.")
+
+    @property
+    def epc_data(self) -> EPCData:
+        return self._epc_data
+
+    @classmethod
+    def from_epc_data(
+        cls,
+        epc_data: EPCData,
+        path_axis: str,
+        path_coordinates: np.ndarray,
+        path_segments: Optional[np.ndarray] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> "EPCPathData":
+        path_metadata = {
+            key: value
+            for key, value in epc_data.metadata.items()
+            if key not in {"schema", "schema_version"}
+        }
+        if metadata:
+            path_metadata.update(metadata)
+        return cls(
+            kpoints=epc_data.kpoints,
+            qpoints=epc_data.qpoints,
+            band_indices=epc_data.band_indices,
+            frequencies=epc_data.frequencies,
+            eigenvalues_k=epc_data.eigenvalues_k,
+            eigenvalues_kq=epc_data.eigenvalues_kq,
+            coupling_matrix=epc_data.coupling_matrix,
+            coupling_strength=epc_data.coupling_strength,
+            path_axis=path_axis,
+            path_coordinates=path_coordinates,
+            path_segments=path_segments,
+            metadata=path_metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        payload = {
+            "ph_qpoints": self.qpoints,
+            "ph_frequencies": self.frequencies,
+            "el_kpoints": self.kpoints,
+            "el_band_indices": self.band_indices,
+            "el_eigenvalues_k": self.eigenvalues_k,
+            "el_eigenvalues_kq": self.eigenvalues_kq,
+            "elph_coupling_matrix": self.coupling_matrix,
+            "elph_coupling_strength": self.coupling_strength,
+            "path_axis": np.array(self.path_axis),
+            "path_coordinates": self.path_coordinates,
+            "metadata_json": np.array(_metadata_to_json(self.metadata)),
+        }
+        if self.path_segments is not None:
+            payload["path_segments"] = self.path_segments
+        np.savez_compressed(path, **payload)
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "EPCPathData":
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            if "path_axis" not in data:
+                raise ValueError("path_axis is required for DeePTB EPC path NPZ files.")
+            path_axis = data["path_axis"]
+            if np.shape(path_axis) != ():
+                raise ValueError("path_axis must be a scalar string.")
+            if hasattr(path_axis, "item"):
+                path_axis = path_axis.item()
+            return cls(
+                kpoints=data["el_kpoints"],
+                qpoints=data["ph_qpoints"],
+                band_indices=data["el_band_indices"],
+                frequencies=data["ph_frequencies"],
+                eigenvalues_k=data["el_eigenvalues_k"],
+                eigenvalues_kq=data["el_eigenvalues_kq"],
+                coupling_matrix=data["elph_coupling_matrix"],
+                coupling_strength=data["elph_coupling_strength"],
+                path_axis=str(path_axis),
+                path_coordinates=data["path_coordinates"],
+                path_segments=data["path_segments"] if "path_segments" in data else None,
+                metadata=metadata,
+            )
+
+
+def cumulative_path_coordinates(points: np.ndarray) -> np.ndarray:
+    """Return cumulative distances along fractional reciprocal coordinates."""
+    points = normalize_kpoints(points)
+    coordinate = np.zeros(points.shape[0], dtype=float)
+    if points.shape[0] > 1:
+        coordinate[1:] = np.cumsum(np.linalg.norm(np.diff(points, axis=0), axis=1))
+    return coordinate
+
+
 def _metadata_to_json(metadata: Dict[str, Any]) -> str:
     return json.dumps(metadata, default=_json_default)
 
@@ -294,6 +667,47 @@ def _merge_metadata(defaults: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[
     merged = dict(metadata)
     merged.update(defaults)
     return merged
+
+
+def _normalize_path_axis(path_axis: str) -> str:
+    if not isinstance(path_axis, str):
+        raise ValueError("path_axis must be 'q' or 'k'.")
+    normalized = path_axis.lower()
+    if normalized not in {"q", "k"}:
+        raise ValueError("path_axis must be 'q' or 'k'.")
+    return normalized
+
+
+def _validate_bool(value, name: str) -> bool:
+    if not isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{name} must be a boolean.")
+    return bool(value)
+
+
+def _normalize_mesh(mesh: Sequence[int], name: str) -> list:
+    arr = as_array(mesh)
+    if arr.ndim != 1 or arr.shape[0] != 3:
+        raise ValueError(f"{name} must contain 3 positive integers.")
+    if np.issubdtype(arr.dtype, np.bool_) or not np.issubdtype(arr.dtype, np.number):
+        raise ValueError(f"{name} must contain 3 positive integers.")
+    if not np.all(np.isfinite(arr)) or not np.all(np.equal(arr, arr.astype(int))):
+        raise ValueError(f"{name} must contain 3 positive integers.")
+    arr = arr.astype(int)
+    if np.any(arr <= 0):
+        raise ValueError(f"{name} must contain 3 positive integers.")
+    return arr.tolist()
+
+
+def _normalize_weights(weights: np.ndarray, name: str) -> np.ndarray:
+    weights = np.asarray(weights, dtype=float)
+    if weights.ndim != 1 or weights.size == 0:
+        raise ValueError(f"{name} must be a one-dimensional non-empty array.")
+    if not np.all(np.isfinite(weights)) or np.any(weights < 0.0):
+        raise ValueError(f"{name} must contain finite non-negative values.")
+    total = weights.sum()
+    if total <= 0.0:
+        raise ValueError(f"{name} must have a positive sum.")
+    return weights / total
 
 
 def _json_default(value):

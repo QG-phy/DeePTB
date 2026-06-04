@@ -8,13 +8,24 @@ import numpy as np
 from dptb.postprocess.unified import TBSystem
 from dptb.postprocess.unified.eph import (
     EPCData,
+    EPCMeshData,
+    EPCMeshSpec,
+    EPCPathData,
     LinewidthData,
+    LinewidthMeshData,
+    LinewidthPathData,
     Phonons,
     RelaxationTimeData,
+    RelaxationTimeMeshData,
+    RelaxationTimePathData,
     SubspaceCouplingData,
     TransportData,
     compute_linewidth,
+    compute_linewidth_mesh,
+    compute_linewidth_path,
     compute_relaxation_time,
+    compute_relaxation_time_mesh,
+    compute_relaxation_time_path,
     compute_serta_transport_from_epc,
     compute_subspace_coupling_data,
 )
@@ -45,17 +56,36 @@ def eph(
     spin_degeneracy: int = 1,
     volume: float = 1.0,
     velocity_delta: float = 1e-4,
+    k_mesh: Optional[Sequence[int]] = None,
+    q_mesh: Optional[Sequence[int]] = None,
+    chunk_size: Optional[int] = None,
+    time_reversal: bool = False,
     bands: Optional[Sequence[int]] = None,
     displacement: float = 1e-3,
     use_scc: bool = False,
     system=None,
     derivative_provider=None,
     **kwargs,
-) -> Union[EPCData, LinewidthData, RelaxationTimeData, TransportData, SubspaceCouplingData]:
+) -> Union[
+    EPCData,
+    EPCMeshData,
+    EPCPathData,
+    LinewidthData,
+    LinewidthMeshData,
+    LinewidthPathData,
+    RelaxationTimeData,
+    RelaxationTimeMeshData,
+    RelaxationTimePathData,
+    TransportData,
+    SubspaceCouplingData,
+]:
     """Run an electron-phonon workflow task."""
     if not isinstance(task, str):
         raise ValueError(
-            "task must be one of 'coupling', 'linewidth', 'relaxation-time', 'relaxation', 'transport', or 'subspace'."
+            "task must be one of 'coupling', 'path-coupling', 'mesh-coupling', 'linewidth', "
+            "'path-linewidth', 'mesh-linewidth', 'relaxation-time', 'relaxation', "
+            "'path-relaxation-time', 'path-relaxation', 'mesh-relaxation-time', "
+            "'mesh-relaxation', 'transport', or 'subspace'."
         )
     task = task.lower()
     if use_scc:
@@ -73,6 +103,36 @@ def eph(
             system=system,
             derivative_provider=derivative_provider,
         )
+    if task == "path-coupling":
+        return eph_path_coupling(
+            structure=structure,
+            init_model=init_model,
+            phonons=phonons,
+            kpoints=kpoints,
+            output=output or "epc_path_data.npz",
+            bands=bands,
+            displacement=displacement,
+            use_scc=use_scc,
+            system=system,
+            derivative_provider=derivative_provider,
+        )
+    if task == "mesh-coupling":
+        return eph_mesh_coupling(
+            structure=structure,
+            init_model=init_model,
+            phonons=phonons,
+            kpoints=kpoints,
+            k_mesh=k_mesh,
+            q_mesh=q_mesh,
+            chunk_size=chunk_size,
+            time_reversal=time_reversal,
+            output=output or "epc_mesh_data.npz",
+            bands=bands,
+            displacement=displacement,
+            use_scc=use_scc,
+            system=system,
+            derivative_provider=derivative_provider,
+        )
     if task == "linewidth":
         return eph_linewidth(
             epc_data=epc_data,
@@ -84,10 +144,44 @@ def eph(
             mode_resolved=mode_resolved,
             frequency_floor=frequency_floor,
         )
+    if task == "path-linewidth":
+        return eph_path_linewidth(
+            epc_data=epc_data,
+            output=output or "path_linewidth.npz",
+            chemical_potential=chemical_potential,
+            temperature=temperature,
+            sigma=sigma,
+            broadening=broadening,
+            mode_resolved=mode_resolved,
+            frequency_floor=frequency_floor,
+        )
+    if task == "mesh-linewidth":
+        return eph_mesh_linewidth(
+            epc_data=epc_data,
+            output=output or "mesh_linewidth.npz",
+            chemical_potential=chemical_potential,
+            temperature=temperature,
+            sigma=sigma,
+            broadening=broadening,
+            mode_resolved=mode_resolved,
+            frequency_floor=frequency_floor,
+        )
     if task in {"relaxation-time", "relaxation"}:
         return eph_relaxation_time(
             linewidth_data=linewidth_data,
             output=output or "relaxation_time.npz",
+            sum_modes=sum_modes,
+        )
+    if task in {"path-relaxation-time", "path-relaxation"}:
+        return eph_path_relaxation_time(
+            linewidth_data=linewidth_data,
+            output=output or "path_relaxation_time.npz",
+            sum_modes=sum_modes,
+        )
+    if task in {"mesh-relaxation-time", "mesh-relaxation"}:
+        return eph_mesh_relaxation_time(
+            linewidth_data=linewidth_data,
+            output=output or "mesh_relaxation_time.npz",
             sum_modes=sum_modes,
         )
     if task == "transport":
@@ -114,7 +208,10 @@ def eph(
             initial_groups=initial_groups,
         )
     raise ValueError(
-        "task must be one of 'coupling', 'linewidth', 'relaxation-time', 'relaxation', 'transport', or 'subspace'."
+        "task must be one of 'coupling', 'path-coupling', 'mesh-coupling', 'linewidth', "
+        "'path-linewidth', 'mesh-linewidth', 'relaxation-time', 'relaxation', "
+        "'path-relaxation-time', 'path-relaxation', 'mesh-relaxation-time', "
+        "'mesh-relaxation', 'transport', or 'subspace'."
     )
 
 
@@ -163,6 +260,107 @@ def eph_coupling(
     return result
 
 
+def eph_path_coupling(
+    structure: Optional[str],
+    init_model: Optional[str],
+    phonons: str,
+    kpoints: str,
+    output: str,
+    bands: Optional[Sequence[int]] = None,
+    displacement: float = 1e-3,
+    use_scc: bool = False,
+    system=None,
+    derivative_provider=None,
+) -> EPCPathData:
+    """Calculate fixed-k plus q-path electron-phonon coupling data."""
+    if use_scc:
+        _reject_scc_v1("path-coupling")
+
+    if phonons is None:
+        raise ValueError("phonons is required for dptb eph --task path-coupling.")
+    if kpoints is None:
+        raise ValueError("kpoints is required for dptb eph --task path-coupling.")
+    if system is None:
+        if structure is None:
+            raise ValueError("structure is required for dptb eph --task path-coupling.")
+        if init_model is None:
+            raise ValueError("init_model is required for dptb eph --task path-coupling.")
+        system = TBSystem(data=structure, calculator=init_model)
+
+    phonon_data = Phonons.load_npz(phonons)
+    kpoint_array = _load_kpoints(kpoints)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    result = system.eph.compute_path(
+        kpoints=kpoint_array,
+        phonons=phonon_data,
+        bands=bands,
+        displacement=displacement,
+        use_scc=use_scc,
+        derivative_provider=derivative_provider,
+        output_npz=output_path,
+    )
+    log.info("Electron-phonon path coupling data written to %s", output_path)
+    return result
+
+
+def eph_mesh_coupling(
+    structure: Optional[str],
+    init_model: Optional[str],
+    phonons: str,
+    kpoints: Optional[str],
+    k_mesh: Optional[Sequence[int]],
+    q_mesh: Optional[Sequence[int]],
+    chunk_size: Optional[int],
+    time_reversal: bool,
+    output: str,
+    bands: Optional[Sequence[int]] = None,
+    displacement: float = 1e-3,
+    use_scc: bool = False,
+    system=None,
+    derivative_provider=None,
+) -> EPCMeshData:
+    """Calculate serial full-mesh electron-phonon coupling data."""
+    if use_scc:
+        _reject_scc_v1("mesh-coupling")
+
+    if phonons is None:
+        raise ValueError("phonons is required for dptb eph --task mesh-coupling.")
+    if kpoints is None and k_mesh is None:
+        raise ValueError("kpoints or k_mesh is required for dptb eph --task mesh-coupling.")
+    if system is None:
+        if structure is None:
+            raise ValueError("structure is required for dptb eph --task mesh-coupling.")
+        if init_model is None:
+            raise ValueError("init_model is required for dptb eph --task mesh-coupling.")
+        system = TBSystem(data=structure, calculator=init_model)
+
+    phonon_data = Phonons.load_npz(phonons)
+    explicit_kpoints = _load_kpoints(kpoints) if kpoints is not None else None
+    mesh_spec = EPCMeshSpec(
+        kpoints=explicit_kpoints,
+        k_mesh=k_mesh,
+        q_mesh=q_mesh,
+        chunk_size=chunk_size,
+        time_reversal=time_reversal,
+    )
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    result = system.eph.compute_mesh(
+        mesh_spec=mesh_spec,
+        phonons=phonon_data,
+        bands=bands,
+        displacement=displacement,
+        use_scc=use_scc,
+        derivative_provider=derivative_provider,
+        output_npz=output_path,
+    )
+    log.info("Electron-phonon mesh coupling data written to %s", output_path)
+    return result
+
+
 def eph_linewidth(
     epc_data: str,
     output: str,
@@ -200,6 +398,78 @@ def eph_linewidth(
     return result
 
 
+def eph_path_linewidth(
+    epc_data: str,
+    output: str,
+    chemical_potential: float,
+    temperature: float,
+    sigma: float,
+    broadening: str = "gaussian",
+    mode_resolved: bool = False,
+    frequency_floor: float = 1e-5,
+) -> LinewidthPathData:
+    """Calculate path-resolved linewidth data from an EPCPathData NPZ file."""
+    if epc_data is None:
+        raise ValueError("epc_data is required for dptb eph --task path-linewidth.")
+    if chemical_potential is None:
+        raise ValueError("chemical_potential is required for dptb eph --task path-linewidth.")
+    if temperature is None:
+        raise ValueError("temperature is required for dptb eph --task path-linewidth.")
+    if sigma is None:
+        raise ValueError("sigma is required for dptb eph --task path-linewidth.")
+
+    result = compute_linewidth_path(
+        EPCPathData.load_npz(epc_data),
+        chemical_potential=chemical_potential,
+        temperature=temperature,
+        sigma=sigma,
+        broadening=broadening,
+        mode_resolved=mode_resolved,
+        frequency_floor=frequency_floor,
+    )
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.save_npz(output_path)
+    log.info("Electron-phonon path linewidth data written to %s", output_path)
+    return result
+
+
+def eph_mesh_linewidth(
+    epc_data: str,
+    output: str,
+    chemical_potential: float,
+    temperature: float,
+    sigma: float,
+    broadening: str = "gaussian",
+    mode_resolved: bool = False,
+    frequency_floor: float = 1e-5,
+) -> LinewidthMeshData:
+    """Calculate mesh linewidth data from an EPCMeshData NPZ file."""
+    if epc_data is None:
+        raise ValueError("epc_data is required for dptb eph --task mesh-linewidth.")
+    if chemical_potential is None:
+        raise ValueError("chemical_potential is required for dptb eph --task mesh-linewidth.")
+    if temperature is None:
+        raise ValueError("temperature is required for dptb eph --task mesh-linewidth.")
+    if sigma is None:
+        raise ValueError("sigma is required for dptb eph --task mesh-linewidth.")
+
+    result = compute_linewidth_mesh(
+        EPCMeshData.load_npz(epc_data),
+        chemical_potential=chemical_potential,
+        temperature=temperature,
+        sigma=sigma,
+        broadening=broadening,
+        mode_resolved=mode_resolved,
+        frequency_floor=frequency_floor,
+    )
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.save_npz(output_path)
+    log.info("Electron-phonon mesh linewidth data written to %s", output_path)
+    return result
+
+
 def eph_relaxation_time(
     linewidth_data: str,
     output: str,
@@ -214,6 +484,40 @@ def eph_relaxation_time(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     result.save_npz(output_path)
     log.info("Electron-phonon relaxation-time data written to %s", output_path)
+    return result
+
+
+def eph_path_relaxation_time(
+    linewidth_data: str,
+    output: str,
+    sum_modes: bool = False,
+) -> RelaxationTimePathData:
+    """Calculate path-resolved relaxation-time data from a LinewidthPathData NPZ file."""
+    if linewidth_data is None:
+        raise ValueError("linewidth_data is required for dptb eph --task path-relaxation-time.")
+
+    result = compute_relaxation_time_path(LinewidthPathData.load_npz(linewidth_data), sum_modes=sum_modes)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.save_npz(output_path)
+    log.info("Electron-phonon path relaxation-time data written to %s", output_path)
+    return result
+
+
+def eph_mesh_relaxation_time(
+    linewidth_data: str,
+    output: str,
+    sum_modes: bool = False,
+) -> RelaxationTimeMeshData:
+    """Calculate mesh relaxation-time data from a LinewidthMeshData NPZ file."""
+    if linewidth_data is None:
+        raise ValueError("linewidth_data is required for dptb eph --task mesh-relaxation-time.")
+
+    result = compute_relaxation_time_mesh(LinewidthMeshData.load_npz(linewidth_data), sum_modes=sum_modes)
+    output_path = Path(output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.save_npz(output_path)
+    log.info("Electron-phonon mesh relaxation-time data written to %s", output_path)
     return result
 
 

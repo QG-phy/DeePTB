@@ -505,9 +505,24 @@ def main_parser() -> argparse.ArgumentParser:
 
     parser_eph.add_argument(
         "--task",
-        choices=["coupling", "linewidth", "relaxation-time", "relaxation", "transport", "subspace"],
+        choices=[
+            "coupling",
+            "path-coupling",
+            "mesh-coupling",
+            "linewidth",
+            "path-linewidth",
+            "mesh-linewidth",
+            "relaxation-time",
+            "relaxation",
+            "path-relaxation-time",
+            "path-relaxation",
+            "mesh-relaxation-time",
+            "mesh-relaxation",
+            "transport",
+            "subspace",
+        ],
         default="coupling",
-        help="EPC workflow task. coupling computes EPCData; other tasks postprocess NPZ data.",
+        help="EPC workflow task. path-* tasks preserve EPC path metadata; mesh-coupling uses DeePTB k-mesh helpers.",
     )
 
     parser_eph.add_argument(
@@ -572,9 +587,40 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help=(
-            "Output NPZ path. Defaults by task: epc_data.npz, linewidth.npz, "
-            "relaxation_time.npz, transport.npz, or subspace_coupling.npz."
+            "Output NPZ path. Defaults by task: epc_data.npz, epc_path_data.npz, "
+            "epc_mesh_data.npz, linewidth.npz, path_linewidth.npz, mesh_linewidth.npz, "
+            "relaxation_time.npz, path_relaxation_time.npz, mesh_relaxation_time.npz, "
+            "transport.npz, or subspace_coupling.npz."
         ),
+    )
+
+    parser_eph.add_argument(
+        "--k-mesh",
+        nargs=3,
+        type=int,
+        default=None,
+        help="Generate electronic k-points from a Gamma-centered mesh for mesh-coupling.",
+    )
+
+    parser_eph.add_argument(
+        "--q-mesh",
+        nargs=3,
+        type=int,
+        default=None,
+        help="Optional q-mesh used only to validate external phonon q-points for mesh-coupling.",
+    )
+
+    parser_eph.add_argument(
+        "--time-reversal",
+        action="store_true",
+        help="Use time-reversal reduction for generated k-mesh points in mesh-coupling.",
+    )
+
+    parser_eph.add_argument(
+        "--chunk-size",
+        type=int,
+        default=None,
+        help="Optional k-point chunk size for serial mesh-coupling execution.",
     )
 
     parser_eph.add_argument(

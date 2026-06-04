@@ -11,13 +11,18 @@ benchmark inputs only, not the public DeePTB output contract.
 
 Python users can import the v1 EPC APIs from either
 `dptb.postprocess.unified.eph` or `dptb.postprocess.unified`. Public v1 symbols
-include `Phonons`, `EPCData`, `LinewidthData`, `RelaxationTimeData`,
+include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
+`LinewidthData`, `LinewidthPathData`, `LinewidthMeshData`,
+`RelaxationTimeData`, `RelaxationTimePathData`, `RelaxationTimeMeshData`,
 `TransportData`, `SubspaceCouplingData`, `compute_coupling_matrix`,
-`compute_linewidth`, `compute_relaxation_time`, `compute_serta_conductivity`,
+`compute_linewidth`, `compute_linewidth_path`, `compute_linewidth_mesh`,
+`compute_relaxation_time`, `compute_relaxation_time_path`,
+`compute_relaxation_time_mesh`, `compute_serta_conductivity`,
 `compute_band_velocities_finite_difference`, `compute_serta_transport_from_epc`,
 `find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
 `compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
-benchmark-only `DFTBPlusGauge` adapter.
+benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
+`dptb.utils.constants` and re-exported from the EPC namespace.
 
 ### Phonons NPZ
 
@@ -71,12 +76,45 @@ K-points, q-points, eigenvalues, and coupling matrices must be finite.
 Frequencies and coupling strengths must be finite and non-negative. Band
 indices must be a one-dimensional non-empty array of non-negative integers.
 
+### EPCPathData NPZ
+
+Use `EPCPathData.save_npz()` / `EPCPathData.load_npz()`.
+
+`EPCPathData` stores the same EPC arrays as `EPCData`, plus path metadata:
+
+- `path_axis`: currently `"q"` for fixed electronic k-points plus q-path.
+- `path_coordinates`: cumulative distance in fractional reciprocal
+  coordinates.
+- optional `path_segments`: shape `(nsegments, 2)`, `[start, stop)` ranges.
+- path labels, when used from Python, are stored in `metadata_json`.
+
+The current path workflow supports fixed electronic k-points plus an external
+q-path. `path_axis="k"` and full k-path + fixed-q workflows are future work.
+
+### EPCMeshData NPZ
+
+Use `EPCMeshData.save_npz()` / `EPCMeshData.load_npz()`.
+
+`EPCMeshData` stores the same EPC arrays as `EPCData`, plus mesh weights:
+
+- `el_kpoint_weights`: normalized k-point weights, shape `(nk,)`.
+- `ph_qpoint_weights`: normalized q-point weights, shape `(nq,)`.
+
+`EPCMeshSpec` can generate electronic k-points from DeePTB's existing k-point
+mesh helpers, or accept explicit k-points. The phonon side remains external:
+`q_mesh` is only used to validate that the supplied `Phonons.qpoints` match the
+expected mesh. DeePTB does not generate phonons for mesh workflows.
+
 ### Postprocess NPZ
 
 Use the matching save/load APIs:
 
 - `LinewidthData.save_npz()` / `LinewidthData.load_npz()`.
+- `LinewidthPathData.save_npz()` / `LinewidthPathData.load_npz()`.
+- `LinewidthMeshData.save_npz()` / `LinewidthMeshData.load_npz()`.
 - `RelaxationTimeData.save_npz()` / `RelaxationTimeData.load_npz()`.
+- `RelaxationTimePathData.save_npz()` / `RelaxationTimePathData.load_npz()`.
+- `RelaxationTimeMeshData.save_npz()` / `RelaxationTimeMeshData.load_npz()`.
 - `TransportData.save_npz()` / `TransportData.load_npz()`.
 - `SubspaceCouplingData.save_npz()` / `SubspaceCouplingData.load_npz()`.
 
@@ -88,6 +126,24 @@ axis first with `--sum-modes`.
 `LinewidthData` stores linewidth, absorption, and emission arrays with shape
 `(nk, nbands)` or mode-resolved shape `(nk, nbands, nmodes)`.
 `RelaxationTimeData` uses the same 2D or 3D shape convention.
+
+Path postprocess data preserves the path axis:
+
+- `LinewidthPathData`: `(npath, nk, nbands)` or
+  `(npath, nk, nbands, nmodes)`.
+- `RelaxationTimePathData`: same path shape convention.
+
+Path linewidth is stored as per-path-point contribution. Summing the q-path
+axis reproduces the total linewidth for the same EPC path data.
+
+Mesh postprocess data preserves k-point metadata:
+
+- `LinewidthMeshData`: `(nk, nbands)` or `(nk, nbands, nmodes)`, plus
+  `el_kpoints`, `el_kpoint_weights`, and `el_band_indices`.
+- `RelaxationTimeMeshData`: same mesh shape convention.
+
+Mesh linewidth uses normalized q-point weights in the q summation. Uniform
+q-point weights reproduce the current total linewidth convention.
 
 `SubspaceCouplingData` persists contiguous band groups as `[start, stop)`
 ranges. Non-contiguous groups are available only through the Python helper
@@ -125,6 +181,45 @@ Supported k-point file formats:
 Loaded k-points are validated immediately by the CLI: the array must have shape
 `(nk, 3)`, be non-empty, and contain only finite values.
 
+### Path Coupling
+
+```bash
+dptb eph \
+  --task path-coupling \
+  -i model.pth \
+  -stu structure.vasp \
+  -ph phonons_qpath.npz \
+  -k fixed_kpoints.json \
+  -b 0 1 \
+  -o epc_path_data.npz
+```
+
+`--task path-coupling` writes an `EPCPathData` NPZ for fixed electronic
+k-points plus an external q-path. Path coordinates are generated from the
+external q-points in fractional reciprocal coordinates.
+
+### Mesh Coupling
+
+```bash
+dptb eph \
+  --task mesh-coupling \
+  -i model.pth \
+  -stu structure.vasp \
+  -ph phonons_mesh.npz \
+  --k-mesh 4 4 1 \
+  --q-mesh 4 4 1 \
+  --time-reversal \
+  --chunk-size 16 \
+  -b 0 1 \
+  -o epc_mesh_data.npz
+```
+
+`--task mesh-coupling` writes an `EPCMeshData` NPZ. `--k-mesh` generates
+electronic k-points with DeePTB's existing k-point mesh helpers. `--q-mesh`
+only validates the external phonon q-points in `phonons_mesh.npz`; it does not
+calculate phonons. `--chunk-size` enables serial k-point chunk execution and
+then concatenates chunks deterministically into one `EPCMeshData` output.
+
 ### Linewidth
 
 ```bash
@@ -142,6 +237,38 @@ dptb eph \
 Temperature is expressed as `kBT` in eV. `--frequency-floor` is in THz and is
 used to regularize acoustic zero modes in the Bose occupation.
 
+### Path Linewidth
+
+```bash
+dptb eph \
+  --task path-linewidth \
+  --epc-data epc_path_data.npz \
+  --chemical-potential 0.15 \
+  --temperature 0.025 \
+  --sigma 0.01 \
+  --broadening gaussian \
+  -o path_linewidth.npz
+```
+
+This task reads `EPCPathData` and writes `LinewidthPathData`. It preserves the
+q-path axis instead of reducing it.
+
+### Mesh Linewidth
+
+```bash
+dptb eph \
+  --task mesh-linewidth \
+  --epc-data epc_mesh_data.npz \
+  --chemical-potential 0.15 \
+  --temperature 0.025 \
+  --sigma 0.01 \
+  --broadening gaussian \
+  -o mesh_linewidth.npz
+```
+
+This task reads `EPCMeshData` and writes `LinewidthMeshData`, preserving
+electronic k-points and k-point weights.
+
 ### Relaxation Time
 
 ```bash
@@ -155,6 +282,30 @@ dptb eph \
 `--task relaxation-time` reads a `LinewidthData` NPZ and writes a
 `RelaxationTimeData` NPZ. Use `--sum-modes` when the linewidth input is
 mode-resolved and transport should use a total linewidth per k-point and band.
+
+### Path Relaxation Time
+
+```bash
+dptb eph \
+  --task path-relaxation-time \
+  --linewidth-data path_linewidth.npz \
+  --sum-modes \
+  -o path_relaxation_time.npz
+```
+
+This task reads `LinewidthPathData` and writes `RelaxationTimePathData`.
+
+### Mesh Relaxation Time
+
+```bash
+dptb eph \
+  --task mesh-relaxation-time \
+  --linewidth-data mesh_linewidth.npz \
+  --sum-modes \
+  -o mesh_relaxation_time.npz
+```
+
+This task reads `LinewidthMeshData` and writes `RelaxationTimeMeshData`.
 
 ### Transport
 
@@ -208,6 +359,11 @@ band subspaces. Groups use `start:stop` ranges and are stored in the NPZ as
 
 - SCC-corrected EPC is not supported. `use_scc=True` raises
   `NotImplementedError`.
+- Path workflows currently support fixed electronic k-points plus q-path only.
+  k-path plus fixed-q is not implemented.
+- Mesh workflows currently use serial in-memory execution. K-point chunking is
+  available for `mesh-coupling`, but chunked artifacts, multiprocessing, MPI,
+  and CUDA backends are future work.
 - SOC/spinful EPC is not implemented.
 - Polar correction is not implemented.
 - Full degenerate-band gauge fixing and k/q-path continuous gauge tracking are

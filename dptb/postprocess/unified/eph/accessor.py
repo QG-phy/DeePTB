@@ -5,7 +5,15 @@ import numpy as np
 
 from dptb.postprocess.unified.eph.benchmark import DFTBPlusGauge
 from dptb.postprocess.unified.eph.contraction import EPC_PREFAC_AMU_THZ, compute_coupling_matrix
-from dptb.postprocess.unified.eph.data import EPCData, Phonons
+from dptb.postprocess.unified.eph.data import (
+    EPCData,
+    EPCMeshData,
+    EPCMeshSpec,
+    EPCPathData,
+    Phonons,
+    cumulative_path_coordinates,
+)
+from dptb.postprocess.unified.eph.executor import build_k_chunk_specs, concat_epc_k_chunks
 from dptb.postprocess.unified.eph.providers import (
     FDProvider,
     SupercellFD,
@@ -154,6 +162,129 @@ class EPhAccessor:
             result.save_npz(output_npz)
         return result
 
+    def compute_path(
+        self,
+        kpoints: np.ndarray,
+        phonons: Phonons,
+        bands: Optional[Sequence[int]] = None,
+        displacement: float = 1e-3,
+        use_scc: bool = False,
+        output_npz: Optional[Union[str, Path]] = None,
+        derivative_provider: Optional[FDProvider] = None,
+        path_axis: str = "q",
+        path_coordinates: Optional[np.ndarray] = None,
+        path_segments: Optional[np.ndarray] = None,
+        path_labels: Optional[Dict[str, int]] = None,
+    ) -> EPCPathData:
+        """Compute EPC data for a path workflow.
+
+        The current path workflow supports the first DeePTB-native slice:
+        fixed or explicit electronic k-points combined with an external q-path
+        from ``phonons``. The output is an ``EPCPathData`` NPZ contract rather
+        than a dftbephy HDF5/JSON layout.
+        """
+        if path_axis != "q":
+            raise NotImplementedError("EPC path workflow currently supports path_axis='q' only.")
+        epc_data = self.compute_coupling(
+            kpoints=kpoints,
+            phonons=phonons,
+            bands=bands,
+            displacement=displacement,
+            use_scc=use_scc,
+            derivative_provider=derivative_provider,
+        )
+        if path_coordinates is None:
+            path_coordinates = cumulative_path_coordinates(phonons.qpoints)
+
+        metadata = {
+            "source": "deeptb.eph.compute_path",
+            "path_mode": "fixed_k_q_path",
+            "base_epc_metadata": epc_data.metadata,
+        }
+        if path_labels is not None:
+            metadata["path_labels"] = _validate_path_labels(path_labels, len(path_coordinates))
+
+        result = EPCPathData.from_epc_data(
+            epc_data,
+            path_axis="q",
+            path_coordinates=path_coordinates,
+            path_segments=path_segments,
+            metadata=metadata,
+        )
+        if output_npz is not None:
+            result.save_npz(output_npz)
+        return result
+
+    def compute_mesh(
+        self,
+        mesh_spec: EPCMeshSpec,
+        phonons: Phonons,
+        bands: Optional[Sequence[int]] = None,
+        displacement: float = 1e-3,
+        use_scc: bool = False,
+        output_npz: Optional[Union[str, Path]] = None,
+        derivative_provider: Optional[FDProvider] = None,
+    ) -> EPCMeshData:
+        """Compute EPC data on a DeePTB-native k/q mesh.
+
+        This first mesh slice is a serial in-memory reference implementation.
+        ``mesh_spec.chunk_size`` drives deterministic k-point chunk specs that
+        can be reused by future multiprocessing/MPI executors.
+        """
+        if not isinstance(mesh_spec, EPCMeshSpec):
+            raise ValueError("mesh_spec must be an EPCMeshSpec instance.")
+        kpoints, kpoint_weights = mesh_spec.resolve_kpoints_and_weights()
+        qpoint_weights = mesh_spec.resolve_qpoint_weights(phonons)
+        chunk_specs = build_k_chunk_specs(kpoints.shape[0], mesh_spec.chunk_size)
+        if len(chunk_specs) == 1:
+            epc_data = self.compute_coupling(
+                kpoints=kpoints,
+                phonons=phonons,
+                bands=bands,
+                displacement=displacement,
+                use_scc=use_scc,
+                derivative_provider=derivative_provider,
+            )
+            chunked = False
+            execution = "serial_full_mesh"
+            chunk_metadata = []
+        else:
+            chunked = True
+            execution = "serial_k_chunked"
+            chunk_metadata = []
+            epc_chunks = []
+            for spec in chunk_specs:
+                chunk_kpoints = kpoints[spec.slice]
+                epc_chunks.append(
+                    self.compute_coupling(
+                        kpoints=chunk_kpoints,
+                        phonons=phonons,
+                        bands=bands,
+                        displacement=displacement,
+                        use_scc=use_scc,
+                        derivative_provider=derivative_provider,
+                    )
+                )
+                chunk_metadata.append(spec.metadata())
+            epc_data = concat_epc_k_chunks(epc_chunks)
+        result = EPCMeshData.from_epc_data(
+            epc_data,
+            kpoint_weights=kpoint_weights,
+            qpoint_weights=qpoint_weights,
+            metadata={
+                "source": "deeptb.eph.compute_mesh",
+                "base_epc_metadata": epc_data.metadata,
+                "mesh_spec": mesh_spec.metadata_payload(),
+                "execution": execution,
+                "chunked": chunked,
+                "chunk_axis": "k" if chunked else None,
+                "chunks": chunk_metadata,
+            },
+        )
+        if output_npz is not None:
+            result.save_npz(output_npz)
+        return result
+
     def _block_phase_kwargs(self, phonons: Phonons, h_derivatives_k: np.ndarray) -> Dict[str, Any]:
         try:
             orbital_slices = orbital_slices_from_system(self._system)
@@ -257,9 +388,28 @@ def _validate_derivative_payload(
     return h_derivatives, overlap_derivatives
 
 
+def _validate_path_labels(path_labels: Dict[str, int], npath: int) -> Dict[str, int]:
+    if not isinstance(path_labels, dict):
+        raise ValueError("path_labels must be a mapping from label string to path index.")
+    normalized = {}
+    for label, index in path_labels.items():
+        if not isinstance(label, str) or not label:
+            raise ValueError("path_labels keys must be non-empty strings.")
+        if isinstance(index, bool) or not isinstance(index, (int, np.integer)):
+            raise ValueError("path_labels values must be integer path indices.")
+        index = int(index)
+        if index < 0 or index >= npath:
+            raise ValueError("path_labels values must stay within the path point count.")
+        normalized[label] = index
+    return normalized
+
+
 __all__ = [
     "DFTBPlusGauge",
     "EPCData",
+    "EPCMeshData",
+    "EPCMeshSpec",
+    "EPCPathData",
     "EPhAccessor",
     "FDProvider",
     "EPC_PREFAC_AMU_THZ",

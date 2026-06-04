@@ -1,5 +1,6 @@
 import numpy as np
 import ase
+from scipy import constants as scipy_constants
 from scipy.constants import Boltzmann, pi, elementary_charge, hbar
 import torch
 
@@ -23,6 +24,16 @@ dtype_dict = {"float32": torch.float32, "float64": torch.float64}
 Coulomb = 6.24150974e18 # in the unit of eV*Angstrom
 eV2J = 1.6021766208e-19 # in the unit of J
 kB_eV_per_K = Boltzmann / eV2J # Boltzmann constant in eV/K
+
+# Electron-phonon unit conversion constants.
+THZ_TO_EV = scipy_constants.h * scipy_constants.tera / scipy_constants.e
+HBAR_EV_S = scipy_constants.hbar / scipy_constants.e
+EPC_PREFAC_AMU_THZ = (
+    scipy_constants.hbar
+    / scipy_constants.physical_constants["atomic mass constant"][0]
+    / scipy_constants.tera
+    / scipy_constants.angstrom**2
+)
 
 
 # bond integral index in DFTB sk files. specific.
@@ -131,4 +142,3 @@ PYSCF2DeePTB = {
             4: np.eye(9),
             5: np.eye(11)
         }
-

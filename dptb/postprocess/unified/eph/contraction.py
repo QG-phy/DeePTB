@@ -1,7 +1,6 @@
 from typing import Optional, Sequence, Tuple
 
 import numpy as np
-from scipy import constants as scipy_constants
 
 from dptb.postprocess.unified.eph.utils import (
     as_array,
@@ -10,18 +9,7 @@ from dptb.postprocess.unified.eph.utils import (
     normalize_orbital_slices,
     validate_finite_positive_scalar,
 )
-
-
-# The phonon-mode coupling uses sqrt(hbar / (2 M omega)) to convert Cartesian
-# derivatives into normal-mode derivatives. With masses in amu, frequencies in
-# THz and derivatives in eV/Angstrom, the unit factor is
-# hbar / (amu * THz * Angstrom^2).
-EPC_PREFAC_AMU_THZ = (
-    scipy_constants.hbar
-    / scipy_constants.physical_constants["atomic mass constant"][0]
-    / scipy_constants.tera
-    / scipy_constants.angstrom**2
-)
+from dptb.utils.constants import EPC_PREFAC_AMU_THZ
 
 
 def compute_coupling_matrix(

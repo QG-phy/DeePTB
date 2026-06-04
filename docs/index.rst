@@ -58,6 +58,7 @@ For more details, see our papers:
    advanced/e3tb/index
    advanced/elec_properties/index
    advanced/interface/index
+   epc_v1_workflow
 
 .. toctree::
    :maxdepth: 2

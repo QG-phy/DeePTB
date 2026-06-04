@@ -4,9 +4,16 @@ from typing import Any, Dict, Optional, Sequence
 from typing import Union
 
 import numpy as np
-from scipy import constants as scipy_constants
 
-from dptb.postprocess.unified.eph.data import EPCData, _merge_metadata, _metadata_from_npz, _metadata_to_json
+from dptb.postprocess.unified.eph.data import (
+    EPCData,
+    EPCMeshData,
+    EPCPathData,
+    _merge_metadata,
+    _metadata_from_npz,
+    _metadata_to_json,
+)
+from dptb.utils.constants import HBAR_EV_S, THZ_TO_EV
 from dptb.postprocess.unified.eph.utils import (
     as_array,
     validate_finite_nonnegative_scalar,
@@ -18,10 +25,12 @@ from dptb.postprocess.unified.eph.utils import (
 )
 
 
-THZ_TO_EV = scipy_constants.h * scipy_constants.tera / scipy_constants.e
-HBAR_EV_S = scipy_constants.hbar / scipy_constants.e
 LINEWIDTH_NPZ_SCHEMA_VERSION = 1
+LINEWIDTH_MESH_NPZ_SCHEMA_VERSION = 1
+LINEWIDTH_PATH_NPZ_SCHEMA_VERSION = 1
 RELAXATION_TIME_NPZ_SCHEMA_VERSION = 1
+RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION = 1
+RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION = 1
 TRANSPORT_NPZ_SCHEMA_VERSION = 1
 SUBSPACE_COUPLING_NPZ_SCHEMA_VERSION = 1
 
@@ -90,6 +99,170 @@ class LinewidthData:
 
 
 @dataclass
+class LinewidthMeshData:
+    """Mesh linewidths from DeePTB-native EPC mesh data."""
+
+    linewidth: np.ndarray
+    absorption: np.ndarray
+    emission: np.ndarray
+    kpoints: np.ndarray
+    kpoint_weights: np.ndarray
+    band_indices: np.ndarray
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.linewidth = np.asarray(self.linewidth, dtype=float)
+        self.absorption = np.asarray(self.absorption, dtype=float)
+        self.emission = np.asarray(self.emission, dtype=float)
+        self.kpoints = normalize_kpoints(self.kpoints)
+        self.kpoint_weights = _normalize_weights(self.kpoint_weights, "kpoint_weights")
+        self.band_indices = normalize_integer_indices(self.band_indices, "band_indices")
+        if self.absorption.shape != self.linewidth.shape:
+            raise ValueError("absorption must have the same shape as linewidth.")
+        if self.emission.shape != self.linewidth.shape:
+            raise ValueError("emission must have the same shape as linewidth.")
+        if self.linewidth.size == 0:
+            raise ValueError("linewidth must be non-empty.")
+        if self.linewidth.ndim not in {2, 3}:
+            raise ValueError("linewidth must have shape (nk, nbands) or (nk, nbands, nmodes).")
+        if self.linewidth.shape[:2] != (self.kpoints.shape[0], self.band_indices.shape[0]):
+            raise ValueError("linewidth leading axes must match kpoints and band_indices.")
+        if self.kpoint_weights.shape != (self.kpoints.shape[0],):
+            raise ValueError("kpoint_weights must match kpoints.")
+        if not np.all(np.isfinite(self.linewidth)):
+            raise ValueError("linewidth must contain finite values.")
+        if not np.all(np.isfinite(self.absorption)) or np.any(self.absorption < 0.0):
+            raise ValueError("absorption must contain finite non-negative values.")
+        if not np.all(np.isfinite(self.emission)) or np.any(self.emission < 0.0):
+            raise ValueError("emission must contain finite non-negative values.")
+        if np.any(self.linewidth < 0.0):
+            raise ValueError("linewidth must contain non-negative values.")
+        if not np.allclose(self.linewidth, self.absorption + self.emission):
+            raise ValueError("linewidth must equal absorption + emission.")
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_mesh_linewidth",
+                "schema_version": LINEWIDTH_MESH_NPZ_SCHEMA_VERSION,
+                "linewidth_unit": "eV",
+            },
+            self.metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        np.savez_compressed(
+            path,
+            elph_mesh_linewidth=self.linewidth,
+            elph_mesh_linewidth_absorption=self.absorption,
+            elph_mesh_linewidth_emission=self.emission,
+            el_kpoints=self.kpoints,
+            el_kpoint_weights=self.kpoint_weights,
+            el_band_indices=self.band_indices,
+            metadata_json=np.array(_metadata_to_json(self.metadata)),
+        )
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "LinewidthMeshData":
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            return cls(
+                linewidth=data["elph_mesh_linewidth"],
+                absorption=data["elph_mesh_linewidth_absorption"],
+                emission=data["elph_mesh_linewidth_emission"],
+                kpoints=data["el_kpoints"],
+                kpoint_weights=data["el_kpoint_weights"],
+                band_indices=data["el_band_indices"],
+                metadata=metadata,
+            )
+
+
+@dataclass
+class LinewidthPathData:
+    """Path-resolved linewidth contributions from EPC path data."""
+
+    linewidth: np.ndarray
+    absorption: np.ndarray
+    emission: np.ndarray
+    path_axis: str
+    path_coordinates: np.ndarray
+    band_indices: np.ndarray
+    path_segments: Optional[np.ndarray] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.linewidth = np.asarray(self.linewidth, dtype=float)
+        self.absorption = np.asarray(self.absorption, dtype=float)
+        self.emission = np.asarray(self.emission, dtype=float)
+        self.path_axis = _normalize_path_axis(self.path_axis)
+        self.path_coordinates = np.asarray(self.path_coordinates, dtype=float)
+        self.band_indices = normalize_integer_indices(self.band_indices, "band_indices")
+        if self.absorption.shape != self.linewidth.shape:
+            raise ValueError("absorption must have the same shape as linewidth.")
+        if self.emission.shape != self.linewidth.shape:
+            raise ValueError("emission must have the same shape as linewidth.")
+        if self.linewidth.size == 0:
+            raise ValueError("linewidth must be non-empty.")
+        if self.linewidth.ndim not in {3, 4}:
+            raise ValueError("linewidth must have shape (npath, nk, nbands) or (npath, nk, nbands, nmodes).")
+        if self.path_coordinates.ndim != 1 or self.path_coordinates.shape[0] != self.linewidth.shape[0]:
+            raise ValueError("path_coordinates length must match the path-resolved linewidth axis.")
+        if self.linewidth.shape[2] != self.band_indices.shape[0]:
+            raise ValueError("band_indices length must match the linewidth band axis.")
+        if not np.all(np.isfinite(self.path_coordinates)):
+            raise ValueError("path_coordinates must be finite.")
+        if not np.all(np.isfinite(self.linewidth)):
+            raise ValueError("linewidth must contain finite values.")
+        if not np.all(np.isfinite(self.absorption)) or np.any(self.absorption < 0.0):
+            raise ValueError("absorption must contain finite non-negative values.")
+        if not np.all(np.isfinite(self.emission)) or np.any(self.emission < 0.0):
+            raise ValueError("emission must contain finite non-negative values.")
+        if np.any(self.linewidth < 0.0):
+            raise ValueError("linewidth must contain non-negative values.")
+        if not np.allclose(self.linewidth, self.absorption + self.emission):
+            raise ValueError("linewidth must equal absorption + emission.")
+        if self.path_segments is not None:
+            self.path_segments = _normalize_path_segments(self.path_segments, self.linewidth.shape[0])
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_path_linewidth",
+                "schema_version": LINEWIDTH_PATH_NPZ_SCHEMA_VERSION,
+                "linewidth_unit": "eV",
+                "path_coordinate_unit": "fractional_reciprocal_coordinate_distance",
+            },
+            self.metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        payload = {
+            "elph_path_linewidth": self.linewidth,
+            "elph_path_linewidth_absorption": self.absorption,
+            "elph_path_linewidth_emission": self.emission,
+            "path_axis": np.array(self.path_axis),
+            "path_coordinates": self.path_coordinates,
+            "el_band_indices": self.band_indices,
+            "metadata_json": np.array(_metadata_to_json(self.metadata)),
+        }
+        if self.path_segments is not None:
+            payload["path_segments"] = self.path_segments
+        np.savez_compressed(path, **payload)
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "LinewidthPathData":
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            path_axis = _scalar_string_from_npz(data, "path_axis")
+            return cls(
+                linewidth=data["elph_path_linewidth"],
+                absorption=data["elph_path_linewidth_absorption"],
+                emission=data["elph_path_linewidth_emission"],
+                path_axis=path_axis,
+                path_coordinates=data["path_coordinates"],
+                band_indices=data["el_band_indices"],
+                path_segments=data["path_segments"] if "path_segments" in data else None,
+                metadata=metadata,
+            )
+
+
+@dataclass
 class RelaxationTimeData:
     """Electron relaxation times derived from electron-phonon linewidths."""
 
@@ -129,6 +302,134 @@ class RelaxationTimeData:
             metadata = _metadata_from_npz(data)
             return cls(
                 relaxation_time=data["elph_relaxation_time"],
+                metadata=metadata,
+            )
+
+
+@dataclass
+class RelaxationTimeMeshData:
+    """Mesh relaxation times derived from mesh linewidth data."""
+
+    relaxation_time: np.ndarray
+    kpoints: np.ndarray
+    kpoint_weights: np.ndarray
+    band_indices: np.ndarray
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.relaxation_time = np.asarray(self.relaxation_time, dtype=float)
+        self.kpoints = normalize_kpoints(self.kpoints)
+        self.kpoint_weights = _normalize_weights(self.kpoint_weights, "kpoint_weights")
+        self.band_indices = normalize_integer_indices(self.band_indices, "band_indices")
+        if self.relaxation_time.size == 0:
+            raise ValueError("relaxation_time must be non-empty.")
+        if self.relaxation_time.ndim not in {2, 3}:
+            raise ValueError("relaxation_time must have shape (nk, nbands) or (nk, nbands, nmodes).")
+        if self.relaxation_time.shape[:2] != (self.kpoints.shape[0], self.band_indices.shape[0]):
+            raise ValueError("relaxation_time leading axes must match kpoints and band_indices.")
+        if self.kpoint_weights.shape != (self.kpoints.shape[0],):
+            raise ValueError("kpoint_weights must match kpoints.")
+        if not np.all(np.isfinite(self.relaxation_time)) or np.any(self.relaxation_time <= 0.0):
+            raise ValueError("relaxation_time must contain finite positive values.")
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_mesh_relaxation_time",
+                "schema_version": RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION,
+                "relaxation_time_unit": "s",
+                "convention": "hbar_over_2linewidth",
+            },
+            self.metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        np.savez_compressed(
+            path,
+            elph_mesh_relaxation_time=self.relaxation_time,
+            el_kpoints=self.kpoints,
+            el_kpoint_weights=self.kpoint_weights,
+            el_band_indices=self.band_indices,
+            metadata_json=np.array(_metadata_to_json(self.metadata)),
+        )
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "RelaxationTimeMeshData":
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            return cls(
+                relaxation_time=data["elph_mesh_relaxation_time"],
+                kpoints=data["el_kpoints"],
+                kpoint_weights=data["el_kpoint_weights"],
+                band_indices=data["el_band_indices"],
+                metadata=metadata,
+            )
+
+
+@dataclass
+class RelaxationTimePathData:
+    """Path-resolved relaxation times derived from path linewidth data."""
+
+    relaxation_time: np.ndarray
+    path_axis: str
+    path_coordinates: np.ndarray
+    band_indices: np.ndarray
+    path_segments: Optional[np.ndarray] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.relaxation_time = np.asarray(self.relaxation_time, dtype=float)
+        self.path_axis = _normalize_path_axis(self.path_axis)
+        self.path_coordinates = np.asarray(self.path_coordinates, dtype=float)
+        self.band_indices = normalize_integer_indices(self.band_indices, "band_indices")
+        if self.relaxation_time.size == 0:
+            raise ValueError("relaxation_time must be non-empty.")
+        if self.relaxation_time.ndim not in {3, 4}:
+            raise ValueError(
+                "relaxation_time must have shape (npath, nk, nbands) or (npath, nk, nbands, nmodes)."
+            )
+        if self.path_coordinates.ndim != 1 or self.path_coordinates.shape[0] != self.relaxation_time.shape[0]:
+            raise ValueError("path_coordinates length must match the path-resolved relaxation_time axis.")
+        if self.relaxation_time.shape[2] != self.band_indices.shape[0]:
+            raise ValueError("band_indices length must match the relaxation_time band axis.")
+        if not np.all(np.isfinite(self.path_coordinates)):
+            raise ValueError("path_coordinates must be finite.")
+        if not np.all(np.isfinite(self.relaxation_time)) or np.any(self.relaxation_time <= 0.0):
+            raise ValueError("relaxation_time must contain finite positive values.")
+        if self.path_segments is not None:
+            self.path_segments = _normalize_path_segments(self.path_segments, self.relaxation_time.shape[0])
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_path_relaxation_time",
+                "schema_version": RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION,
+                "relaxation_time_unit": "s",
+                "convention": "hbar_over_2linewidth",
+                "path_coordinate_unit": "fractional_reciprocal_coordinate_distance",
+            },
+            self.metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        payload = {
+            "elph_path_relaxation_time": self.relaxation_time,
+            "path_axis": np.array(self.path_axis),
+            "path_coordinates": self.path_coordinates,
+            "el_band_indices": self.band_indices,
+            "metadata_json": np.array(_metadata_to_json(self.metadata)),
+        }
+        if self.path_segments is not None:
+            payload["path_segments"] = self.path_segments
+        np.savez_compressed(path, **payload)
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "RelaxationTimePathData":
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            path_axis = _scalar_string_from_npz(data, "path_axis")
+            return cls(
+                relaxation_time=data["elph_path_relaxation_time"],
+                path_axis=path_axis,
+                path_coordinates=data["path_coordinates"],
+                band_indices=data["el_band_indices"],
+                path_segments=data["path_segments"] if "path_segments" in data else None,
                 metadata=metadata,
             )
 
@@ -336,6 +637,214 @@ def compute_linewidth(
     )
 
 
+def compute_linewidth_mesh(
+    epc_mesh_data: EPCMeshData,
+    chemical_potential: float,
+    temperature: float,
+    sigma: float,
+    broadening: str = "gaussian",
+    mode_resolved: bool = False,
+    frequency_floor: float = 1e-5,
+) -> LinewidthMeshData:
+    """Compute linewidths from ``EPCMeshData`` while preserving mesh metadata."""
+    chemical_potential = validate_finite_scalar(chemical_potential, "chemical_potential")
+    temperature = validate_finite_positive_scalar(temperature, "temperature")
+    sigma = validate_finite_positive_scalar(sigma, "sigma")
+    frequency_floor = validate_finite_positive_scalar(frequency_floor, "frequency_floor")
+    mode_resolved = _validate_bool(mode_resolved, "mode_resolved")
+    if np.any(epc_mesh_data.frequencies < 0.0):
+        raise ValueError("frequencies must be non-negative for linewidth postprocess.")
+
+    if not isinstance(broadening, str):
+        raise ValueError("broadening must be either 'gaussian' or 'lorentzian'.")
+    broadening = broadening.lower()
+    if broadening not in {"gaussian", "lorentzian"}:
+        raise ValueError("broadening must be either 'gaussian' or 'lorentzian'.")
+
+    frequencies_ev = np.maximum(epc_mesh_data.frequencies, frequency_floor) * THZ_TO_EV
+    qpoint_weights = _normalize_weights(epc_mesh_data.qpoint_weights, "qpoint_weights")
+    nq, nk, nmodes, nsel, _ = epc_mesh_data.coupling_strength.shape
+    shape = (nk, nsel, nmodes) if mode_resolved else (nk, nsel)
+    absorption = np.zeros(shape, dtype=float)
+    emission = np.zeros(shape, dtype=float)
+
+    for ik in range(nk):
+        for initial_band in range(nsel):
+            eps_initial = epc_mesh_data.eigenvalues_k[ik, initial_band]
+            for iq in range(nq):
+                q_weight = qpoint_weights[iq]
+                for mode in range(nmodes):
+                    omega = frequencies_ev[iq, mode]
+                    bose_occupation = _bose(omega / temperature)
+                    for final_band in range(nsel):
+                        eps_final = epc_mesh_data.eigenvalues_kq[iq, ik, final_band]
+                        strength = epc_mesh_data.coupling_strength[iq, ik, mode, final_band, initial_band]
+                        absorption_weight = _broadening(
+                            eps_initial + omega - eps_final,
+                            sigma,
+                            broadening,
+                        )
+                        emission_weight = _broadening(
+                            eps_initial - omega - eps_final,
+                            sigma,
+                            broadening,
+                        )
+                        absorption_term = q_weight * strength * (
+                            bose_occupation + _fermi((eps_final - chemical_potential) / temperature)
+                        ) * absorption_weight
+                        emission_term = q_weight * strength * (
+                            bose_occupation
+                            + 1.0
+                            - _fermi((eps_final - chemical_potential) / temperature)
+                        ) * emission_weight
+
+                        if mode_resolved:
+                            absorption[ik, initial_band, mode] += absorption_term
+                            emission[ik, initial_band, mode] += emission_term
+                        else:
+                            absorption[ik, initial_band] += absorption_term
+                            emission[ik, initial_band] += emission_term
+
+    absorption *= 2.0 * np.pi
+    emission *= 2.0 * np.pi
+    linewidth = absorption + emission
+    return LinewidthMeshData(
+        linewidth=linewidth,
+        absorption=absorption,
+        emission=emission,
+        kpoints=epc_mesh_data.kpoints,
+        kpoint_weights=epc_mesh_data.kpoint_weights,
+        band_indices=epc_mesh_data.band_indices,
+        metadata={
+            "chemical_potential": chemical_potential,
+            "temperature": temperature,
+            "temperature_unit": "eV",
+            "sigma": sigma,
+            "sigma_unit": "eV",
+            "broadening": broadening,
+            "mode_resolved": mode_resolved,
+            "linewidth_unit": "eV",
+            "frequency_unit_input": epc_mesh_data.metadata.get("frequency_unit", "THz"),
+            "frequency_unit_internal": "eV",
+            "frequency_floor": frequency_floor,
+            "frequency_floor_unit": "THz",
+            "thz_to_ev": THZ_TO_EV,
+            "epc_mesh_schema": epc_mesh_data.metadata.get("schema"),
+            "qpoint_weights": qpoint_weights,
+            "q_weight_convention": "normalized_sum_to_one",
+            "mesh_spec": epc_mesh_data.metadata.get("mesh_spec"),
+        },
+    )
+
+
+def compute_linewidth_path(
+    epc_path_data: EPCPathData,
+    chemical_potential: float,
+    temperature: float,
+    sigma: float,
+    broadening: str = "gaussian",
+    mode_resolved: bool = False,
+    frequency_floor: float = 1e-5,
+) -> LinewidthPathData:
+    """Compute path-resolved linewidth contributions from ``EPCPathData``.
+
+    Unlike :func:`compute_linewidth`, this keeps the EPC path axis instead of
+    reducing over it, which makes the result suitable for q-path diagnostics and
+    plotting. The current implementation supports the fixed-k + q-path contract
+    produced by ``TBSystem.eph.compute_path``.
+    """
+    if epc_path_data.path_axis != "q":
+        raise NotImplementedError("Path linewidth currently supports EPCPathData with path_axis='q' only.")
+    chemical_potential = validate_finite_scalar(chemical_potential, "chemical_potential")
+    temperature = validate_finite_positive_scalar(temperature, "temperature")
+    sigma = validate_finite_positive_scalar(sigma, "sigma")
+    frequency_floor = validate_finite_positive_scalar(frequency_floor, "frequency_floor")
+    mode_resolved = _validate_bool(mode_resolved, "mode_resolved")
+    if np.any(epc_path_data.frequencies < 0.0):
+        raise ValueError("frequencies must be non-negative for linewidth postprocess.")
+
+    if not isinstance(broadening, str):
+        raise ValueError("broadening must be either 'gaussian' or 'lorentzian'.")
+    broadening = broadening.lower()
+    if broadening not in {"gaussian", "lorentzian"}:
+        raise ValueError("broadening must be either 'gaussian' or 'lorentzian'.")
+
+    frequencies_ev = np.maximum(epc_path_data.frequencies, frequency_floor) * THZ_TO_EV
+    nq, nk, nmodes, nsel, _ = epc_path_data.coupling_strength.shape
+    shape = (nq, nk, nsel, nmodes) if mode_resolved else (nq, nk, nsel)
+    absorption = np.zeros(shape, dtype=float)
+    emission = np.zeros(shape, dtype=float)
+
+    for iq in range(nq):
+        for ik in range(nk):
+            for initial_band in range(nsel):
+                eps_initial = epc_path_data.eigenvalues_k[ik, initial_band]
+                for mode in range(nmodes):
+                    omega = frequencies_ev[iq, mode]
+                    bose_occupation = _bose(omega / temperature)
+                    for final_band in range(nsel):
+                        eps_final = epc_path_data.eigenvalues_kq[iq, ik, final_band]
+                        strength = epc_path_data.coupling_strength[iq, ik, mode, final_band, initial_band]
+                        absorption_weight = _broadening(
+                            eps_initial + omega - eps_final,
+                            sigma,
+                            broadening,
+                        )
+                        emission_weight = _broadening(
+                            eps_initial - omega - eps_final,
+                            sigma,
+                            broadening,
+                        )
+                        absorption_term = strength * (
+                            bose_occupation + _fermi((eps_final - chemical_potential) / temperature)
+                        ) * absorption_weight
+                        emission_term = strength * (
+                            bose_occupation
+                            + 1.0
+                            - _fermi((eps_final - chemical_potential) / temperature)
+                        ) * emission_weight
+
+                        if mode_resolved:
+                            absorption[iq, ik, initial_band, mode] += absorption_term
+                            emission[iq, ik, initial_band, mode] += emission_term
+                        else:
+                            absorption[iq, ik, initial_band] += absorption_term
+                            emission[iq, ik, initial_band] += emission_term
+
+    prefactor = 2.0 * np.pi / nq
+    absorption *= prefactor
+    emission *= prefactor
+    linewidth = absorption + emission
+    return LinewidthPathData(
+        linewidth=linewidth,
+        absorption=absorption,
+        emission=emission,
+        path_axis=epc_path_data.path_axis,
+        path_coordinates=epc_path_data.path_coordinates,
+        path_segments=epc_path_data.path_segments,
+        band_indices=epc_path_data.band_indices,
+        metadata={
+            "chemical_potential": chemical_potential,
+            "temperature": temperature,
+            "temperature_unit": "eV",
+            "sigma": sigma,
+            "sigma_unit": "eV",
+            "broadening": broadening,
+            "mode_resolved": mode_resolved,
+            "linewidth_unit": "eV",
+            "frequency_unit_input": epc_path_data.metadata.get("frequency_unit", "THz"),
+            "frequency_unit_internal": "eV",
+            "frequency_floor": frequency_floor,
+            "frequency_floor_unit": "THz",
+            "thz_to_ev": THZ_TO_EV,
+            "epc_path_schema": epc_path_data.metadata.get("schema"),
+            "path_axis": epc_path_data.path_axis,
+            "path_mode": epc_path_data.metadata.get("path_mode"),
+            "aggregation": "per_path_point_contribution",
+        },
+    )
+
+
 def compute_relaxation_time(linewidth_data: LinewidthData, sum_modes: bool = False) -> RelaxationTimeData:
     """Compute relaxation time from EPC linewidths.
 
@@ -362,6 +871,72 @@ def compute_relaxation_time(linewidth_data: LinewidthData, sum_modes: bool = Fal
             "hbar_eV_s": HBAR_EV_S,
             "mode_resolved_input": linewidth_data.linewidth.ndim == 3,
             "sum_modes": sum_modes,
+        },
+    )
+
+
+def compute_relaxation_time_mesh(
+    linewidth_mesh_data: LinewidthMeshData,
+    sum_modes: bool = False,
+) -> RelaxationTimeMeshData:
+    """Compute mesh relaxation time from mesh linewidths."""
+    sum_modes = _validate_bool(sum_modes, "sum_modes")
+    linewidth = np.asarray(linewidth_mesh_data.linewidth, dtype=float)
+    if sum_modes:
+        if linewidth.ndim < 3:
+            raise ValueError("sum_modes=True requires a mode-resolved mesh linewidth array.")
+        linewidth = linewidth.sum(axis=-1)
+    if not np.all(np.isfinite(linewidth)) or np.any(linewidth <= 0.0):
+        raise ValueError("linewidth values must be finite and positive for relaxation time.")
+
+    return RelaxationTimeMeshData(
+        relaxation_time=HBAR_EV_S / (2.0 * linewidth),
+        kpoints=linewidth_mesh_data.kpoints,
+        kpoint_weights=linewidth_mesh_data.kpoint_weights,
+        band_indices=linewidth_mesh_data.band_indices,
+        metadata={
+            "linewidth_mesh_schema": linewidth_mesh_data.metadata.get("schema"),
+            "linewidth_unit": linewidth_mesh_data.metadata.get("linewidth_unit", "eV"),
+            "relaxation_time_unit": "s",
+            "convention": "hbar_over_2linewidth",
+            "hbar_eV_s": HBAR_EV_S,
+            "mode_resolved_input": linewidth_mesh_data.linewidth.ndim == 3,
+            "sum_modes": sum_modes,
+            "mesh_spec": linewidth_mesh_data.metadata.get("mesh_spec"),
+        },
+    )
+
+
+def compute_relaxation_time_path(
+    linewidth_path_data: LinewidthPathData,
+    sum_modes: bool = False,
+) -> RelaxationTimePathData:
+    """Compute path-resolved relaxation time from path linewidth contributions."""
+    sum_modes = _validate_bool(sum_modes, "sum_modes")
+    linewidth = np.asarray(linewidth_path_data.linewidth, dtype=float)
+    if sum_modes:
+        if linewidth.ndim < 4:
+            raise ValueError("sum_modes=True requires a mode-resolved path linewidth array.")
+        linewidth = linewidth.sum(axis=-1)
+    if not np.all(np.isfinite(linewidth)) or np.any(linewidth <= 0.0):
+        raise ValueError("linewidth values must be finite and positive for relaxation time.")
+
+    return RelaxationTimePathData(
+        relaxation_time=HBAR_EV_S / (2.0 * linewidth),
+        path_axis=linewidth_path_data.path_axis,
+        path_coordinates=linewidth_path_data.path_coordinates,
+        path_segments=linewidth_path_data.path_segments,
+        band_indices=linewidth_path_data.band_indices,
+        metadata={
+            "linewidth_path_schema": linewidth_path_data.metadata.get("schema"),
+            "linewidth_unit": linewidth_path_data.metadata.get("linewidth_unit", "eV"),
+            "relaxation_time_unit": "s",
+            "convention": "hbar_over_2linewidth",
+            "hbar_eV_s": HBAR_EV_S,
+            "mode_resolved_input": linewidth_path_data.linewidth.ndim == 4,
+            "sum_modes": sum_modes,
+            "path_axis": linewidth_path_data.path_axis,
+            "path_mode": linewidth_path_data.metadata.get("path_mode"),
         },
     )
 
@@ -720,3 +1295,54 @@ def _validate_group_bounds(bounds: np.ndarray, name: str) -> None:
         raise ValueError(f"{name} must contain at least one [start, stop) range.")
     if np.any(bounds[:, 0] < 0) or np.any(bounds[:, 1] <= bounds[:, 0]):
         raise ValueError(f"{name} must contain non-negative [start, stop) ranges.")
+
+
+def _normalize_path_axis(path_axis: str) -> str:
+    if not isinstance(path_axis, str):
+        raise ValueError("path_axis must be 'q' or 'k'.")
+    normalized = path_axis.lower()
+    if normalized not in {"q", "k"}:
+        raise ValueError("path_axis must be 'q' or 'k'.")
+    return normalized
+
+
+def _normalize_path_segments(path_segments: np.ndarray, npath: int) -> np.ndarray:
+    path_segments = np.asarray(path_segments)
+    if (
+        path_segments.ndim != 2
+        or path_segments.shape[1] != 2
+        or np.issubdtype(path_segments.dtype, np.bool_)
+        or not np.issubdtype(path_segments.dtype, np.integer)
+    ):
+        raise ValueError("path_segments must have shape (nsegments, 2).")
+    path_segments = path_segments.astype(int, copy=False)
+    if np.any(path_segments < 0):
+        raise ValueError("path_segments must be non-negative.")
+    if np.any(path_segments[:, 1] <= path_segments[:, 0]):
+        raise ValueError("path_segments must contain increasing (start, stop) ranges.")
+    if np.any(path_segments > npath):
+        raise ValueError("path_segments must stay within the path point count.")
+    return path_segments
+
+
+def _normalize_weights(weights: np.ndarray, name: str) -> np.ndarray:
+    weights = np.asarray(weights, dtype=float)
+    if weights.ndim != 1 or weights.size == 0:
+        raise ValueError(f"{name} must be a one-dimensional non-empty array.")
+    if not np.all(np.isfinite(weights)) or np.any(weights < 0.0):
+        raise ValueError(f"{name} must contain finite non-negative values.")
+    total = weights.sum()
+    if total <= 0.0:
+        raise ValueError(f"{name} must have a positive sum.")
+    return weights / total
+
+
+def _scalar_string_from_npz(data, key: str) -> str:
+    if key not in data:
+        raise ValueError(f"{key} is required for DeePTB EPC path NPZ files.")
+    value = data[key]
+    if np.shape(value) != ():
+        raise ValueError(f"{key} must be a scalar string.")
+    if hasattr(value, "item"):
+        value = value.item()
+    return str(value)
