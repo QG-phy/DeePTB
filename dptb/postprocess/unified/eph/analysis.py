@@ -13,7 +13,7 @@ from dptb.postprocess.unified.eph.data import (
     _metadata_from_npz,
     _metadata_to_json,
 )
-from dptb.utils.constants import HBAR_EV_S, THZ_TO_EV
+from dptb.utils.constants import ANGSTROM_TO_M, ELECTRON_CHARGE_C, HBAR_EV_S, THZ_TO_EV, eV2J
 from dptb.postprocess.unified.eph.utils import (
     as_array,
     validate_finite_nonnegative_scalar,
@@ -32,6 +32,7 @@ RELAXATION_TIME_NPZ_SCHEMA_VERSION = 1
 RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION = 1
 RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION = 1
 TRANSPORT_NPZ_SCHEMA_VERSION = 1
+MOBILITY_NPZ_SCHEMA_VERSION = 1
 SUBSPACE_COUPLING_NPZ_SCHEMA_VERSION = 1
 
 
@@ -483,6 +484,70 @@ class TransportData:
             return cls(
                 conductivity=data["transport_conductivity"],
                 carrier_density=data["transport_carrier_density"],
+                metadata=metadata,
+            )
+
+
+@dataclass
+class MobilityData:
+    """SI SERTA mobility data derived from electron-phonon linewidths."""
+
+    conductivity: np.ndarray
+    mobility: np.ndarray
+    carrier_density: np.ndarray
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.conductivity = np.asarray(self.conductivity, dtype=float)
+        self.mobility = np.asarray(self.mobility, dtype=float)
+        self.carrier_density = np.asarray(self.carrier_density, dtype=float)
+        if self.conductivity.shape != (3, 3):
+            raise ValueError("conductivity must have shape (3, 3).")
+        if self.mobility.shape != (3, 3):
+            raise ValueError("mobility must have shape (3, 3).")
+        if not np.all(np.isfinite(self.conductivity)):
+            raise ValueError("conductivity must contain finite values.")
+        if not np.all(np.isfinite(self.mobility)):
+            raise ValueError("mobility must contain finite values.")
+        if not np.all(np.isfinite(self.carrier_density)):
+            raise ValueError("carrier_density must contain finite values.")
+        if np.any(self.carrier_density <= 0.0):
+            raise ValueError("carrier_density must contain positive values.")
+        if self.carrier_density.shape != ():
+            raise ValueError("carrier_density must be a scalar.")
+        conductivity_unit = self.metadata.get("conductivity_unit", "S/m")
+        carrier_density_unit = self.metadata.get("carrier_density_unit", "m^-3")
+        self.metadata = _merge_metadata(
+            {
+                "schema": "deeptb.epc_mobility",
+                "schema_version": MOBILITY_NPZ_SCHEMA_VERSION,
+                "method": "SERTA",
+                "conductivity_unit": conductivity_unit,
+                "carrier_density_unit": carrier_density_unit,
+                "mobility_unit": "m^2/V/s",
+            },
+            self.metadata,
+        )
+
+    def save_npz(self, path: Union[str, Path]) -> None:
+        """Save SI mobility postprocess data to NPZ."""
+        np.savez_compressed(
+            path,
+            mobility_conductivity=self.conductivity,
+            mobility_tensor=self.mobility,
+            mobility_carrier_density=self.carrier_density,
+            metadata_json=np.array(_metadata_to_json(self.metadata)),
+        )
+
+    @classmethod
+    def load_npz(cls, path: Union[str, Path]) -> "MobilityData":
+        """Load SI mobility postprocess data from NPZ."""
+        with np.load(path, allow_pickle=False) as data:
+            metadata = _metadata_from_npz(data)
+            return cls(
+                conductivity=data["mobility_conductivity"],
+                mobility=data["mobility_tensor"],
+                carrier_density=data["mobility_carrier_density"],
                 metadata=metadata,
             )
 
@@ -1044,6 +1109,165 @@ def compute_serta_conductivity(
             "method": "SERTA",
         },
     )
+
+
+def fractional_band_velocities_to_si(velocities: np.ndarray, reciprocal_cell: np.ndarray) -> np.ndarray:
+    """Convert eV/fractional reciprocal-coordinate velocities to m/s.
+
+    ``reciprocal_cell`` has shape ``(3, 3)`` and maps fractional reciprocal
+    coordinates to Cartesian reciprocal coordinates in Angstrom^-1 using
+    ``k_cart = k_fractional @ reciprocal_cell``.
+    """
+    velocities = np.asarray(velocities, dtype=float)
+    reciprocal_cell = np.asarray(reciprocal_cell, dtype=float)
+    if velocities.ndim != 3 or velocities.shape[-1] != 3:
+        raise ValueError("velocities must have shape (nk, nbands, 3).")
+    if reciprocal_cell.shape != (3, 3):
+        raise ValueError("reciprocal_cell must have shape (3, 3).")
+    if not np.all(np.isfinite(velocities)):
+        raise ValueError("velocities must contain finite values.")
+    if not np.all(np.isfinite(reciprocal_cell)):
+        raise ValueError("reciprocal_cell must contain finite values.")
+    if abs(np.linalg.det(reciprocal_cell)) <= 0.0:
+        raise ValueError("reciprocal_cell must be invertible.")
+
+    cartesian_gradient = velocities @ np.linalg.inv(reciprocal_cell)
+    return cartesian_gradient * ANGSTROM_TO_M / HBAR_EV_S
+
+
+def compute_serta_mobility_si(
+    eigenvalues: np.ndarray,
+    velocities: np.ndarray,
+    linewidth: np.ndarray,
+    reciprocal_cell: np.ndarray,
+    chemical_potential: float,
+    temperature: float,
+    kpoint_weights: Optional[np.ndarray] = None,
+    spin_degeneracy: int = 1,
+    dimension: str = "3d",
+    volume: Optional[float] = None,
+    area: Optional[float] = None,
+) -> MobilityData:
+    """Compute SI SERTA conductivity and mobility.
+
+    Energies and linewidths are in eV. ``temperature`` is kBT in eV, matching
+    the existing EPC postprocess convention. ``velocities`` are in
+    eV/fractional reciprocal-coordinate and are converted to m/s through
+    ``reciprocal_cell``.
+    """
+    eigenvalues = np.asarray(eigenvalues, dtype=float)
+    linewidth = np.asarray(linewidth, dtype=float)
+    velocities_si = fractional_band_velocities_to_si(velocities, reciprocal_cell)
+    chemical_potential = validate_finite_scalar(chemical_potential, "chemical_potential")
+    temperature = validate_finite_positive_scalar(temperature, "temperature")
+
+    if not isinstance(dimension, str):
+        raise ValueError("dimension must be '2d' or '3d'.")
+    dimension = dimension.lower()
+    if dimension not in {"2d", "3d"}:
+        raise ValueError("dimension must be '2d' or '3d'.")
+    if dimension == "3d":
+        if area is not None:
+            raise ValueError("area must not be set for dimension='3d'.")
+        normalization = validate_finite_positive_scalar(volume, "volume")
+        density_scale = normalization * ANGSTROM_TO_M**3
+        conductivity_unit = "S/m"
+        carrier_density_unit = "m^-3"
+        normalization_metadata = {"volume": normalization, "volume_unit": "Angstrom^3"}
+    else:
+        if volume is not None:
+            raise ValueError("volume must not be set for dimension='2d'.")
+        normalization = validate_finite_positive_scalar(area, "area")
+        density_scale = normalization * ANGSTROM_TO_M**2
+        conductivity_unit = "S"
+        carrier_density_unit = "m^-2"
+        normalization_metadata = {"area": normalization, "area_unit": "Angstrom^2"}
+
+    try:
+        spin_degeneracy_value = np.asarray(spin_degeneracy)
+    except (TypeError, ValueError):
+        raise ValueError("spin_degeneracy must be a positive integer.") from None
+    if spin_degeneracy_value.shape != ():
+        raise ValueError("spin_degeneracy must be a positive integer.")
+    if isinstance(spin_degeneracy, (bool, np.bool_)):
+        raise ValueError("spin_degeneracy must be a positive integer.")
+    try:
+        spin_degeneracy_float = float(spin_degeneracy_value)
+    except (TypeError, ValueError):
+        raise ValueError("spin_degeneracy must be a positive integer.") from None
+    if not np.isfinite(spin_degeneracy_float) or spin_degeneracy_float <= 0.0:
+        raise ValueError("spin_degeneracy must be a positive integer.")
+    if int(spin_degeneracy_float) != spin_degeneracy_float:
+        raise ValueError("spin_degeneracy must be a positive integer.")
+    spin_degeneracy = int(spin_degeneracy_float)
+
+    if eigenvalues.ndim != 2:
+        raise ValueError("eigenvalues must have shape (nk, nbands).")
+    if eigenvalues.shape[0] == 0 or eigenvalues.shape[1] == 0:
+        raise ValueError("eigenvalues must be non-empty.")
+    if velocities_si.shape != (*eigenvalues.shape, 3):
+        raise ValueError("velocities must have shape (nk, nbands, 3).")
+    if linewidth.shape != eigenvalues.shape:
+        raise ValueError("linewidth must have shape (nk, nbands).")
+    if not np.all(np.isfinite(eigenvalues)):
+        raise ValueError("eigenvalues must contain finite values.")
+    if not np.all(np.isfinite(linewidth)) or np.any(linewidth <= 0.0):
+        raise ValueError("linewidth values must be finite and positive for mobility.")
+
+    nk = eigenvalues.shape[0]
+    if kpoint_weights is None:
+        weights = np.full((nk,), 1.0 / nk, dtype=float)
+    else:
+        weights = np.asarray(kpoint_weights, dtype=float)
+        if weights.shape != (nk,):
+            raise ValueError("kpoint_weights must have shape (nk,).")
+        if not np.all(np.isfinite(weights)) or np.any(weights < 0.0):
+            raise ValueError("kpoint_weights must contain finite non-negative values.")
+        weight_sum = weights.sum()
+        if weight_sum <= 0.0:
+            raise ValueError("kpoint_weights must have a positive sum.")
+        weights = weights / weight_sum
+
+    conductivity = np.zeros((3, 3), dtype=float)
+    carrier_density = 0.0
+    for ik in range(nk):
+        for iband in range(eigenvalues.shape[1]):
+            eps = eigenvalues[ik, iband]
+            occupation = _fermi((eps - chemical_potential) / temperature)
+            transport_weight_ev = -_dfermi_deps((eps - chemical_potential) / temperature) / temperature
+            tau = HBAR_EV_S / (2.0 * linewidth[ik, iband])
+            density_weight = spin_degeneracy * weights[ik] / density_scale
+            carrier_density += density_weight * occupation
+            conductivity += (
+                density_weight
+                * (ELECTRON_CHARGE_C**2 / eV2J)
+                * transport_weight_ev
+                * tau
+                * np.outer(velocities_si[ik, iband], velocities_si[ik, iband])
+            )
+    if carrier_density <= 0.0:
+        raise ValueError("carrier_density must be positive for mobility.")
+    mobility = conductivity / (carrier_density * ELECTRON_CHARGE_C)
+
+    metadata = {
+        "chemical_potential": chemical_potential,
+        "temperature": temperature,
+        "temperature_unit": "eV",
+        "spin_degeneracy": spin_degeneracy,
+        "dimension": dimension,
+        "energy_unit": "eV",
+        "linewidth_unit": "eV",
+        "velocity_input_unit": "eV/fractional_reciprocal_coordinate",
+        "velocity_unit": "m/s",
+        "reciprocal_cell_unit": "Angstrom^-1",
+        "conductivity_unit": conductivity_unit,
+        "carrier_density_unit": carrier_density_unit,
+        "mobility_unit": "m^2/V/s",
+        "method": "SERTA",
+        "relaxation_time_convention": "hbar_over_2linewidth",
+    }
+    metadata.update(normalization_metadata)
+    return MobilityData(conductivity=conductivity, mobility=mobility, carrier_density=np.asarray(carrier_density), metadata=metadata)
 
 
 def compute_band_velocities_finite_difference(

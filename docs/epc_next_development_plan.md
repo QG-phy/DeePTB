@@ -352,20 +352,20 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - 设计 SI unit conversion：
   - eigenvalue eV
   - k coordinate fractional reciprocal coordinate
-  - reciprocal lattice conversion
-  - velocity conversion
-  - volume/area convention
-  - carrier density unit
-  - conductivity unit
-  - mobility unit
+  - reciprocal lattice conversion 已在 `compute_serta_mobility_si(...)` 最小切片中实现。
+  - velocity conversion 已支持从 `eV/fractional_reciprocal_coordinate` 到 `m/s`。
+  - volume/area convention 已支持 3D volume 和 2D sheet area normalization。
+  - carrier density unit 已支持 `m^-3` / `m^-2`。
+  - conductivity unit 已支持 `S/m` / sheet `S`。
+  - mobility unit 已支持 `m^2/V/s`。
   - all physical constants and unit aliases sourced from `dptb.utils.constants` or `dptb.utils.units`
 - 新增 `MobilityData` 或扩展 `TransportData`：
-  - conductivity tensor
-  - mobility tensor
-  - carrier density
-  - chemical potentials
-  - temperatures
-  - unit metadata
+  - `MobilityData` 已新增。
+  - conductivity tensor 已支持。
+  - mobility tensor 已支持。
+  - carrier density 已支持。
+  - chemical potential / temperature metadata 已支持单点。
+  - unit metadata 已支持。
 - 支持多个 chemical potentials / temperatures 的 vectorized workflow。
 - 明确 2D material 的 area normalization 与 3D volume normalization 区别。
 
@@ -381,7 +381,12 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - `velocity_source="finite_difference"` keeps the existing central finite-difference behavior and metadata.
   - `velocity_source="hamiltonian_derivative"` computes diagonal band velocities from analytic `dH/dk` and optional `dS/dk`.
 - The Hamiltonian-derivative convention is recorded as `diag_Cdagger_dH_minus_EdS_C`.
-- The velocity unit remains `eV/fractional_reciprocal_coordinate`; full SI conversion remains future work.
+- The `transport` workflow velocity unit remains `eV/fractional_reciprocal_coordinate`; SI conversion is currently exposed through the Python mobility helper.
+- Implemented `compute_serta_mobility_si(...)` as a Python SI mobility helper:
+  - converts fractional reciprocal-coordinate velocities to m/s through an explicit reciprocal cell.
+  - computes SI conductivity, carrier density, and mobility.
+  - supports 3D volume normalization and 2D sheet normalization.
+  - persists results through `MobilityData` NPZ.
 - SCC-corrected velocity remains unsupported in v1.
 
 ### Acceptance

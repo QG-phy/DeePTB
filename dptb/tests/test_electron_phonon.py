@@ -32,6 +32,8 @@ from dptb.postprocess.unified.eph import (
     LinewidthData,
     LinewidthMeshData,
     LinewidthPathData,
+    MOBILITY_NPZ_SCHEMA_VERSION,
+    MobilityData,
     RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION,
     RELAXATION_TIME_NPZ_SCHEMA_VERSION,
     RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION,
@@ -50,6 +52,7 @@ from dptb.postprocess.unified.eph import (
     build_k_chunk_specs,
     compute_band_velocities_finite_difference,
     compute_band_velocities_hamiltonian_derivative,
+    compute_serta_mobility_si,
     compute_linewidth,
     compute_linewidth_mesh,
     compute_linewidth_path,
@@ -102,6 +105,8 @@ def test_epc_public_constants_are_centralized():
     np.testing.assert_allclose(EPC_PREFAC_AMU_THZ, dptb_constants.EPC_PREFAC_AMU_THZ)
     np.testing.assert_allclose(THZ_TO_EV, dptb_constants.THZ_TO_EV)
     np.testing.assert_allclose(HBAR_EV_S, dptb_constants.HBAR_EV_S)
+    np.testing.assert_allclose(dptb_constants.ANGSTROM_TO_M, scipy_constants.angstrom)
+    np.testing.assert_allclose(dptb_constants.ELECTRON_CHARGE_C, scipy_constants.e)
 
 
 def test_unified_postprocess_exports_epc_v1_symbols():
@@ -114,6 +119,8 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     assert unified_postprocess.LinewidthData is LinewidthData
     assert unified_postprocess.LinewidthMeshData is LinewidthMeshData
     assert unified_postprocess.LinewidthPathData is LinewidthPathData
+    assert unified_postprocess.MobilityData is MobilityData
+    assert unified_postprocess.MOBILITY_NPZ_SCHEMA_VERSION == MOBILITY_NPZ_SCHEMA_VERSION
     assert unified_postprocess.Phonons is Phonons
     assert unified_postprocess.RelaxationTimeData is RelaxationTimeData
     assert unified_postprocess.RelaxationTimeMeshData is RelaxationTimeMeshData
@@ -136,6 +143,7 @@ def test_unified_postprocess_exports_epc_v1_symbols():
         unified_postprocess.compute_band_velocities_hamiltonian_derivative
         is compute_band_velocities_hamiltonian_derivative
     )
+    assert unified_postprocess.compute_serta_mobility_si is compute_serta_mobility_si
     assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
     assert unified_postprocess.compute_serta_transport_from_epc is compute_serta_transport_from_epc
     assert unified_postprocess.compute_subspace_coupling_strength is compute_subspace_coupling_strength
@@ -2538,6 +2546,111 @@ def test_transport_data_npz_roundtrip(tmp_path):
         assert "transport_conductivity" in data
         assert "transport_carrier_density" in data
         assert "metadata_json" in data
+
+
+def test_compute_serta_mobility_si_matches_manual_3d_reference():
+    eigenvalues = np.array([[0.0]])
+    velocities = np.array([[[1.0, 0.0, 0.0]]])
+    linewidth = np.array([[0.01]])
+    reciprocal_cell = np.eye(3)
+
+    result = compute_serta_mobility_si(
+        eigenvalues=eigenvalues,
+        velocities=velocities,
+        linewidth=linewidth,
+        reciprocal_cell=reciprocal_cell,
+        chemical_potential=0.0,
+        temperature=0.1,
+        spin_degeneracy=2,
+        volume=10.0,
+    )
+
+    velocity_si = dptb_constants.ANGSTROM_TO_M / dptb_constants.HBAR_EV_S
+    tau = dptb_constants.HBAR_EV_S / (2.0 * 0.01)
+    density = 2.0 / (10.0 * dptb_constants.ANGSTROM_TO_M**3)
+    occupation = 0.5
+    transport_weight_ev = 0.25 / 0.1
+    expected_carrier_density = density * occupation
+    expected_sigma_xx = (
+        density
+        * (dptb_constants.ELECTRON_CHARGE_C**2 / dptb_constants.eV2J)
+        * transport_weight_ev
+        * tau
+        * velocity_si**2
+    )
+
+    np.testing.assert_allclose(result.carrier_density, expected_carrier_density)
+    np.testing.assert_allclose(result.conductivity[0, 0], expected_sigma_xx)
+    np.testing.assert_allclose(
+        result.mobility[0, 0],
+        expected_sigma_xx / (expected_carrier_density * dptb_constants.ELECTRON_CHARGE_C),
+    )
+    assert result.metadata["conductivity_unit"] == "S/m"
+    assert result.metadata["carrier_density_unit"] == "m^-3"
+    assert result.metadata["mobility_unit"] == "m^2/V/s"
+    assert result.metadata["volume_unit"] == "Angstrom^3"
+
+
+def test_compute_serta_mobility_si_supports_2d_sheet_normalization():
+    result = compute_serta_mobility_si(
+        eigenvalues=np.array([[0.0]]),
+        velocities=np.array([[[1.0, 0.0, 0.0]]]),
+        linewidth=np.array([[0.01]]),
+        reciprocal_cell=np.eye(3),
+        chemical_potential=0.0,
+        temperature=0.1,
+        dimension="2d",
+        area=5.0,
+    )
+
+    assert result.metadata["conductivity_unit"] == "S"
+    assert result.metadata["carrier_density_unit"] == "m^-2"
+    assert result.metadata["area_unit"] == "Angstrom^2"
+    assert result.carrier_density.shape == ()
+
+
+def test_mobility_data_npz_roundtrip(tmp_path):
+    mobility = MobilityData(
+        conductivity=np.eye(3),
+        mobility=np.eye(3) * 2.0,
+        carrier_density=np.array(1.5),
+        metadata={"dimension": "3d"},
+    )
+    path = tmp_path / "mobility.npz"
+    mobility.save_npz(path)
+    loaded = MobilityData.load_npz(path)
+
+    np.testing.assert_allclose(loaded.conductivity, mobility.conductivity)
+    np.testing.assert_allclose(loaded.mobility, mobility.mobility)
+    np.testing.assert_allclose(loaded.carrier_density, mobility.carrier_density)
+    assert loaded.metadata["schema"] == "deeptb.epc_mobility"
+    assert loaded.metadata["schema_version"] == MOBILITY_NPZ_SCHEMA_VERSION
+
+
+def test_compute_serta_mobility_si_rejects_invalid_inputs():
+    kwargs = {
+        "eigenvalues": np.array([[0.0]]),
+        "velocities": np.array([[[1.0, 0.0, 0.0]]]),
+        "linewidth": np.array([[0.01]]),
+        "reciprocal_cell": np.eye(3),
+        "chemical_potential": 0.0,
+        "temperature": 0.1,
+        "volume": 10.0,
+    }
+    with pytest.raises(ValueError, match="dimension"):
+        compute_serta_mobility_si(**kwargs, dimension="1d")
+    with pytest.raises(ValueError, match="volume"):
+        compute_serta_mobility_si(**{**kwargs, "volume": None})
+    with pytest.raises(ValueError, match="volume"):
+        compute_serta_mobility_si(**kwargs, dimension="2d", area=5.0)
+    kwargs_2d = dict(kwargs)
+    kwargs_2d.pop("volume")
+    with pytest.raises(ValueError, match="area"):
+        compute_serta_mobility_si(**kwargs_2d, dimension="2d")
+    with pytest.raises(ValueError, match="reciprocal_cell"):
+        compute_serta_mobility_si(**{**kwargs, "reciprocal_cell": np.zeros((3, 3))})
+    with pytest.raises(ValueError, match="linewidth"):
+        compute_serta_mobility_si(**{**kwargs, "linewidth": np.array([[0.0]])})
 
 
 def test_transport_data_rejects_invalid_schema_and_shapes():

@@ -26,6 +26,8 @@ eV2J = 1.6021766208e-19 # in the unit of J
 kB_eV_per_K = Boltzmann / eV2J # Boltzmann constant in eV/K
 
 # Electron-phonon unit conversion constants.
+ANGSTROM_TO_M = scipy_constants.angstrom
+ELECTRON_CHARGE_C = scipy_constants.e
 THZ_TO_EV = scipy_constants.h * scipy_constants.tera / scipy_constants.e
 HBAR_EV_S = scipy_constants.hbar / scipy_constants.e
 EPC_PREFAC_AMU_THZ = (

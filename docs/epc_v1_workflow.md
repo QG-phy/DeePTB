@@ -14,12 +14,13 @@ Python users can import the v1 EPC APIs from either
 include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 `LinewidthData`, `LinewidthPathData`, `LinewidthMeshData`,
 `RelaxationTimeData`, `RelaxationTimePathData`, `RelaxationTimeMeshData`,
-`TransportData`, `SubspaceCouplingData`, `compute_coupling_matrix`,
+`TransportData`, `MobilityData`, `SubspaceCouplingData`, `compute_coupling_matrix`,
 `compute_linewidth`, `compute_linewidth_path`, `compute_linewidth_mesh`,
 `compute_relaxation_time`, `compute_relaxation_time_path`,
 `compute_relaxation_time_mesh`, `compute_serta_conductivity`,
 `compute_band_velocities_finite_difference`,
-`compute_band_velocities_hamiltonian_derivative`, `compute_serta_transport_from_epc`,
+`compute_band_velocities_hamiltonian_derivative`, `compute_serta_mobility_si`,
+`compute_serta_transport_from_epc`,
 `find_degenerate_band_groups`, `compute_subspace_coupling_strength`,
 `compute_subspace_coupling_data`, `FDProvider`, `SupercellFD`, and the
 benchmark-only `DFTBPlusGauge` adapter. EPC unit constants are centralized in
@@ -117,6 +118,7 @@ Use the matching save/load APIs:
 - `RelaxationTimePathData.save_npz()` / `RelaxationTimePathData.load_npz()`.
 - `RelaxationTimeMeshData.save_npz()` / `RelaxationTimeMeshData.load_npz()`.
 - `TransportData.save_npz()` / `TransportData.load_npz()`.
+- `MobilityData.save_npz()` / `MobilityData.load_npz()`.
 - `SubspaceCouplingData.save_npz()` / `SubspaceCouplingData.load_npz()`.
 
 `RelaxationTimeData` stores `elph_relaxation_time` in seconds. The v1
@@ -153,6 +155,15 @@ ranges. Non-contiguous groups are available only through the Python helper
 Postprocess data arrays must also be non-empty. In particular, linewidth,
 relaxation-time, carrier-density, and subspace group-bound arrays cannot be
 empty. Carrier density must be finite and non-negative.
+
+`MobilityData` stores SI SERTA conductivity, carrier density, and mobility.
+The Python helper `compute_serta_mobility_si(...)` converts band velocities
+from `eV/fractional_reciprocal_coordinate` to `m/s` using an explicit
+reciprocal cell in Angstrom^-1. It supports 3D volume normalization
+(`conductivity_unit="S/m"`, `carrier_density_unit="m^-3"`) and 2D sheet
+normalization (`conductivity_unit="S"`, `carrier_density_unit="m^-2"`).
+`temperature` remains kBT in eV, matching the existing EPC postprocess
+convention.
 
 ## CLI Tasks
 
@@ -378,6 +389,9 @@ band subspaces. Groups use `start:stop` ranges and are stored in the NPZ as
   not implemented.
 - Transport supports finite-difference and Hamiltonian-derivative velocity
   providers, but does not perform full SI unit conversion.
+- SI mobility is available through the Python helper
+  `compute_serta_mobility_si(...)`; a dedicated CLI mobility workflow and
+  multi-mu/multi-temperature scans are future work.
 
 ## Development Validation
 
