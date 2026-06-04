@@ -1210,6 +1210,35 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_schema_version(tmp_path):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
 
+@pytest.mark.parametrize(
+    ("payload_update", "match"),
+    [
+        (lambda payload: payload.pop("el_kpoint_weights"), "weights.npz"),
+        (lambda payload: payload.update({"el_kpoint_weights": np.ones((1, 1))}), "el_kpoint_weights"),
+        (lambda payload: payload.update({"el_kpoint_weights": np.array([1.0, np.nan, 1.0])}), "el_kpoint_weights"),
+        (lambda payload: payload.update({"ph_qpoint_weights": np.array([1.0, -1.0])}), "ph_qpoint_weights"),
+        (lambda payload: payload.update({"ph_qpoint_weights": np.array([0.0, 0.0])}), "ph_qpoint_weights"),
+    ],
+)
+def test_epc_mesh_chunked_artifact_rejects_bad_weights_arrays(payload_update, match, tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="k", chunk_size=1)
+    payload = {
+        "el_kpoint_weights": mesh_data.kpoint_weights,
+        "ph_qpoint_weights": mesh_data.qpoint_weights,
+        "metadata_json": np.array(json.dumps({
+            "schema": "deeptb.epc_mesh_chunked_artifact.weights",
+            "schema_version": EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION,
+        })),
+    }
+    payload_update(payload)
+    np.savez_compressed(artifact_dir / "weights.npz", **payload)
+
+    with pytest.raises(ValueError, match=match):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
 @pytest.mark.parametrize("axis", ["q", "k"])
 @pytest.mark.parametrize("mode_resolved", [False, True])
 def test_compute_linewidth_mesh_chunked_artifact_matches_full_mesh(axis, mode_resolved, tmp_path):
