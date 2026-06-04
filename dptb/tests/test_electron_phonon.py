@@ -6839,6 +6839,30 @@ def test_eph_entrypoint_rejects_invalid_task_type():
             },
             "epc_data",
         ),
+        (
+            {
+                "task": "transport",
+                "epc_data": "epc.npz",
+                "linewidth_data": "linewidth.npz",
+                "chemical_potentials": [0.0, 0.1],
+                "temperature": 0.01,
+                "linewidth_scan_convention": "recompute",
+                "system": _FakeSystem(),
+            },
+            "epc_artifact",
+        ),
+        (
+            {
+                "task": "transport",
+                "epc_artifact": "epc_mesh_artifact",
+                "chemical_potential": 0.0,
+                "temperature": 0.01,
+                "sigma": 0.01,
+                "linewidth_scan_convention": "recompute",
+                "system": _FakeSystem(),
+            },
+            "chemical_potentials or temperatures",
+        ),
         ({"task": "mobility", "linewidth_data": "linewidth.npz", "chemical_potential": 0.0, "temperature": 0.01}, "epc_data"),
         ({"task": "mobility", "epc_data": "epc.npz", "chemical_potential": 0.0, "temperature": 0.01}, "linewidth_data"),
         (
@@ -6862,6 +6886,30 @@ def test_eph_entrypoint_rejects_invalid_task_type():
                 "system": _LinearBandSystemWithAtoms(),
             },
             "linewidth_data",
+        ),
+        (
+            {
+                "task": "mobility",
+                "epc_data": "epc.npz",
+                "linewidth_data": "linewidth.npz",
+                "chemical_potentials": [0.0, 0.1],
+                "temperature": 0.01,
+                "linewidth_scan_convention": "recompute",
+                "system": _LinearBandSystemWithAtoms(),
+            },
+            "epc_artifact",
+        ),
+        (
+            {
+                "task": "mobility",
+                "epc_artifact": "epc_mesh_artifact",
+                "chemical_potential": 0.0,
+                "temperature": 0.01,
+                "sigma": 0.01,
+                "linewidth_scan_convention": "recompute",
+                "system": _LinearBandSystemWithAtoms(),
+            },
+            "chemical_potentials or temperatures",
         ),
         ({"task": "mobility", "epc_data": "epc.npz", "linewidth_data": "linewidth.npz", "temperature": 0.01}, "chemical_potential"),
         (

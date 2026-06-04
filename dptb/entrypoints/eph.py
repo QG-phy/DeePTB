@@ -819,6 +819,11 @@ def eph_transport(
         positive=True,
     )
     use_scan = use_scan_mu or use_scan_temperature
+    scan_convention = _normalize_linewidth_scan_convention(linewidth_scan_convention)
+    if scan_convention == "recompute" and epc_artifact is None:
+        raise ValueError("linewidth_scan_convention='recompute' requires epc_artifact for dptb eph --task transport.")
+    if scan_convention == "recompute" and not use_scan:
+        raise ValueError("linewidth_scan_convention='recompute' requires chemical_potentials or temperatures scan inputs.")
     if system is None:
         if structure is None:
             raise ValueError("structure is required for dptb eph --task transport.")
@@ -826,7 +831,6 @@ def eph_transport(
             raise ValueError("init_model is required for dptb eph --task transport.")
         system = TBSystem(data=structure, calculator=init_model)
 
-    scan_convention = _normalize_linewidth_scan_convention(linewidth_scan_convention)
     if epc_artifact is not None:
         if use_scan:
             if scan_convention == "fixed":
@@ -1013,6 +1017,11 @@ def eph_mobility(
         positive=True,
     )
     use_scan = use_scan_mu or use_scan_temperature
+    scan_convention = _normalize_linewidth_scan_convention(linewidth_scan_convention)
+    if scan_convention == "recompute" and epc_artifact is None:
+        raise ValueError("linewidth_scan_convention='recompute' requires epc_artifact for dptb eph --task mobility.")
+    if scan_convention == "recompute" and not use_scan:
+        raise ValueError("linewidth_scan_convention='recompute' requires chemical_potentials or temperatures scan inputs.")
     if system is None:
         if structure is None:
             raise ValueError("structure is required for dptb eph --task mobility.")
@@ -1021,7 +1030,6 @@ def eph_mobility(
         system = TBSystem(data=structure, calculator=init_model)
 
     reciprocal_cell = _reciprocal_cell_from_system(system)
-    scan_convention = _normalize_linewidth_scan_convention(linewidth_scan_convention)
     if epc_artifact is not None:
         if use_scan:
             if scan_convention == "fixed":
