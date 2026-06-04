@@ -375,7 +375,7 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
 - `dptb eph --task transport` 已支持 `--velocity-source finite_difference|hamiltonian_derivative`。
 - `dptb eph --task mobility` 已支持单个 chemical potential / temperature 的 SI mobility 输出。
 - mobility CLI 已支持 `--dimension 2d/3d`、`--area`、`--volume`。
-- 后续把 Python scan workflow 接到 CLI 的 `--chemical-potentials`、`--temperatures`。
+- mobility CLI 已支持 `--chemical-potentials`、`--temperatures` scan 参数。
 
 ### Current Implementation Status
 
@@ -397,6 +397,9 @@ EPC 后续开发按 gate 推进，避免在 v1 未稳定时过早扩散：
   - scans chemical-potential and temperature axes.
   - stores conductivity/mobility shape `(nmu, ntemperatures, 3, 3)`.
   - stores carrier-density shape `(nmu, ntemperatures)`.
+- Added CLI scan output:
+  - `dptb eph --task mobility --chemical-potentials ... --temperatures ...` writes `MobilityScanData`.
+  - singular and plural chemical-potential/temperature arguments are mutually exclusive per axis.
 - SCC-corrected velocity remains unsupported in v1.
 
 ### Acceptance

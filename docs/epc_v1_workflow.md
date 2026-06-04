@@ -392,6 +392,26 @@ For 3D systems, use `--dimension 3d --volume <Angstrom^3>`. For 2D sheet
 normalization, use `--dimension 2d --area <Angstrom^2>`. Temperature remains
 kBT in eV.
 
+For chemical-potential and temperature scans, use plural scan arguments:
+
+```bash
+dptb eph \
+  --task mobility \
+  -i model.pth \
+  -stu structure.vasp \
+  --epc-data epc_data.npz \
+  --linewidth-data linewidth.npz \
+  --chemical-potentials 0.10 0.15 0.20 \
+  --temperatures 0.025 0.050 \
+  --dimension 3d \
+  --volume 1.0 \
+  -o mobility_scan.npz
+```
+
+When `--chemical-potentials` or `--temperatures` is used, the CLI writes a
+`MobilityScanData` NPZ. The singular and plural forms for the same axis are
+mutually exclusive.
+
 ### Subspace Coupling
 
 ```bash
@@ -425,8 +445,8 @@ band subspaces. Groups use `start:stop` ranges and are stored in the NPZ as
 - SI mobility is available through the Python helper
   `compute_serta_mobility_si(...)` and `dptb eph --task mobility`; multi-mu /
   multi-temperature scans are available through the Python helper
-  `compute_serta_mobility_scan_si(...)`, with dedicated CLI scan arguments as
-  future work.
+  `compute_serta_mobility_scan_si(...)` and the CLI scan arguments
+  `--chemical-potentials` / `--temperatures`.
 
 ## Development Validation
 

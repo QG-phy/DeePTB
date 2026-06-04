@@ -658,12 +658,26 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         help="Chemical potential in eV for linewidth, transport, or mobility postprocess.",
     )
+    parser_eph.add_argument(
+        "--chemical-potentials",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Chemical-potential scan values in eV for mobility postprocess.",
+    )
 
     parser_eph.add_argument(
         "--temperature",
         type=float,
         default=None,
         help="Temperature as kBT in eV for linewidth, transport, or mobility postprocess.",
+    )
+    parser_eph.add_argument(
+        "--temperatures",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Temperature scan values as kBT in eV for mobility postprocess.",
     )
 
     parser_eph.add_argument(

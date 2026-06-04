@@ -15,6 +15,7 @@ from dptb.postprocess.unified.eph import (
     LinewidthMeshData,
     LinewidthPathData,
     MobilityData,
+    MobilityScanData,
     Phonons,
     RelaxationTimeData,
     RelaxationTimeMeshData,
@@ -30,6 +31,7 @@ from dptb.postprocess.unified.eph import (
     compute_relaxation_time_mesh,
     compute_relaxation_time_path,
     compute_serta_mobility_si,
+    compute_serta_mobility_scan_si,
     compute_serta_transport_from_epc,
     compute_subspace_coupling_data,
 )
@@ -50,7 +52,9 @@ def eph(
     final_groups: Optional[Sequence[str]] = None,
     initial_groups: Optional[Sequence[str]] = None,
     chemical_potential: Optional[float] = None,
+    chemical_potentials: Optional[Sequence[float]] = None,
     temperature: Optional[float] = None,
+    temperatures: Optional[Sequence[float]] = None,
     sigma: Optional[float] = None,
     broadening: str = "gaussian",
     mode_resolved: bool = False,
@@ -85,6 +89,7 @@ def eph(
     RelaxationTimePathData,
     TransportData,
     MobilityData,
+    MobilityScanData,
     SubspaceCouplingData,
 ]:
     """Run an electron-phonon workflow task."""
@@ -217,7 +222,9 @@ def eph(
             linewidth_data=linewidth_data,
             output=output or "mobility.npz",
             chemical_potential=chemical_potential,
+            chemical_potentials=chemical_potentials,
             temperature=temperature,
+            temperatures=temperatures,
             kpoint_weights=kpoint_weights,
             spin_degeneracy=spin_degeneracy,
             dimension=dimension,
@@ -610,8 +617,10 @@ def eph_mobility(
     epc_data: str,
     linewidth_data: str,
     output: str,
-    chemical_potential: float,
-    temperature: float,
+    chemical_potential: Optional[float],
+    temperature: Optional[float],
+    chemical_potentials: Optional[Sequence[float]] = None,
+    temperatures: Optional[Sequence[float]] = None,
     kpoint_weights: Optional[str] = None,
     spin_degeneracy: int = 1,
     dimension: str = "3d",
@@ -621,7 +630,7 @@ def eph_mobility(
     velocity_source: str = "finite_difference",
     use_scc: bool = False,
     system=None,
-) -> MobilityData:
+) -> Union[MobilityData, MobilityScanData]:
     """Calculate SI SERTA mobility data from EPC and linewidth NPZ files."""
     if use_scc:
         _reject_scc_v1("mobility")
@@ -629,10 +638,22 @@ def eph_mobility(
         raise ValueError("epc_data is required for dptb eph --task mobility.")
     if linewidth_data is None:
         raise ValueError("linewidth_data is required for dptb eph --task mobility.")
-    if chemical_potential is None:
-        raise ValueError("chemical_potential is required for dptb eph --task mobility.")
-    if temperature is None:
-        raise ValueError("temperature is required for dptb eph --task mobility.")
+    chemical_potential_values, use_scan_mu = _resolve_scan_axis(
+        single_value=chemical_potential,
+        multiple_values=chemical_potentials,
+        single_name="chemical_potential",
+        multiple_name="chemical_potentials",
+        task="mobility",
+    )
+    temperature_values, use_scan_temperature = _resolve_scan_axis(
+        single_value=temperature,
+        multiple_values=temperatures,
+        single_name="temperature",
+        multiple_name="temperatures",
+        task="mobility",
+        positive=True,
+    )
+    use_scan = use_scan_mu or use_scan_temperature
     if system is None:
         if structure is None:
             raise ValueError("structure is required for dptb eph --task mobility.")
@@ -667,19 +688,34 @@ def eph_mobility(
         )
 
     reciprocal_cell = _reciprocal_cell_from_system(system)
-    result = compute_serta_mobility_si(
-        eigenvalues=epc.eigenvalues_k,
-        velocities=velocities,
-        linewidth=linewidth_input,
-        reciprocal_cell=reciprocal_cell,
-        chemical_potential=chemical_potential,
-        temperature=temperature,
-        kpoint_weights=weights,
-        spin_degeneracy=spin_degeneracy,
-        dimension=dimension,
-        volume=volume if str(dimension).lower() == "3d" else None,
-        area=area,
-    )
+    if use_scan:
+        result = compute_serta_mobility_scan_si(
+            eigenvalues=epc.eigenvalues_k,
+            velocities=velocities,
+            linewidth=linewidth_input,
+            reciprocal_cell=reciprocal_cell,
+            chemical_potentials=chemical_potential_values,
+            temperatures=temperature_values,
+            kpoint_weights=weights,
+            spin_degeneracy=spin_degeneracy,
+            dimension=dimension,
+            volume=volume if str(dimension).lower() == "3d" else None,
+            area=area,
+        )
+    else:
+        result = compute_serta_mobility_si(
+            eigenvalues=epc.eigenvalues_k,
+            velocities=velocities,
+            linewidth=linewidth_input,
+            reciprocal_cell=reciprocal_cell,
+            chemical_potential=float(chemical_potential_values[0]),
+            temperature=float(temperature_values[0]),
+            kpoint_weights=weights,
+            spin_degeneracy=spin_degeneracy,
+            dimension=dimension,
+            volume=volume if str(dimension).lower() == "3d" else None,
+            area=area,
+        )
     result.metadata.update(
         {
             "velocity_source": source,
@@ -748,6 +784,35 @@ def _normalize_velocity_source(velocity_source: str) -> str:
     if source not in {"finite_difference", "hamiltonian_derivative"}:
         raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
     return source
+
+
+def _resolve_scan_axis(
+    single_value: Optional[float],
+    multiple_values: Optional[Sequence[float]],
+    single_name: str,
+    multiple_name: str,
+    task: str,
+    positive: bool = False,
+) -> tuple[np.ndarray, bool]:
+    if single_value is not None and multiple_values is not None:
+        raise ValueError(f"{single_name} and {multiple_name} cannot both be set for dptb eph --task {task}.")
+    if multiple_values is not None:
+        values = np.asarray(multiple_values, dtype=float)
+        if values.ndim != 1 or values.size == 0:
+            raise ValueError(f"{multiple_name} must be a one-dimensional non-empty array.")
+        if not np.all(np.isfinite(values)):
+            raise ValueError(f"{multiple_name} must contain finite values.")
+        if positive and np.any(values <= 0.0):
+            raise ValueError(f"{multiple_name} must contain finite positive values.")
+        return values, True
+    if single_value is None:
+        raise ValueError(f"{single_name} is required for dptb eph --task {task}.")
+    value = np.asarray(single_value, dtype=float)
+    if value.shape != () or not np.isfinite(float(value)):
+        raise ValueError(f"{single_name} must be finite.")
+    if positive and float(value) <= 0.0:
+        raise ValueError(f"{single_name} must be finite and positive.")
+    return np.asarray([float(value)], dtype=float), False
 
 
 def _reciprocal_cell_from_system(system) -> np.ndarray:
