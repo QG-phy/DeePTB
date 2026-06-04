@@ -31,8 +31,12 @@ include `Phonons`, `EPCData`, `EPCPathData`, `EPCMeshSpec`, `EPCMeshData`,
 benchmark-only `DFTBPlusGauge` adapter. Mesh chunked artifact helpers
 `save_epc_mesh_chunked_artifact(...)` and
 `load_epc_mesh_chunked_artifact(...)` are exported for large-output storage
-experiments. `compute_linewidth_mesh_chunked_artifact(...)` computes mesh
-linewidth from those artifacts one chunk at a time.
+experiments. The executor boundary helpers `EPCKChunkSpec`, `EPCQChunkSpec`,
+`build_k_chunk_specs(...)`, `build_q_chunk_specs(...)`,
+`concat_epc_k_chunks(...)`, and `concat_epc_q_chunks(...)` are also exported
+for deterministic serial chunking and future optional executor integration.
+`compute_linewidth_mesh_chunked_artifact(...)` computes mesh linewidth from
+those artifacts one chunk at a time.
 `compute_serta_transport_from_epc_mesh_chunked_artifact(...)` computes SERTA
 transport from the chunked linewidth reduction plus the existing velocity
 providers. `compute_serta_transport_scan_from_epc_mesh_chunked_artifact(...)`

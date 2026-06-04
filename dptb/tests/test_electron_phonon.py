@@ -5711,6 +5711,21 @@ def test_eph_task_registry_matches_parser_choices_and_docs():
         assert parse_args(["eph", "--task", alias]).task == alias
 
 
+def test_epc_workflow_doc_lists_chunk_executor_public_symbols():
+    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
+    for symbol in [
+        "EPCKChunkSpec",
+        "EPCQChunkSpec",
+        "build_k_chunk_specs",
+        "build_q_chunk_specs",
+        "concat_epc_k_chunks",
+        "concat_epc_q_chunks",
+        "save_epc_mesh_chunked_artifact",
+        "load_epc_mesh_chunked_artifact",
+    ]:
+        assert symbol in workflow_doc
+
+
 def test_load_kpoints_accepts_json_npy_npz_and_text(tmp_path):
     kpoints = np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]])
 
