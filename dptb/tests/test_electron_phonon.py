@@ -7556,6 +7556,14 @@ def test_eph_entrypoint_writes_eliashberg_json_from_epc_data(tmp_path):
             "EPCData, EPCMeshData, or EPCPathData",
             id="wrong-schema",
         ),
+        pytest.param(
+            {
+                "coupling_strength": np.ones((1,)),
+                "metadata_json": np.array([{"schema": "deeptb.epc_data"}], dtype=object),
+            },
+            "metadata_json",
+            id="object-metadata",
+        ),
     ],
 )
 def test_eph_summary_loader_rejects_bad_npz_metadata(payload, match, tmp_path):

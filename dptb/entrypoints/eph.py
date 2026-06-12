@@ -1297,7 +1297,10 @@ def _load_epc_summary_data(path: str) -> Union[EPCData, EPCMeshData, EPCPathData
 def _metadata_json_from_npz(data) -> dict:
     if "metadata_json" not in data:
         raise ValueError("metadata_json is required for DeePTB EPC summary inputs.")
-    metadata_raw = data["metadata_json"]
+    try:
+        metadata_raw = data["metadata_json"]
+    except ValueError as exc:
+        raise ValueError("metadata_json could not be loaded safely for DeePTB EPC summary inputs.") from exc
     if np.shape(metadata_raw) != ():
         raise ValueError("metadata_json must be a scalar JSON object.")
     try:
