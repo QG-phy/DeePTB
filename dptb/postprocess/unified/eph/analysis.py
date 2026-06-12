@@ -13,6 +13,7 @@ from dptb.postprocess.unified.eph.data import (
     _merge_metadata,
     _metadata_from_npz,
     _metadata_to_json,
+    _optional_npz_array,
     _required_npz_array,
 )
 from dptb.postprocess.unified.eph.executor import read_epc_mesh_chunked_manifest, read_epc_mesh_chunked_weights
@@ -270,7 +271,7 @@ class LinewidthPathData:
                 path_axis=path_axis,
                 path_coordinates=_required_npz_array(data, "path_coordinates"),
                 band_indices=_required_npz_array(data, "el_band_indices"),
-                path_segments=data["path_segments"] if "path_segments" in data else None,
+                path_segments=_optional_npz_array(data, "path_segments", "DeePTB EPC path NPZ files"),
                 metadata=metadata,
             )
 
@@ -442,7 +443,7 @@ class RelaxationTimePathData:
                 path_axis=path_axis,
                 path_coordinates=_required_npz_array(data, "path_coordinates"),
                 band_indices=_required_npz_array(data, "el_band_indices"),
-                path_segments=data["path_segments"] if "path_segments" in data else None,
+                path_segments=_optional_npz_array(data, "path_segments", "DeePTB EPC path NPZ files"),
                 metadata=metadata,
             )
 

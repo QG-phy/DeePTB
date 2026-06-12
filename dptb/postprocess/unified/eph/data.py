@@ -622,7 +622,7 @@ class EPCPathData:
                 coupling_strength=_required_npz_array(data, "elph_coupling_strength"),
                 path_axis=path_axis,
                 path_coordinates=_required_npz_array(data, "path_coordinates"),
-                path_segments=data["path_segments"] if "path_segments" in data else None,
+                path_segments=_optional_npz_array(data, "path_segments", "DeePTB EPC path NPZ files"),
                 metadata=metadata,
             )
 
@@ -663,6 +663,15 @@ def _metadata_from_npz(data) -> Dict[str, Any]:
 def _required_npz_array(data, key: str, context: str = "DeePTB EPC NPZ files"):
     if key not in data:
         raise ValueError(f"{key} is required for {context}.")
+    try:
+        return data[key]
+    except ValueError as exc:
+        raise ValueError(f"{key} could not be loaded for {context}: {exc}") from exc
+
+
+def _optional_npz_array(data, key: str, context: str = "DeePTB EPC NPZ files"):
+    if key not in data:
+        return None
     try:
         return data[key]
     except ValueError as exc:
