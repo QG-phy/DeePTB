@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import inspect
 from pathlib import Path
 
 import h5py
@@ -268,6 +269,20 @@ def test_external_reference_path_helpers_use_environment_overrides(monkeypatch, 
 
     assert _external_reference_root() == reference_root
     assert _external_skdata_root() == skdata_root
+
+
+def test_external_graphene_reference_tests_remain_opt_in_and_marked():
+    for test_func in [
+        test_graphene_reference_case_coupling_strength,
+        test_graphene_reference_case_supercell_fd_provider,
+    ]:
+        source = inspect.getsource(test_func)
+        assert "DEEPTB_RUN_REFERENCE_EPH" in source
+        assert "pytest.skip" in source
+        assert "TODO(epc-fixture)" in source
+
+    slow_source = inspect.getsource(test_graphene_reference_case_supercell_fd_provider)
+    assert "DEEPTB_RUN_SLOW_EPH" in slow_source
 
 
 def test_minimal_in_repo_epc_fixture_matches_linewidth_reference():
