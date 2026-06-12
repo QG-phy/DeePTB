@@ -3086,4 +3086,6 @@ def _scalar_string_from_npz(data, key: str) -> str:
         raise ValueError(f"{key} must be a scalar string.")
     if hasattr(value, "item"):
         value = value.item()
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a scalar string.")
     return str(value)

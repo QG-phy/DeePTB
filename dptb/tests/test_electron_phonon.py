@@ -2027,6 +2027,57 @@ def test_epc_npz_loaders_reject_missing_required_arrays_with_field_name(data_cls
         data_cls.load_npz(path)
 
 
+@pytest.mark.parametrize(
+    "data_cls,payload",
+    [
+        pytest.param(
+            EPCPathData,
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
+                "ph_frequencies": np.array([[1.0]]),
+                "el_kpoints": np.array([[0.0, 0.0, 0.0]]),
+                "el_band_indices": np.array([0]),
+                "el_eigenvalues_k": np.array([[0.0]]),
+                "el_eigenvalues_kq": np.array([[[0.0]]]),
+                "elph_coupling_matrix": np.ones((1, 1, 1, 1, 1), dtype=complex),
+                "elph_coupling_strength": np.ones((1, 1, 1, 1, 1)),
+                "path_coordinates": np.array([0.0]),
+                "metadata_json": np.array('{"schema": "deeptb.epc_path_data"}'),
+            },
+            id="epc-path",
+        ),
+        pytest.param(
+            LinewidthPathData,
+            {
+                "elph_path_linewidth": np.array([[[0.1]]]),
+                "elph_path_linewidth_absorption": np.array([[[0.0]]]),
+                "elph_path_linewidth_emission": np.array([[[0.1]]]),
+                "path_coordinates": np.array([0.0]),
+                "el_band_indices": np.array([0]),
+                "metadata_json": np.array('{"schema": "deeptb.epc_path_linewidth"}'),
+            },
+            id="linewidth-path",
+        ),
+        pytest.param(
+            RelaxationTimePathData,
+            {
+                "elph_path_relaxation_time": np.array([[[1.0]]]),
+                "path_coordinates": np.array([0.0]),
+                "el_band_indices": np.array([0]),
+                "metadata_json": np.array('{"schema": "deeptb.epc_path_relaxation_time"}'),
+            },
+            id="relaxation-path",
+        ),
+    ],
+)
+def test_epc_path_npz_loaders_reject_non_string_path_axis(data_cls, payload, tmp_path):
+    path = tmp_path / f"bad_path_axis_{data_cls.__name__}.npz"
+    np.savez(path, **payload, path_axis=np.array(1))
+
+    with pytest.raises(ValueError, match="path_axis must be a scalar string"):
+        data_cls.load_npz(path)
+
+
 def test_epc_npz_loaders_use_pickle_free_numpy_loading(monkeypatch, tmp_path):
     persistent_data_classes = [
         Phonons,
