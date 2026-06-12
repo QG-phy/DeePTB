@@ -643,7 +643,10 @@ def _metadata_to_json(metadata: Dict[str, Any]) -> str:
 def _metadata_from_npz(data) -> Dict[str, Any]:
     if "metadata_json" not in data:
         raise ValueError("metadata_json is required for DeePTB EPC NPZ files.")
-    value = data["metadata_json"]
+    try:
+        value = data["metadata_json"]
+    except ValueError as exc:
+        raise ValueError(f"metadata_json could not be loaded for DeePTB EPC NPZ files: {exc}") from exc
     if np.shape(value) != ():
         raise ValueError("metadata_json must be a scalar JSON object.")
     if hasattr(value, "item"):

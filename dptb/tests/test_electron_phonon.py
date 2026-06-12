@@ -1963,6 +1963,11 @@ def test_npz_metadata_json_must_be_scalar_json_object(data_cls, payload, tmp_pat
     with pytest.raises(ValueError, match="JSON object"):
         data_cls.load_npz(non_object_json)
 
+    object_metadata = tmp_path / "object_metadata.npz"
+    np.savez(object_metadata, **payload, metadata_json=np.array({"schema": "object"}, dtype=object))
+    with pytest.raises(ValueError, match="metadata_json.*Object arrays cannot be loaded"):
+        data_cls.load_npz(object_metadata)
+
 
 @pytest.mark.parametrize(
     "data_cls,missing_key,payload",
