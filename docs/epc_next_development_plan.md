@@ -41,7 +41,7 @@
   - first serial streaming mesh artifact producer through `TBSystem.eph.compute_mesh_chunked_artifact(...)`。
 - Still needs hardening before merge/release:
   - a minimal in-repo synthetic EPC fixture now covers default linewidth, coupling-contraction, coupling-summary, and scattering-map reference testing; broader FD fixtures still need release hardening。
-  - opt-in full Graphene reference kept outside git for development and benchmark。
+  - opt-in full Graphene reference kept outside git for development and benchmark; default-test guard now asserts external Graphene reference tests remain env-gated and marked with `TODO(epc-fixture)`。
   - current public API export smoke coverage now asserts every symbol in `dptb.postprocess.unified.eph.__all__` is re-exported from `dptb.postprocess.unified`, so new public symbols must be added to the EPC namespace intentionally。
   - docs index now links the v1 workflow and SCC design docs; CLI task examples, chunk-executor public symbols, docs-index entries, parser task choices, and public export drift checks are complete for the current checkpoint and must be rerun after any further EPC API or CLI changes。
   - unit metadata, single-point/scan transport and mobility unit metadata, linewidth/relaxation mesh/path unit metadata, temperature convention, reciprocal-cell convention, velocity-source alias guards, linewidth-scan-convention alias guards, and mobility persistent unit-string validation now have focused regression coverage; keep a final physical-convention review before release。
@@ -908,6 +908,7 @@ For the next implementation wave, the correct preparation is interface-level:
 
 - Default tests must remain self-contained and not require local dftbephy checkout.
 - External Graphene reference remains opt-in through environment variables.
+- External Graphene reference tests now have a guard test requiring env gates and `TODO(epc-fixture)` markers so they cannot silently become default-CI dependencies.
 - Every new persistent data object needs:
   - constructor validation tests
   - NPZ roundtrip tests
