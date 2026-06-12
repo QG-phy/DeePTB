@@ -1417,7 +1417,10 @@ def _load_array(path: str, npz_key: str) -> np.ndarray:
             value = value.get(npz_key)
         if value is None:
             raise ValueError(f"JSON input must be an array or contain a {npz_key!r} field.")
-        return np.asarray(value, dtype=float)
+        try:
+            return np.asarray(value, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"JSON input field {npz_key!r} must contain numeric array values.") from exc
     return np.loadtxt(path, dtype=float)
 
 
