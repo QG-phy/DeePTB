@@ -1257,6 +1257,44 @@ def test_epc_mesh_chunked_artifact_rejects_partial_chunk_coverage(axis, match, t
         load_epc_mesh_chunked_artifact(artifact_dir)
 
 
+def test_epc_mesh_chunked_artifact_rejects_chunk_file_range_mismatch(tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="k", chunk_size=2)
+    manifest = json.loads((artifact_dir / "manifest.json").read_text(encoding="utf-8"))
+    first_chunk_path = artifact_dir / manifest["chunks"][0]["filename"]
+    first_chunk = EPCData.load_npz(first_chunk_path)
+    truncated = EPCData(
+        kpoints=first_chunk.kpoints[:1],
+        qpoints=first_chunk.qpoints,
+        band_indices=first_chunk.band_indices,
+        frequencies=first_chunk.frequencies,
+        eigenvalues_k=first_chunk.eigenvalues_k[:1],
+        eigenvalues_kq=first_chunk.eigenvalues_kq[:, :1, :],
+        coupling_matrix=first_chunk.coupling_matrix[:, :1, :, :, :],
+        coupling_strength=first_chunk.coupling_strength[:, :1, :, :, :],
+        metadata=first_chunk.metadata,
+    )
+    truncated.save_npz(first_chunk_path)
+
+    with pytest.raises(ValueError, match="manifest chunk range"):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
+def test_epc_mesh_chunked_artifact_rejects_chunk_file_metadata_mismatch(tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="q", chunk_size=1)
+    manifest = json.loads((artifact_dir / "manifest.json").read_text(encoding="utf-8"))
+    first_chunk_path = artifact_dir / manifest["chunks"][0]["filename"]
+    first_chunk = EPCData.load_npz(first_chunk_path)
+    first_chunk.metadata["artifact_chunk"] = {"chunk_index": 0, "q_start": 0, "q_stop": 2}
+    first_chunk.save_npz(first_chunk_path)
+
+    with pytest.raises(ValueError, match="artifact_chunk"):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
 @pytest.mark.parametrize(
     ("mutator", "match"),
     [

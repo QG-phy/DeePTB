@@ -357,7 +357,9 @@ def load_epc_mesh_chunked_artifact(directory: Union[str, Path]) -> EPCMeshData:
         chunk_path = directory / filename
         if not chunk_path.exists():
             raise ValueError(f"Chunk file {filename!r} is required for EPC mesh chunked artifact.")
-        chunks.append(EPCData.load_npz(chunk_path))
+        chunk = EPCData.load_npz(chunk_path)
+        _validate_loaded_artifact_chunk(axis, entry, chunk)
+        chunks.append(chunk)
 
     kpoint_weights, qpoint_weights = read_epc_mesh_chunked_weights(directory, manifest)
     _validate_artifact_chunk_coverage(manifest, kpoint_weights, qpoint_weights)
@@ -454,6 +456,18 @@ def _validate_artifact_chunk_coverage(manifest: dict, kpoint_weights: np.ndarray
     if stop != expected:
         label = "kpoint" if axis == "k" else "qpoint"
         raise ValueError(f"Chunk manifest ranges must cover all {label} weights.")
+
+
+def _validate_loaded_artifact_chunk(axis: str, entry: dict, chunk: EPCData) -> None:
+    _, start, stop = _chunk_bounds_from_spec(axis, entry["spec"])
+    expected = stop - start
+    actual = chunk.kpoints.shape[0] if axis == "k" else chunk.qpoints.shape[0]
+    if actual != expected:
+        raise ValueError("Chunk file axis length must match the manifest chunk range.")
+    if chunk.metadata.get("artifact_axis") != axis:
+        raise ValueError("Chunk file metadata artifact_axis must match the manifest axis.")
+    if chunk.metadata.get("artifact_chunk") != entry["spec"]:
+        raise ValueError("Chunk file metadata artifact_chunk must match the manifest spec.")
 
 
 def _chunk_bounds_from_spec(axis: str, spec: dict) -> tuple:
