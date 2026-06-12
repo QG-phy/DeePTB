@@ -322,7 +322,10 @@ def read_epc_mesh_chunked_weights(directory: Union[str, Path], manifest: Optiona
     with np.load(weights_path, allow_pickle=False) as weights_payload:
         if "metadata_json" not in weights_payload:
             raise ValueError("weights.npz metadata_json is required.")
-        metadata_json = weights_payload["metadata_json"]
+        try:
+            metadata_json = weights_payload["metadata_json"]
+        except ValueError as exc:
+            raise ValueError(f"weights.npz metadata_json could not be loaded safely: {exc}") from exc
         if np.shape(metadata_json) != ():
             raise ValueError("weights.npz metadata_json must be a scalar JSON object.")
         try:

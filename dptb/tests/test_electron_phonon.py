@@ -1376,6 +1376,7 @@ def test_epc_mesh_chunked_artifact_rejects_missing_chunk_file(tmp_path):
         (np.array(["{}", "{}"]), "scalar JSON object"),
         (np.array("{not-json"), "valid JSON"),
         (np.array("[]"), "JSON object"),
+        (np.array({"schema": "object"}, dtype=object), "metadata_json.*Object arrays"),
     ],
 )
 def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata_json(metadata_json, match, tmp_path):
