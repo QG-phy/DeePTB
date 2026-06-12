@@ -6612,6 +6612,18 @@ def test_epc_workflow_doc_lists_transport_non_si_unit_metadata():
         assert expected in workflow_doc
 
 
+def test_epc_workflow_doc_lists_transport_convention_options():
+    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
+
+    for phrase in [
+        "--velocity-source finite_difference",
+        "--velocity-source hamiltonian_derivative",
+        "--linewidth-scan-convention recompute",
+        "fixed-linewidth",
+    ]:
+        assert phrase in workflow_doc
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
