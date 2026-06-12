@@ -6498,6 +6498,11 @@ def test_load_array_accepts_npz_key_for_transport_weights(tmp_path):
     with pytest.raises(ValueError, match="kpoint_weights"):
         _load_array(str(missing_path), npz_key="kpoint_weights")
 
+    object_npz_path = tmp_path / "object_weights.npz"
+    np.savez(object_npz_path, kpoint_weights=np.array([{"bad": 1}], dtype=object))
+    with pytest.raises(ValueError, match="kpoint_weights"):
+        _load_array(str(object_npz_path), npz_key="kpoint_weights")
+
     missing_json_path = tmp_path / "missing.json"
     missing_json_path.write_text('{"weights": [1.0, 2.0]}', encoding="utf-8")
     with pytest.raises(ValueError, match="kpoint_weights"):

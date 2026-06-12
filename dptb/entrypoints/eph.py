@@ -1409,7 +1409,10 @@ def _load_array(path: str, npz_key: str) -> np.ndarray:
         with np.load(path, allow_pickle=False) as data:
             if npz_key not in data:
                 raise ValueError(f"NPZ input must contain a {npz_key!r} array.")
-            return data[npz_key]
+            try:
+                return data[npz_key]
+            except ValueError as exc:
+                raise ValueError(f"NPZ input array {npz_key!r} could not be loaded safely.") from exc
     if suffix == ".json":
         with open(path, "r", encoding="utf-8") as handle:
             value = json.load(handle)
