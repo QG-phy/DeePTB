@@ -285,6 +285,29 @@ def test_external_graphene_reference_tests_remain_opt_in_and_marked():
     assert "DEEPTB_RUN_SLOW_EPH" in slow_source
 
 
+def test_minimal_in_repo_epc_fixture_is_self_contained():
+    with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
+        fixture = json.load(handle)
+
+    strings = []
+
+    def collect_strings(value):
+        if isinstance(value, str):
+            strings.append(value)
+        elif isinstance(value, dict):
+            for item in value.values():
+                collect_strings(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect_strings(item)
+
+    collect_strings(fixture)
+
+    forbidden_tokens = ["/Users/", "/private/", "dftbephy", "matsci-0-3"]
+    assert all(token not in text for text in strings for token in forbidden_tokens)
+    assert "self-contained" in fixture["description"]
+
+
 def test_minimal_in_repo_epc_fixture_matches_linewidth_reference():
     with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
         fixture = json.load(handle)
