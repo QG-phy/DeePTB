@@ -1322,6 +1322,12 @@ def test_epc_mesh_chunked_artifact_rejects_chunk_file_metadata_mismatch(tmp_path
         (lambda manifest: manifest["chunks"][0].update({"filename": "../escape.npz"}), "filename"),
         (lambda manifest: manifest["chunks"][0].pop("spec"), "spec object"),
         (lambda manifest: manifest["chunks"][0].update({"spec": []}), "spec object"),
+        (lambda manifest: manifest["chunks"][0]["spec"].pop("chunk_index"), "chunk_index"),
+        (lambda manifest: manifest["chunks"][0]["spec"].update({"chunk_index": True}), "chunk_index"),
+        (lambda manifest: manifest["chunks"][0]["spec"].update({"chunk_index": -1}), "chunk_index"),
+        (lambda manifest: manifest["chunks"][0]["spec"].pop("q_start"), "q_start"),
+        (lambda manifest: manifest["chunks"][0]["spec"].update({"q_start": True}), "q_start"),
+        (lambda manifest: manifest["chunks"][0]["spec"].update({"q_stop": True}), "q_stop"),
     ],
 )
 def test_epc_mesh_chunked_artifact_rejects_bad_manifest_contract(mutator, match, tmp_path):
