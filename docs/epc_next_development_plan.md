@@ -40,7 +40,7 @@
   - explicit per-scan-point linewidth recomputation helpers for chunked-artifact transport and SI mobility scans, with CLI exposure through `--linewidth-scan-convention recompute`。
   - first serial streaming mesh artifact producer through `TBSystem.eph.compute_mesh_chunked_artifact(...)`。
 - Still needs hardening before merge/release:
-  - a minimal in-repo synthetic EPC fixture now covers default linewidth, coupling-contraction, coupling-summary, and scattering-map reference testing; broader FD fixtures still need release hardening。
+  - a minimal in-repo synthetic EPC fixture now covers default linewidth, coupling-contraction, coupling-summary, and scattering-map reference testing, with a self-contained fixture guard preventing local path or dftbephy leakage; broader FD fixtures still need release hardening。
   - opt-in full Graphene reference kept outside git for development and benchmark; default-test guard now asserts external Graphene reference tests remain env-gated and marked with `TODO(epc-fixture)`。
   - current public API export smoke coverage now asserts every symbol in `dptb.postprocess.unified.eph.__all__` is re-exported from `dptb.postprocess.unified`, so new public symbols must be added to the EPC namespace intentionally。
   - docs index now links the v1 workflow and SCC design docs; CLI task examples, chunk-executor public symbols, docs-index entries, parser task choices, and public export drift checks are complete for the current checkpoint and must be rerun after any further EPC API or CLI changes。
@@ -907,6 +907,7 @@ For the next implementation wave, the correct preparation is interface-level:
 ## Testing Strategy
 
 - Default tests must remain self-contained and not require local dftbephy checkout.
+- The minimal in-repo EPC fixture now has a guard test proving it remains self-contained and does not contain local paths or external reference tokens.
 - External Graphene reference remains opt-in through environment variables.
 - External Graphene reference tests now have a guard test requiring env gates and `TODO(epc-fixture)` markers so they cannot silently become default-CI dependencies.
 - Every new persistent data object needs:
