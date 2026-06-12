@@ -1310,7 +1310,9 @@ def test_epc_mesh_chunked_artifact_rejects_chunk_file_metadata_mismatch(tmp_path
         (lambda manifest: manifest.update({"weights_filename": "nested/weights.npz"}), "weights_filename"),
         (lambda manifest: manifest.update({"weights_filename": "../weights.npz"}), "weights_filename"),
         (lambda manifest: manifest.update({"mesh_metadata": []}), "mesh_metadata"),
+        (lambda manifest: manifest.update({"chunks": {}}), "at least one chunk"),
         (lambda manifest: manifest.update({"chunks": []}), "at least one chunk"),
+        (lambda manifest: manifest["chunks"].__setitem__(0, []), "chunk manifest entry"),
         (lambda manifest: manifest["chunks"][0].update({"axis": "k"}), "axis"),
         (lambda manifest: manifest["chunks"][1]["spec"].update({"q_start": 3, "q_stop": 4}), "contiguous"),
         (lambda manifest: manifest["chunks"][0].update({"filename": 1}), "filename"),
@@ -1318,6 +1320,8 @@ def test_epc_mesh_chunked_artifact_rejects_chunk_file_metadata_mismatch(tmp_path
         (lambda manifest: manifest["chunks"][0].update({"filename": "/tmp/chunk.npz"}), "filename"),
         (lambda manifest: manifest["chunks"][0].update({"filename": "nested/chunk.npz"}), "filename"),
         (lambda manifest: manifest["chunks"][0].update({"filename": "../escape.npz"}), "filename"),
+        (lambda manifest: manifest["chunks"][0].pop("spec"), "spec object"),
+        (lambda manifest: manifest["chunks"][0].update({"spec": []}), "spec object"),
     ],
 )
 def test_epc_mesh_chunked_artifact_rejects_bad_manifest_contract(mutator, match, tmp_path):
