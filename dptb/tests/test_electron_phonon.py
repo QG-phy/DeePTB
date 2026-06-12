@@ -6454,6 +6454,20 @@ def test_docs_index_lists_epc_user_docs():
     assert "epc_scc_design" in docs_index
 
 
+def test_epc_scc_design_doc_keeps_implementation_gates():
+    scc_doc = (Path(__file__).parents[2] / "docs" / "epc_scc_design.md").read_text(encoding="utf-8")
+
+    for phrase in [
+        "`use_scc=True` until the formula, reference data, and tests",
+        "scc_epc_definition = \"frozen_charge\"",
+        "scc_epc_definition = \"relaxed_charge\"",
+        "NotImplementedError",
+        "TODO(epc-fixture)",
+        "Do not use a non-SCC Graphene passing result as evidence",
+    ]:
+        assert phrase in scc_doc
+
+
 def test_epc_workflow_doc_lists_transport_non_si_unit_metadata():
     workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
     transport = TransportData(conductivity=np.eye(3), carrier_density=np.array(1.0))
