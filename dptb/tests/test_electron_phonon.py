@@ -178,6 +178,9 @@ def test_unified_postprocess_exports_epc_v1_symbols():
         assert hasattr(unified_postprocess, name), f"dptb.postprocess.unified must re-export {name}"
         assert getattr(unified_postprocess, name) is getattr(eph_public, name)
 
+    non_epc_unified_exports = {"TBSystem", "HamiltonianCalculator", "DeePTBAdapter"}
+    assert set(unified_postprocess.__all__) - non_epc_unified_exports == set(eph_public.__all__)
+
     assert unified_postprocess.DFTBPlusGauge is DFTBPlusGauge
     assert unified_postprocess.EPCData is EPCData
     assert unified_postprocess.EPCMeshData is EPCMeshData
