@@ -6557,7 +6557,7 @@ def test_load_kpoints_accepts_json_npy_npz_and_text(tmp_path):
 
     object_path = tmp_path / "object_kpoints.npy"
     np.save(object_path, np.array([{"kpoints": kpoints}], dtype=object))
-    with pytest.raises(ValueError, match="Object arrays"):
+    with pytest.raises(ValueError, match="kpoints.*Object arrays"):
         _load_kpoints(str(object_path))
 
     bad_shape_path = tmp_path / "bad_shape.npy"

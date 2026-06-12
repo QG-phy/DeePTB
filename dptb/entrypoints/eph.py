@@ -1407,7 +1407,10 @@ def _reciprocal_cell_from_system(system) -> np.ndarray:
 def _load_array(path: str, npz_key: str) -> np.ndarray:
     suffix = Path(path).suffix.lower()
     if suffix == ".npy":
-        return np.load(path, allow_pickle=False)
+        try:
+            return np.load(path, allow_pickle=False)
+        except ValueError as exc:
+            raise ValueError(f"NPY input for {npz_key!r} could not be loaded safely: {exc}") from exc
     if suffix == ".npz":
         with np.load(path, allow_pickle=False) as data:
             if npz_key not in data:
