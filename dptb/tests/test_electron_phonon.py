@@ -1343,6 +1343,29 @@ def test_epc_mesh_chunked_artifact_rejects_bad_manifest_contract(mutator, match,
         load_epc_mesh_chunked_artifact(artifact_dir)
 
 
+@pytest.mark.parametrize(
+    ("mutator", "match"),
+    [
+        (lambda spec: spec.pop("k_start"), "k_start"),
+        (lambda spec: spec.update({"k_start": True}), "k_start"),
+        (lambda spec: spec.update({"k_stop": True}), "k_stop"),
+        (lambda spec: spec.update({"k_start": -1}), "non-empty"),
+        (lambda spec: spec.update({"k_start": 1, "k_stop": 1}), "non-empty"),
+    ],
+)
+def test_epc_mesh_chunked_artifact_rejects_bad_k_manifest_spec(mutator, match, tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis="k", chunk_size=1)
+    manifest_path = artifact_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mutator(manifest["chunks"][0]["spec"])
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=match):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
 def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
     artifact_dir = tmp_path / "artifact"
