@@ -6447,6 +6447,13 @@ def test_epc_workflow_doc_lists_chunk_executor_public_symbols():
         assert symbol in workflow_doc
 
 
+def test_docs_index_lists_epc_user_docs():
+    docs_index = (Path(__file__).parents[2] / "docs" / "index.rst").read_text(encoding="utf-8")
+
+    assert "epc_v1_workflow" in docs_index
+    assert "epc_scc_design" in docs_index
+
+
 def test_epc_workflow_doc_lists_transport_non_si_unit_metadata():
     workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
     transport = TransportData(conductivity=np.eye(3), carrier_density=np.array(1.0))
