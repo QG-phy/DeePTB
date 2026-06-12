@@ -44,7 +44,7 @@
   - opt-in full Graphene reference kept outside git for development and benchmark。
   - current public API export smoke coverage now asserts every symbol in `dptb.postprocess.unified.eph.__all__` is re-exported from `dptb.postprocess.unified`, so new public symbols must be added to the EPC namespace intentionally。
   - docs index now links the v1 workflow and SCC design docs; CLI task examples, chunk-executor public symbols, docs-index entries, parser task choices, and public export drift checks are complete for the current checkpoint and must be rerun after any further EPC API or CLI changes。
-  - unit metadata, single-point/scan transport and mobility unit metadata, linewidth/relaxation mesh/path unit metadata, temperature convention, reciprocal-cell convention, and mobility persistent unit-string validation now have focused regression coverage; keep a final physical-convention review before release。
+  - unit metadata, single-point/scan transport and mobility unit metadata, linewidth/relaxation mesh/path unit metadata, temperature convention, reciprocal-cell convention, velocity-source alias guards, linewidth-scan-convention alias guards, and mobility persistent unit-string validation now have focused regression coverage; keep a final physical-convention review before release。
   - artifact metadata validation now covers weights metadata JSON, weights metadata object-array diagnostics, weights shape/finite/non-negative/positive-sum checks, weights object-array diagnostics, missing chunk/weights files, unsafe artifact filenames, chunk coverage against global weights, chunk payload range/metadata consistency, manifest chunk object/spec guards, manifest k/q chunk-spec field guards, fixed-vs-recomputed linewidth scan convention guards, missing required array diagnostics for persistent EPC NPZ loaders, path-axis scalar-string validation, path-segment validation, optional `path_segments` safe-load diagnostics, representative metadata JSON scalar/object validation, metadata JSON object-array diagnostics, representative object-array rejection under pickle-free loading, CLI array-loader missing-field diagnostics, CLI JSON numeric-array diagnostics, CLI NPZ keyed-array diagnostics, CLI NPY object-array diagnostics, summary-loader metadata/schema rejection, summary metadata safe-load diagnostics, strict `EPCMeshSpec` chunk-size type validation, and direct k/q chunk-spec field validation; continue strict NPZ loader audit for remaining edge cases。
   - full repo test pass has been completed for the current checkpoint after the latest EPC loader/CLI diagnostic commits: `uv run pytest ./dptb/tests/ -q` -> `923 passed, 32 skipped, 12 warnings`; rerun before final merge after any further EPC changes。
 - Still design-only:
@@ -57,7 +57,7 @@
 Current sprint posture:
 
 - The branch is in release-hardening mode, not broad parity expansion mode.
-- Recent hardening checkpoints have validated required artifact files, strict mesh chunk-size typing, SCC task gating, default minimal-fixture analysis coverage, chunk-executor workflow docs/export drift, SCC design gate docs, core NPZ loader diagnostics, optional path-segment safe loading, CLI NPY/NPZ/JSON input diagnostics, artifact weights diagnostics, and artifact manifest object/spec guards.
+- Recent hardening checkpoints have validated required artifact files, strict mesh chunk-size typing, SCC task gating, default minimal-fixture analysis coverage, chunk-executor workflow docs/export drift, SCC design gate docs, core NPZ loader diagnostics, optional path-segment safe loading, CLI NPY/NPZ/JSON input diagnostics, artifact weights diagnostics, artifact manifest object/spec guards, velocity-source aliases, and linewidth scan convention aliases.
 - Continue with narrow validation/docs/API-stability slices; do not start MPI, CUDA, SCC EPC, SOC, or polar-correction implementation until the relevant gate is explicitly opened.
 
 ## Design Position
@@ -572,6 +572,7 @@ Non-goals for this slice:
 - Finite-difference velocity unit conversion tests。
 - Mobility and transport scan outputs assert unit metadata and `linewidth_scan_convention` metadata。
 - `linewidth_scan_convention="recompute"` is rejected outside artifact scan workflows so the flag is never silently ignored。
+- CLI normalizers now have direct guard tests for `velocity_source` and `linewidth_scan_convention` public aliases。
 - Graphene mobility sanity benchmark。
 - 文档中明确当前单位约定和限制。
 
