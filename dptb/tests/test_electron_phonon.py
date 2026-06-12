@@ -23,6 +23,7 @@ from dptb.entrypoints.eph import (
     _load_kpoint_weights,
     _load_kpoints,
     _normalize_linewidth_scan_convention,
+    _normalize_velocity_source,
     _parse_band_groups,
     eph,
 )
@@ -6571,6 +6572,25 @@ def test_epc_workflow_doc_lists_transport_non_si_unit_metadata():
     for key in ["conductivity_unit", "carrier_density_unit"]:
         expected = f'{key}="{transport.metadata[key]}"'
         assert expected in workflow_doc
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("finite_difference", "finite_difference"),
+        ("finite-difference", "finite_difference"),
+        ("hamiltonian_derivative", "hamiltonian_derivative"),
+        ("hamiltonian-derivative", "hamiltonian_derivative"),
+    ],
+)
+def test_normalize_velocity_source_accepts_public_aliases(value, expected):
+    assert _normalize_velocity_source(value) == expected
+
+
+@pytest.mark.parametrize("value", ["", "fd", "analytic", True, None])
+def test_normalize_velocity_source_rejects_invalid_values(value):
+    with pytest.raises(ValueError, match="velocity_source"):
+        _normalize_velocity_source(value)
 
 
 @pytest.mark.parametrize(
