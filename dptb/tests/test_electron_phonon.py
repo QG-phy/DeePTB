@@ -1417,8 +1417,10 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_schema_version(tmp_path):
         (lambda payload: payload.pop("el_kpoint_weights"), "weights.npz"),
         (lambda payload: payload.update({"el_kpoint_weights": np.ones((1, 1))}), "el_kpoint_weights"),
         (lambda payload: payload.update({"el_kpoint_weights": np.array([1.0, np.nan, 1.0])}), "el_kpoint_weights"),
+        (lambda payload: payload.update({"el_kpoint_weights": np.array([{"bad": 1}], dtype=object)}), "el_kpoint_weights.*Object arrays"),
         (lambda payload: payload.update({"ph_qpoint_weights": np.array([1.0, -1.0])}), "ph_qpoint_weights"),
         (lambda payload: payload.update({"ph_qpoint_weights": np.array([0.0, 0.0])}), "ph_qpoint_weights"),
+        (lambda payload: payload.update({"ph_qpoint_weights": np.array([{"bad": 1}], dtype=object)}), "ph_qpoint_weights.*Object arrays"),
     ],
 )
 def test_epc_mesh_chunked_artifact_rejects_bad_weights_arrays(payload_update, match, tmp_path):

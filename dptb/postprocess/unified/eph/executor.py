@@ -335,14 +335,20 @@ def read_epc_mesh_chunked_weights(directory: Union[str, Path], manifest: Optiona
             raise ValueError("weights.npz schema must be deeptb.epc_mesh_chunked_artifact.weights.")
         if weights_metadata.get("schema_version") != EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION:
             raise ValueError("Unsupported weights.npz schema_version.")
-        try:
-            kpoint_weights = weights_payload["el_kpoint_weights"]
-            qpoint_weights = weights_payload["ph_qpoint_weights"]
-        except KeyError as exc:
-            raise ValueError("weights.npz must contain el_kpoint_weights and ph_qpoint_weights.") from exc
+        kpoint_weights = _required_weights_npz_array(weights_payload, "el_kpoint_weights")
+        qpoint_weights = _required_weights_npz_array(weights_payload, "ph_qpoint_weights")
         kpoint_weights = _normalize_weights(kpoint_weights, "el_kpoint_weights")
         qpoint_weights = _normalize_weights(qpoint_weights, "ph_qpoint_weights")
     return kpoint_weights, qpoint_weights
+
+
+def _required_weights_npz_array(weights_payload, key: str) -> np.ndarray:
+    if key not in weights_payload:
+        raise ValueError("weights.npz must contain el_kpoint_weights and ph_qpoint_weights.")
+    try:
+        return weights_payload[key]
+    except ValueError as exc:
+        raise ValueError(f"weights.npz array {key!r} could not be loaded safely: {exc}") from exc
 
 
 def load_epc_mesh_chunked_artifact(directory: Union[str, Path]) -> EPCMeshData:
