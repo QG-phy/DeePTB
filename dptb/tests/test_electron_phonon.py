@@ -2257,7 +2257,7 @@ def test_epc_npz_loader_rejects_object_arrays_without_pickle(tmp_path):
     path = tmp_path / "object_array_epc.npz"
     np.savez(path, **payload)
 
-    with pytest.raises(ValueError, match="Object arrays cannot be loaded"):
+    with pytest.raises(ValueError, match="ph_qpoints.*Object arrays cannot be loaded"):
         EPCData.load_npz(path)
 
 
@@ -2321,7 +2321,7 @@ def test_representative_epc_npz_loaders_reject_object_arrays_without_pickle(
     path = tmp_path / f"object_array_{object_key}.npz"
     np.savez(path, **payload)
 
-    with pytest.raises(ValueError, match="Object arrays cannot be loaded"):
+    with pytest.raises(ValueError, match=f"{object_key}.*Object arrays cannot be loaded"):
         data_cls.load_npz(path)
 
 

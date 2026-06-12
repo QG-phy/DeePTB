@@ -660,7 +660,10 @@ def _metadata_from_npz(data) -> Dict[str, Any]:
 def _required_npz_array(data, key: str, context: str = "DeePTB EPC NPZ files"):
     if key not in data:
         raise ValueError(f"{key} is required for {context}.")
-    return data[key]
+    try:
+        return data[key]
+    except ValueError as exc:
+        raise ValueError(f"{key} could not be loaded for {context}: {exc}") from exc
 
 
 def _scalar_string_from_npz(data, key: str) -> str:
