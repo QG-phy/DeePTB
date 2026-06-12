@@ -5242,6 +5242,25 @@ def test_epc_k_chunk_specs_reject_invalid_inputs(nk, chunk_size, match):
         build_k_chunk_specs(nk, chunk_size)
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"chunk_index": True, "k_start": 0, "k_stop": 1}, "chunk_index"),
+        ({"chunk_index": 0.5, "k_start": 0, "k_stop": 1}, "chunk_index"),
+        ({"chunk_index": -1, "k_start": 0, "k_stop": 1}, "chunk_index"),
+        ({"chunk_index": 0, "k_start": True, "k_stop": 1}, "k_start"),
+        ({"chunk_index": 0, "k_start": 0.5, "k_stop": 1}, "k_start"),
+        ({"chunk_index": 0, "k_start": 0, "k_stop": True}, "k_stop"),
+        ({"chunk_index": 0, "k_start": 0, "k_stop": 1.5}, "k_stop"),
+        ({"chunk_index": 0, "k_start": -1, "k_stop": 1}, "non-empty"),
+        ({"chunk_index": 0, "k_start": 1, "k_stop": 1}, "non-empty"),
+    ],
+)
+def test_epc_k_chunk_spec_rejects_invalid_fields(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        EPCKChunkSpec(**kwargs)
+
+
 def _epc_k_chunk(kpoint_values, *, qpoint_shift=0.0, band_indices=None, frequencies=None, nbands=1):
     kpoint_values = np.asarray(kpoint_values, dtype=float)
     nk = len(kpoint_values)
@@ -5333,6 +5352,25 @@ def test_epc_q_chunk_specs_are_deterministic():
 def test_epc_q_chunk_specs_reject_invalid_inputs(nq, chunk_size, match):
     with pytest.raises(ValueError, match=match):
         build_q_chunk_specs(nq, chunk_size)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"chunk_index": True, "q_start": 0, "q_stop": 1}, "chunk_index"),
+        ({"chunk_index": 0.5, "q_start": 0, "q_stop": 1}, "chunk_index"),
+        ({"chunk_index": -1, "q_start": 0, "q_stop": 1}, "chunk_index"),
+        ({"chunk_index": 0, "q_start": True, "q_stop": 1}, "q_start"),
+        ({"chunk_index": 0, "q_start": 0.5, "q_stop": 1}, "q_start"),
+        ({"chunk_index": 0, "q_start": 0, "q_stop": True}, "q_stop"),
+        ({"chunk_index": 0, "q_start": 0, "q_stop": 1.5}, "q_stop"),
+        ({"chunk_index": 0, "q_start": -1, "q_stop": 1}, "non-empty"),
+        ({"chunk_index": 0, "q_start": 1, "q_stop": 1}, "non-empty"),
+    ],
+)
+def test_epc_q_chunk_spec_rejects_invalid_fields(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        EPCQChunkSpec(**kwargs)
 
 
 def _epc_q_chunk(qpoint_values, *, kpoint_shift=0.0, band_indices=None, eigenvalues_k=None, nbands=1):
