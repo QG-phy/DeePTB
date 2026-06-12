@@ -1716,6 +1716,67 @@ def test_epc_path_data_rejects_inconsistent_path_metadata():
         )
 
 
+@pytest.mark.parametrize(
+    "factory",
+    [
+        pytest.param(
+            lambda path_segments: EPCPathData(
+                kpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
+                qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
+                band_indices=np.array([0]),
+                frequencies=np.ones((2, 1)),
+                eigenvalues_k=np.zeros((2, 1)),
+                eigenvalues_kq=np.zeros((2, 2, 1)),
+                coupling_matrix=np.ones((2, 2, 1, 1, 1), dtype=complex),
+                coupling_strength=np.ones((2, 2, 1, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0, 0.25]),
+                path_segments=path_segments,
+            ),
+            id="epc-path",
+        ),
+        pytest.param(
+            lambda path_segments: LinewidthPathData(
+                linewidth=np.ones((2, 1, 1)),
+                absorption=np.zeros((2, 1, 1)),
+                emission=np.ones((2, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0, 0.25]),
+                band_indices=np.array([0]),
+                path_segments=path_segments,
+            ),
+            id="linewidth-path",
+        ),
+        pytest.param(
+            lambda path_segments: RelaxationTimePathData(
+                relaxation_time=np.ones((2, 1, 1)),
+                path_axis="q",
+                path_coordinates=np.array([0.0, 0.25]),
+                band_indices=np.array([0]),
+                path_segments=path_segments,
+            ),
+            id="relaxation-path",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("path_segments", "match"),
+    [
+        (np.array([0, 1]), "shape"),
+        (np.array([[0, 1, 2]]), "shape"),
+        (np.array([[False, True]]), "shape"),
+        (np.array([[0.0, 1.0]]), "shape"),
+        (np.array([[-1, 1]]), "non-negative"),
+        (np.array([[1, 1]]), "increasing"),
+        (np.array([[1, 0]]), "increasing"),
+        (np.array([[0, 3]]), "path point count"),
+    ],
+)
+def test_path_data_objects_reject_invalid_path_segments(factory, path_segments, match):
+    with pytest.raises(ValueError, match=match):
+        factory(path_segments)
+
+
 def test_cumulative_path_coordinates_uses_fractional_distances():
     np.testing.assert_allclose(
         cumulative_path_coordinates(np.array([[0.0, 0.0, 0.0], [0.3, 0.4, 0.0], [0.3, 0.4, 0.2]])),
