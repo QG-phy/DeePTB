@@ -360,6 +360,7 @@ def load_epc_mesh_chunked_artifact(directory: Union[str, Path]) -> EPCMeshData:
         chunks.append(EPCData.load_npz(chunk_path))
 
     kpoint_weights, qpoint_weights = read_epc_mesh_chunked_weights(directory, manifest)
+    _validate_artifact_chunk_coverage(manifest, kpoint_weights, qpoint_weights)
 
     epc_data = concat_epc_k_chunks(chunks) if axis == "k" else concat_epc_q_chunks(chunks)
     metadata = dict(manifest.get("mesh_metadata") or {})
@@ -442,6 +443,17 @@ def _validate_artifact_filename(filename: str, name: str) -> None:
         raise ValueError(f"{name} must be a relative filename inside the artifact directory.")
     if path.name != filename:
         raise ValueError(f"{name} must not contain directory components.")
+
+
+def _validate_artifact_chunk_coverage(manifest: dict, kpoint_weights: np.ndarray, qpoint_weights: np.ndarray) -> None:
+    axis = manifest["axis"]
+    chunks = manifest["chunks"]
+    last_spec = chunks[-1]["spec"]
+    _, _, stop = _chunk_bounds_from_spec(axis, last_spec)
+    expected = kpoint_weights.shape[0] if axis == "k" else qpoint_weights.shape[0]
+    if stop != expected:
+        label = "kpoint" if axis == "k" else "qpoint"
+        raise ValueError(f"Chunk manifest ranges must cover all {label} weights.")
 
 
 def _chunk_bounds_from_spec(axis: str, spec: dict) -> tuple:

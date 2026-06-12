@@ -1237,6 +1237,27 @@ def test_epc_mesh_chunked_artifact_rejects_bad_manifest_order(tmp_path):
 
 
 @pytest.mark.parametrize(
+    ("axis", "match"),
+    [
+        ("k", "kpoint weights"),
+        ("q", "qpoint weights"),
+    ],
+)
+def test_epc_mesh_chunked_artifact_rejects_partial_chunk_coverage(axis, match, tmp_path):
+    mesh_data = _chunk_artifact_mesh_data()
+    artifact_dir = tmp_path / "artifact"
+    save_epc_mesh_chunked_artifact(mesh_data, artifact_dir, axis=axis, chunk_size=1)
+    manifest_path = artifact_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["chunks"] = manifest["chunks"][:1]
+    manifest["chunk_count"] = 1
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=match):
+        load_epc_mesh_chunked_artifact(artifact_dir)
+
+
+@pytest.mark.parametrize(
     ("mutator", "match"),
     [
         (lambda manifest: manifest.update({"schema": "wrong.schema"}), "chunked artifact"),
