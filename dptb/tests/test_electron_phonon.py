@@ -22,6 +22,7 @@ from dptb.entrypoints.eph import (
     _load_epc_summary_data,
     _load_kpoint_weights,
     _load_kpoints,
+    _normalize_linewidth_scan_convention,
     _parse_band_groups,
     eph,
 )
@@ -6570,6 +6571,27 @@ def test_epc_workflow_doc_lists_transport_non_si_unit_metadata():
     for key in ["conductivity_unit", "carrier_density_unit"]:
         expected = f'{key}="{transport.metadata[key]}"'
         assert expected in workflow_doc
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("fixed", "fixed"),
+        ("fixed-linewidth", "fixed"),
+        ("fixed_linewidth", "fixed"),
+        ("recompute", "recompute"),
+        ("per-scan-point-recomputed", "recompute"),
+        ("per_scan_point_recomputed", "recompute"),
+    ],
+)
+def test_normalize_linewidth_scan_convention_accepts_public_aliases(value, expected):
+    assert _normalize_linewidth_scan_convention(value) == expected
+
+
+@pytest.mark.parametrize("value", ["", "dynamic", True, None])
+def test_normalize_linewidth_scan_convention_rejects_invalid_values(value):
+    with pytest.raises(ValueError, match="linewidth_scan_convention"):
+        _normalize_linewidth_scan_convention(value)
 
 
 def test_load_kpoints_accepts_json_npy_npz_and_text(tmp_path):
