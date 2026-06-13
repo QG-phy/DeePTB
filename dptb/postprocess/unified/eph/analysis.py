@@ -49,6 +49,15 @@ def _metadata_unit(metadata: Dict[str, Any], key: str, default: str) -> str:
     return value
 
 
+def _normalize_velocity_source(velocity_source: str) -> str:
+    if not isinstance(velocity_source, str):
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    source = velocity_source.replace("-", "_").lower()
+    if source not in {"finite_difference", "hamiltonian_derivative"}:
+        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    return source
+
+
 @dataclass
 class LinewidthData:
     """Electron linewidths from electron-phonon coupling data."""
@@ -1813,11 +1822,7 @@ def compute_serta_transport_from_epc(
     **solver_kwargs,
 ) -> TransportData:
     """Compute SERTA transport using EPC linewidths and selected band-velocity provider."""
-    if not isinstance(velocity_source, str):
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
-    velocity_source = velocity_source.replace("-", "_").lower()
-    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = _normalize_velocity_source(velocity_source)
     linewidth = linewidth_data.linewidth
     if linewidth.ndim == 3:
         linewidth = linewidth.sum(axis=-1)
@@ -1905,11 +1910,7 @@ def compute_serta_transport_from_epc_mesh_chunked_artifact(
         mode_resolved=False,
         frequency_floor=frequency_floor,
     )
-    if not isinstance(velocity_source, str):
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
-    velocity_source = velocity_source.replace("-", "_").lower()
-    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = _normalize_velocity_source(velocity_source)
 
     if velocity_source == "finite_difference":
         velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
@@ -2004,11 +2005,7 @@ def compute_serta_transport_scan_from_epc_mesh_chunked_artifact(
         mode_resolved=False,
         frequency_floor=frequency_floor,
     )
-    if not isinstance(velocity_source, str):
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
-    velocity_source = velocity_source.replace("-", "_").lower()
-    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = _normalize_velocity_source(velocity_source)
 
     if velocity_source == "finite_difference":
         velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
@@ -2104,11 +2101,7 @@ def compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artif
         raise ValueError("chemical_potentials must contain finite values.")
     if not np.all(np.isfinite(temperatures)) or np.any(temperatures <= 0.0):
         raise ValueError("temperatures must contain finite positive values.")
-    if not isinstance(velocity_source, str):
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
-    velocity_source = velocity_source.replace("-", "_").lower()
-    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = _normalize_velocity_source(velocity_source)
 
     first_linewidth_data = compute_linewidth_mesh_chunked_artifact(
         directory,
@@ -2255,11 +2248,7 @@ def compute_serta_mobility_si_from_epc_mesh_chunked_artifact(
         mode_resolved=False,
         frequency_floor=frequency_floor,
     )
-    if not isinstance(velocity_source, str):
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
-    velocity_source = velocity_source.replace("-", "_").lower()
-    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = _normalize_velocity_source(velocity_source)
 
     if velocity_source == "finite_difference":
         velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
@@ -2359,11 +2348,7 @@ def compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact(
         mode_resolved=False,
         frequency_floor=frequency_floor,
     )
-    if not isinstance(velocity_source, str):
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
-    velocity_source = velocity_source.replace("-", "_").lower()
-    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = _normalize_velocity_source(velocity_source)
 
     if velocity_source == "finite_difference":
         velocity_delta = validate_finite_positive_scalar(velocity_delta, "velocity_delta")
@@ -2459,11 +2444,7 @@ def compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_art
         raise ValueError("chemical_potentials must contain finite values.")
     if not np.all(np.isfinite(temperatures)) or np.any(temperatures <= 0.0):
         raise ValueError("temperatures must contain finite positive values.")
-    if not isinstance(velocity_source, str):
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
-    velocity_source = velocity_source.replace("-", "_").lower()
-    if velocity_source not in {"finite_difference", "hamiltonian_derivative"}:
-        raise ValueError("velocity_source must be 'finite_difference' or 'hamiltonian_derivative'.")
+    velocity_source = _normalize_velocity_source(velocity_source)
 
     first_linewidth_data = compute_linewidth_mesh_chunked_artifact(
         directory,

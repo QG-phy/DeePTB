@@ -13,6 +13,9 @@ from scipy import constants as scipy_constants
 
 import dptb.postprocess.unified.eph.providers as eph_providers
 import dptb.postprocess.unified.eph as eph_public
+from dptb.postprocess.unified.eph.analysis import (
+    _normalize_velocity_source as _normalize_analysis_velocity_source,
+)
 from dptb.postprocess.unified.eph.providers import _length_unit_scale_to_angstrom
 from dptb.postprocess import unified as unified_postprocess
 from dptb.entrypoints.eph import (
@@ -6638,12 +6641,15 @@ def test_epc_workflow_doc_lists_transport_convention_options():
 )
 def test_normalize_velocity_source_accepts_public_aliases(value, expected):
     assert _normalize_velocity_source(value) == expected
+    assert _normalize_analysis_velocity_source(value) == expected
 
 
 @pytest.mark.parametrize("value", ["", "fd", "analytic", True, None])
 def test_normalize_velocity_source_rejects_invalid_values(value):
     with pytest.raises(ValueError, match="velocity_source"):
         _normalize_velocity_source(value)
+    with pytest.raises(ValueError, match="velocity_source"):
+        _normalize_analysis_velocity_source(value)
 
 
 @pytest.mark.parametrize(
