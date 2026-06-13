@@ -1277,6 +1277,8 @@ def test_epc_mesh_chunked_artifact_rejects_invalid_inputs(tmp_path):
         save_epc_mesh_chunked_artifact(mesh_data, tmp_path / "bad_axis", axis="mode", chunk_size=1)
     with pytest.raises(ValueError, match="chunk_size"):
         save_epc_mesh_chunked_artifact(mesh_data, tmp_path / "bad_chunk", axis="q", chunk_size=0)
+    with pytest.raises(ValueError, match="chunk_size"):
+        save_epc_mesh_chunked_artifact(mesh_data, tmp_path / "bad_bool_chunk", axis="q", chunk_size=np.bool_(True))
     with pytest.raises(ValueError, match="manifest"):
         load_epc_mesh_chunked_artifact(tmp_path / "missing")
 
@@ -5709,6 +5711,7 @@ def test_epc_k_chunk_specs_are_deterministic():
         (0, 1, "nk"),
         (3, 0, "chunk_size"),
         (3, True, "chunk_size"),
+        (3, np.bool_(True), "chunk_size"),
         (3, 1.5, "chunk_size"),
         (3, "2", "chunk_size"),
     ],
@@ -5722,11 +5725,14 @@ def test_epc_k_chunk_specs_reject_invalid_inputs(nk, chunk_size, match):
     ("kwargs", "match"),
     [
         ({"chunk_index": True, "k_start": 0, "k_stop": 1}, "chunk_index"),
+        ({"chunk_index": np.bool_(True), "k_start": 0, "k_stop": 1}, "chunk_index"),
         ({"chunk_index": 0.5, "k_start": 0, "k_stop": 1}, "chunk_index"),
         ({"chunk_index": -1, "k_start": 0, "k_stop": 1}, "chunk_index"),
         ({"chunk_index": 0, "k_start": True, "k_stop": 1}, "k_start"),
+        ({"chunk_index": 0, "k_start": np.bool_(True), "k_stop": 1}, "k_start"),
         ({"chunk_index": 0, "k_start": 0.5, "k_stop": 1}, "k_start"),
         ({"chunk_index": 0, "k_start": 0, "k_stop": True}, "k_stop"),
+        ({"chunk_index": 0, "k_start": 0, "k_stop": np.bool_(True)}, "k_stop"),
         ({"chunk_index": 0, "k_start": 0, "k_stop": 1.5}, "k_stop"),
         ({"chunk_index": 0, "k_start": -1, "k_stop": 1}, "non-empty"),
         ({"chunk_index": 0, "k_start": 1, "k_stop": 1}, "non-empty"),
@@ -5821,6 +5827,7 @@ def test_epc_q_chunk_specs_are_deterministic():
         (0, 1, "nq"),
         (3, 0, "chunk_size"),
         (3, True, "chunk_size"),
+        (3, np.bool_(True), "chunk_size"),
         (3, 1.5, "chunk_size"),
         (3, "2", "chunk_size"),
     ],
@@ -5834,11 +5841,14 @@ def test_epc_q_chunk_specs_reject_invalid_inputs(nq, chunk_size, match):
     ("kwargs", "match"),
     [
         ({"chunk_index": True, "q_start": 0, "q_stop": 1}, "chunk_index"),
+        ({"chunk_index": np.bool_(True), "q_start": 0, "q_stop": 1}, "chunk_index"),
         ({"chunk_index": 0.5, "q_start": 0, "q_stop": 1}, "chunk_index"),
         ({"chunk_index": -1, "q_start": 0, "q_stop": 1}, "chunk_index"),
         ({"chunk_index": 0, "q_start": True, "q_stop": 1}, "q_start"),
+        ({"chunk_index": 0, "q_start": np.bool_(True), "q_stop": 1}, "q_start"),
         ({"chunk_index": 0, "q_start": 0.5, "q_stop": 1}, "q_start"),
         ({"chunk_index": 0, "q_start": 0, "q_stop": True}, "q_stop"),
+        ({"chunk_index": 0, "q_start": 0, "q_stop": np.bool_(True)}, "q_stop"),
         ({"chunk_index": 0, "q_start": 0, "q_stop": 1.5}, "q_stop"),
         ({"chunk_index": 0, "q_start": -1, "q_stop": 1}, "non-empty"),
         ({"chunk_index": 0, "q_start": 1, "q_stop": 1}, "non-empty"),
