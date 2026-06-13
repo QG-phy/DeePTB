@@ -910,6 +910,7 @@ For the next implementation wave, the correct preparation is interface-level:
 - The minimal in-repo EPC fixture now has a guard test proving it remains self-contained and does not contain local paths or external reference tokens.
 - External Graphene reference remains opt-in through environment variables.
 - External Graphene reference tests now have a guard test requiring env gates and `TODO(epc-fixture)` markers so they cannot silently become default-CI dependencies.
+- Current persistent EPC NPZ loaders now have loader-level guards rejecting conflicting `schema` and `schema_version` metadata.
 - Every new persistent data object needs:
   - constructor validation tests
   - NPZ roundtrip tests
