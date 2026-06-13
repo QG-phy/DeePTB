@@ -6849,6 +6849,23 @@ def test_eph_broadening_choices_match_workflow_docs():
         assert f"--broadening {broadening}" in workflow_doc
 
 
+def test_eph_dimension_choices_match_workflow_docs():
+    parser = main_parser()
+    subparser_action = next(
+        action
+        for action in parser._actions
+        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
+    )
+    eph_parser = subparser_action.choices["eph"]
+    dimension_action = next(action for action in eph_parser._actions if "--dimension" in action.option_strings)
+
+    assert set(dimension_action.choices) == {"2d", "3d"}
+
+    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
+    for dimension in dimension_action.choices:
+        assert f"--dimension {dimension}" in workflow_doc
+
+
 def test_docs_index_lists_epc_user_docs():
     docs_index = (Path(__file__).parents[2] / "docs" / "index.rst").read_text(encoding="utf-8")
 
