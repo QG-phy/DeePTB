@@ -388,6 +388,8 @@ dptb eph \
 
 Temperature is expressed as `kBT` in eV. `--frequency-floor` is in THz and is
 used to regularize acoustic zero modes in the Bose occupation.
+Broadening kernels are selected with `--broadening gaussian` or
+`--broadening lorentzian`.
 
 ### Path Linewidth
 

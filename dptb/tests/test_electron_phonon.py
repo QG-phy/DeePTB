@@ -6832,6 +6832,23 @@ def test_eph_artifact_axis_choices_match_workflow_docs():
         assert f"--artifact-axis {axis}" in workflow_doc
 
 
+def test_eph_broadening_choices_match_workflow_docs():
+    parser = main_parser()
+    subparser_action = next(
+        action
+        for action in parser._actions
+        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
+    )
+    eph_parser = subparser_action.choices["eph"]
+    broadening_action = next(action for action in eph_parser._actions if "--broadening" in action.option_strings)
+
+    assert set(broadening_action.choices) == {"gaussian", "lorentzian"}
+
+    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
+    for broadening in broadening_action.choices:
+        assert f"--broadening {broadening}" in workflow_doc
+
+
 def test_docs_index_lists_epc_user_docs():
     docs_index = (Path(__file__).parents[2] / "docs" / "index.rst").read_text(encoding="utf-8")
 
