@@ -110,6 +110,7 @@ from dptb.postprocess.unified.eph import (
     save_epc_mesh_chunked_artifact,
 )
 from dptb.postprocess.unified.eph.contraction import EPC_PREFAC_AMU_THZ, compute_coupling_matrix
+from dptb.postprocess.unified.eph.executor import _normalize_chunk_axis
 from dptb.postprocess.unified.eph.utils import (
     assemble_directed_hk_from_blocks,
     normalize_orbital_slices,
@@ -1230,6 +1231,17 @@ def _chunk_artifact_mesh_data():
         qpoint_weights=np.array([3.0, 1.0]),
         metadata={"mesh_spec": {"k_mesh": [3, 1, 1], "q_mesh": [2, 1, 1]}},
     )
+
+
+@pytest.mark.parametrize(("axis", "expected"), [("k", "k"), ("q", "q"), ("K", "k"), ("Q", "q")])
+def test_normalize_chunk_axis_accepts_public_artifact_axes(axis, expected):
+    assert _normalize_chunk_axis(axis) == expected
+
+
+@pytest.mark.parametrize("axis", ["", "mode", True, None])
+def test_normalize_chunk_axis_rejects_invalid_artifact_axes(axis):
+    with pytest.raises(ValueError, match="axis"):
+        _normalize_chunk_axis(axis)
 
 
 @pytest.mark.parametrize(("axis", "chunk_size", "expected_chunks"), [("k", 2, 2), ("q", 1, 2)])
