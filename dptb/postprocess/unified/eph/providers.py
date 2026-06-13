@@ -324,10 +324,10 @@ class SupercellFD:
         for target_supercell_atom in range(len(self.supercell_to_primitive_atom)):
             target_atom = int(self.supercell_to_primitive_atom[target_supercell_atom])
             target_cell = int(self.supercell_atom_to_cell[target_supercell_atom])
-            multiplicity = int(self.vector_multiplicity[target_cell, self.supercell_to_primitive_atom[source_cell]])
+            multiplicity = int(self.vector_multiplicity[target_cell, source_atom])
             vectors = self.shortest_vectors[
                 target_cell,
-                self.supercell_to_primitive_atom[source_cell],
+                source_atom,
                 :multiplicity,
             ]
             phase = np.exp(2j * np.pi * (kpoints @ vectors.T)).sum(axis=1) / multiplicity

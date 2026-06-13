@@ -402,6 +402,14 @@ class EPCMeshData:
                 if key not in {"schema", "schema_version"}
             },
         )
+        self.kpoints = self._epc_data.kpoints
+        self.qpoints = self._epc_data.qpoints
+        self.band_indices = self._epc_data.band_indices
+        self.frequencies = self._epc_data.frequencies
+        self.eigenvalues_k = self._epc_data.eigenvalues_k
+        self.eigenvalues_kq = self._epc_data.eigenvalues_kq
+        self.coupling_matrix = self._epc_data.coupling_matrix
+        self.coupling_strength = self._epc_data.coupling_strength
         self.kpoint_weights = _normalize_weights(self.kpoint_weights, "kpoint_weights")
         self.qpoint_weights = _normalize_weights(self.qpoint_weights, "qpoint_weights")
         if self.kpoint_weights.shape != (self.kpoints.shape[0],):
@@ -543,6 +551,15 @@ class EPCPathData:
                 if key not in {"schema", "schema_version", "path_coordinate_unit"}
             },
         )
+
+        self.kpoints = self._epc_data.kpoints
+        self.qpoints = self._epc_data.qpoints
+        self.band_indices = self._epc_data.band_indices
+        self.frequencies = self._epc_data.frequencies
+        self.eigenvalues_k = self._epc_data.eigenvalues_k
+        self.eigenvalues_kq = self._epc_data.eigenvalues_kq
+        self.coupling_matrix = self._epc_data.coupling_matrix
+        self.coupling_strength = self._epc_data.coupling_strength
 
         npath = self.qpoints.shape[0] if self.path_axis == "q" else self.kpoints.shape[0]
         if self.path_coordinates.shape[0] != npath:

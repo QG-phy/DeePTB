@@ -140,7 +140,7 @@ def compute_coupling_matrix(
         mode_weights = phonon_eigenvectors * inv_sqrt_mass[None, None, :, None]
     else:
         qpoints = normalize_kpoints(qpoints)
-        scaled_positions = as_array(scaled_positions, dtype=float)
+        scaled_positions = np.array(scaled_positions, dtype=float, copy=True)
         if scaled_positions.shape != (len(masses), 3):
             raise ValueError("scaled_positions must have shape (natoms, 3).")
         scaled_positions = scaled_positions - scaled_positions[0]
