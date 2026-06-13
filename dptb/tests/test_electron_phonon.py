@@ -6897,6 +6897,31 @@ def test_epc_workflow_doc_lists_transport_non_si_unit_metadata():
 
 
 def test_epc_workflow_doc_lists_transport_convention_options():
+    parser = main_parser()
+    subparser_action = next(
+        action
+        for action in parser._actions
+        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
+    )
+    eph_parser = subparser_action.choices["eph"]
+    velocity_action = next(action for action in eph_parser._actions if "--velocity-source" in action.option_strings)
+    linewidth_scan_action = next(
+        action for action in eph_parser._actions if "--linewidth-scan-convention" in action.option_strings
+    )
+
+    assert set(velocity_action.choices) == {
+        "finite_difference",
+        "finite-difference",
+        "hamiltonian_derivative",
+        "hamiltonian-derivative",
+    }
+    assert set(linewidth_scan_action.choices) == {
+        "fixed",
+        "fixed_linewidth",
+        "recompute",
+        "per_scan_point_recomputed",
+    }
+
     workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
 
     for phrase in [
