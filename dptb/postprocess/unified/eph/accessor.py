@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional, Sequence, Union
 
 import numpy as np
 
-from dptb.postprocess.unified.eph.benchmark import DFTBPlusGauge
 from dptb.postprocess.unified.eph.contraction import EPC_PREFAC_AMU_THZ, compute_coupling_matrix
 from dptb.postprocess.unified.eph.data import (
     EPCData,
@@ -580,7 +579,6 @@ def _validate_path_labels(path_labels: Dict[str, int], npath: int) -> Dict[str, 
 
 
 __all__ = [
-    "DFTBPlusGauge",
     "EPCData",
     "EPCMeshData",
     "EPCMeshSpec",

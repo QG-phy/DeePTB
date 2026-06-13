@@ -2,9 +2,9 @@ import sys
 import os
 import json
 import inspect
+import ast
 from pathlib import Path
 
-import h5py
 import numpy as np
 import pytest
 from ase import Atoms
@@ -17,6 +17,7 @@ from dptb.postprocess.unified.eph.analysis import (
     _normalize_velocity_source as _normalize_analysis_velocity_source,
 )
 from dptb.postprocess.unified.eph.providers import _length_unit_scale_to_angstrom
+from dptb.postprocess.unified.eph.benchmark import DFTBPlusGauge
 from dptb.postprocess import unified as unified_postprocess
 from dptb.entrypoints.eph import (
     EPH_PRIMARY_TASKS,
@@ -41,7 +42,6 @@ from dptb.postprocess.unified.eph import (
     EPC_MESH_NPZ_SCHEMA_VERSION,
     EPC_NPZ_SCHEMA_VERSION,
     EPC_PATH_NPZ_SCHEMA_VERSION,
-    DFTBPlusGauge,
     EPhAccessor,
     FDProvider,
     HBAR_EV_S,
@@ -185,7 +185,6 @@ def test_unified_postprocess_exports_epc_v1_symbols():
     non_epc_unified_exports = {"TBSystem", "HamiltonianCalculator", "DeePTBAdapter"}
     assert set(unified_postprocess.__all__) - non_epc_unified_exports == set(eph_public.__all__)
 
-    assert unified_postprocess.DFTBPlusGauge is DFTBPlusGauge
     assert unified_postprocess.EPCData is EPCData
     assert unified_postprocess.EPCMeshData is EPCMeshData
     assert unified_postprocess.EPCMeshSpec is EPCMeshSpec
@@ -304,6 +303,30 @@ def test_epc_default_production_code_has_no_mpi_or_cuda_dependency():
         source = path.read_text(encoding="utf-8")
         for token in banned_tokens:
             assert token not in source, f"{path.relative_to(repo_root)} must not require {token} in EPC v1"
+
+
+def test_epc_core_contract_has_no_hdf5_import_outside_benchmark_bridge():
+    repo_root = Path(__file__).parents[2]
+    production_files = [
+        repo_root / "dptb" / "entrypoints" / "eph.py",
+        *sorted((repo_root / "dptb" / "postprocess" / "unified" / "eph").glob("*.py")),
+    ]
+    core_files = [path for path in production_files if path.name != "benchmark.py"]
+
+    for path in core_files:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported_names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                imported_names = [node.module or ""]
+            else:
+                continue
+            assert all(
+                name != "h5py" and not name.startswith("h5py.")
+                for name in imported_names
+            ), f"{path.relative_to(repo_root)} must keep EPC core contract NPZ-only"
 
 
 def test_minimal_in_repo_epc_fixture_is_self_contained():
@@ -8427,6 +8450,7 @@ def test_supercell_fd_provider_from_phonopy_mock(monkeypatch):
 def test_graphene_reference_case_coupling_strength():
     if os.environ.get("DEEPTB_RUN_REFERENCE_EPH") != "1":
         pytest.skip("Set DEEPTB_RUN_REFERENCE_EPH=1 to run the external Graphene reference regression.")
+    import h5py
     phonopy = pytest.importorskip("phonopy")
 
     # TODO(epc-fixture): replace the external Graphene reference with a

@@ -53,7 +53,6 @@ from dptb.postprocess.unified.eph.analysis import (
     compute_subspace_coupling_strength,
     find_degenerate_band_groups,
 )
-from dptb.postprocess.unified.eph.benchmark import DFTBPlusGauge
 from dptb.postprocess.unified.eph.contraction import EPC_PREFAC_AMU_THZ, compute_coupling_matrix
 from dptb.postprocess.unified.eph.data import (
     EPCData,
@@ -81,7 +80,6 @@ from dptb.postprocess.unified.eph.executor import (
 from dptb.postprocess.unified.eph.providers import FDProvider, SupercellFD
 
 __all__ = [
-    "DFTBPlusGauge",
     "EPCData",
     "EPCMeshData",
     "EPCMeshSpec",

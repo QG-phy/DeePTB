@@ -1,7 +1,6 @@
 from .system import TBSystem
 from .calculator import HamiltonianCalculator, DeePTBAdapter
 from .eph import (
-    DFTBPlusGauge,
     EPCData,
     EPCMeshData,
     EPCMeshSpec,
@@ -84,7 +83,6 @@ __all__ = [
     "TBSystem",
     "HamiltonianCalculator",
     "DeePTBAdapter",
-    "DFTBPlusGauge",
     "EPCData",
     "EPCMeshData",
     "EPCMeshSpec",
