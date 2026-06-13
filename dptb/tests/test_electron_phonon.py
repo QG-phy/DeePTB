@@ -292,6 +292,20 @@ def test_external_graphene_reference_tests_remain_opt_in_and_marked():
     assert "DEEPTB_RUN_SLOW_EPH" in slow_source
 
 
+def test_epc_default_production_code_has_no_mpi_or_cuda_dependency():
+    repo_root = Path(__file__).parents[2]
+    production_files = [
+        repo_root / "dptb" / "entrypoints" / "eph.py",
+        *sorted((repo_root / "dptb" / "postprocess" / "unified" / "eph").glob("*.py")),
+    ]
+    banned_tokens = ["mpi4py", "torch.cuda", ".cuda(", "cupy"]
+
+    for path in production_files:
+        source = path.read_text(encoding="utf-8")
+        for token in banned_tokens:
+            assert token not in source, f"{path.relative_to(repo_root)} must not require {token} in EPC v1"
+
+
 def test_minimal_in_repo_epc_fixture_is_self_contained():
     with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
         fixture = json.load(handle)
