@@ -916,6 +916,7 @@ For the next implementation wave, the correct preparation is interface-level:
 - The `--broadening gaussian|lorentzian` parser choices now have workflow-doc drift coverage.
 - The mobility `--dimension 2d|3d` parser choices now have workflow-doc drift coverage.
 - The transport `--velocity-source` and `--linewidth-scan-convention` parser choices now have workflow-doc drift coverage.
+- EPC default production code now has a static guard preventing required `mpi4py`, CUDA, or CuPy dependencies in v1.
 - Every new persistent data object needs:
   - constructor validation tests
   - NPZ roundtrip tests
