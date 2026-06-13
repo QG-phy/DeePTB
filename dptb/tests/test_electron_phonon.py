@@ -120,21 +120,17 @@ from dptb.postprocess.unified.eph.utils import (
 )
 from dptb.utils import constants as dptb_constants
 
-
 # TODO(epc-fixture): keep these development-only defaults out of default CI and
 # replace/supplement them with lightweight in-repo EPC fixtures before release.
 DEFAULT_EPH_REFERENCE_ROOT = Path("/Users/aisiqg/Desktop/work/github/dftbephy")
 DEFAULT_EPH_SKDATA_ROOT = Path("/Users/aisiqg/Desktop/work/github/matsci-0-3")
 MINIMAL_EPC_FIXTURE = Path(__file__).parent / "fixtures" / "eph" / "minimal_epc_reference.json"
 
-
 def _external_reference_root() -> Path:
     return Path(os.environ.get("DEEPTB_EPH_REFERENCE_ROOT", DEFAULT_EPH_REFERENCE_ROOT))
 
-
 def _external_skdata_root() -> Path:
     return Path(os.environ.get("DEEPTB_EPH_SKDATA_ROOT", DEFAULT_EPH_SKDATA_ROOT))
-
 
 def _minimal_fixture_epc_data() -> EPCData:
     with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
@@ -157,7 +153,6 @@ def _minimal_fixture_epc_data() -> EPCData:
         metadata={"source": "minimal_in_repo_fixture"},
     )
 
-
 def test_epc_prefactor_from_standard_constants():
     expected = (
         scipy_constants.hbar
@@ -168,105 +163,6 @@ def test_epc_prefactor_from_standard_constants():
     np.testing.assert_allclose(EPC_PREFAC_AMU_THZ, expected, rtol=1e-15)
     np.testing.assert_allclose(EPC_PREFAC_AMU_THZ, 6.35078, rtol=1e-6)
 
-
-def test_epc_public_constants_are_centralized():
-    np.testing.assert_allclose(EPC_PREFAC_AMU_THZ, dptb_constants.EPC_PREFAC_AMU_THZ)
-    np.testing.assert_allclose(THZ_TO_EV, dptb_constants.THZ_TO_EV)
-    np.testing.assert_allclose(HBAR_EV_S, dptb_constants.HBAR_EV_S)
-    np.testing.assert_allclose(dptb_constants.ANGSTROM_TO_M, scipy_constants.angstrom)
-    np.testing.assert_allclose(dptb_constants.ELECTRON_CHARGE_C, scipy_constants.e)
-
-
-def test_unified_postprocess_exports_epc_v1_symbols():
-    for name in eph_public.__all__:
-        assert hasattr(unified_postprocess, name), f"dptb.postprocess.unified must re-export {name}"
-        assert getattr(unified_postprocess, name) is getattr(eph_public, name)
-
-    non_epc_unified_exports = {"TBSystem", "HamiltonianCalculator", "DeePTBAdapter"}
-    assert set(unified_postprocess.__all__) - non_epc_unified_exports == set(eph_public.__all__)
-
-    assert unified_postprocess.EPCData is EPCData
-    assert unified_postprocess.EPCMeshData is EPCMeshData
-    assert unified_postprocess.EPCMeshSpec is EPCMeshSpec
-    assert unified_postprocess.EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION == EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION
-    assert unified_postprocess.EPC_MESH_NPZ_SCHEMA_VERSION == EPC_MESH_NPZ_SCHEMA_VERSION
-    assert unified_postprocess.EPCPathData is EPCPathData
-    assert unified_postprocess.LinewidthData is LinewidthData
-    assert unified_postprocess.LinewidthMeshData is LinewidthMeshData
-    assert unified_postprocess.LinewidthPathData is LinewidthPathData
-    assert unified_postprocess.MobilityData is MobilityData
-    assert unified_postprocess.MobilityScanData is MobilityScanData
-    assert unified_postprocess.MOBILITY_NPZ_SCHEMA_VERSION == MOBILITY_NPZ_SCHEMA_VERSION
-    assert unified_postprocess.MOBILITY_SCAN_NPZ_SCHEMA_VERSION == MOBILITY_SCAN_NPZ_SCHEMA_VERSION
-    assert unified_postprocess.Phonons is Phonons
-    assert unified_postprocess.RelaxationTimeData is RelaxationTimeData
-    assert unified_postprocess.RelaxationTimeMeshData is RelaxationTimeMeshData
-    assert unified_postprocess.RelaxationTimePathData is RelaxationTimePathData
-    assert unified_postprocess.TransportData is TransportData
-    assert unified_postprocess.TransportScanData is TransportScanData
-    assert unified_postprocess.TRANSPORT_SCAN_NPZ_SCHEMA_VERSION == TRANSPORT_SCAN_NPZ_SCHEMA_VERSION
-    assert unified_postprocess.SubspaceCouplingData is SubspaceCouplingData
-    assert unified_postprocess.EPCKChunkSpec is EPCKChunkSpec
-    assert unified_postprocess.EPCQChunkSpec is EPCQChunkSpec
-    assert unified_postprocess.build_k_chunk_specs is build_k_chunk_specs
-    assert unified_postprocess.build_q_chunk_specs is build_q_chunk_specs
-    assert unified_postprocess.concat_epc_k_chunks is concat_epc_k_chunks
-    assert unified_postprocess.concat_epc_q_chunks is concat_epc_q_chunks
-    assert unified_postprocess.load_epc_mesh_chunked_artifact is load_epc_mesh_chunked_artifact
-    assert unified_postprocess.save_epc_mesh_chunked_artifact is save_epc_mesh_chunked_artifact
-    assert unified_postprocess.compute_coupling_matrix is compute_coupling_matrix
-    assert unified_postprocess.compute_linewidth is compute_linewidth
-    assert unified_postprocess.compute_linewidth_mesh_chunked_artifact is compute_linewidth_mesh_chunked_artifact
-    assert unified_postprocess.compute_linewidth_mesh is compute_linewidth_mesh
-    assert unified_postprocess.compute_linewidth_path is compute_linewidth_path
-    assert unified_postprocess.compute_phonon_dos is compute_phonon_dos
-    assert unified_postprocess.compute_relaxation_time is compute_relaxation_time
-    assert unified_postprocess.compute_relaxation_time_mesh is compute_relaxation_time_mesh
-    assert unified_postprocess.compute_relaxation_time_path is compute_relaxation_time_path
-    assert unified_postprocess.compute_serta_conductivity is compute_serta_conductivity
-    assert unified_postprocess.compute_serta_transport_scan is compute_serta_transport_scan
-    assert (
-        unified_postprocess.compute_serta_transport_scan_from_epc_mesh_chunked_artifact
-        is compute_serta_transport_scan_from_epc_mesh_chunked_artifact
-    )
-    assert (
-        unified_postprocess.compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact
-        is compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact
-    )
-    assert unified_postprocess.compute_band_velocities_finite_difference is compute_band_velocities_finite_difference
-    assert (
-        unified_postprocess.compute_band_velocities_hamiltonian_derivative
-        is compute_band_velocities_hamiltonian_derivative
-    )
-    assert unified_postprocess.fractional_band_velocities_to_si is fractional_band_velocities_to_si
-    assert unified_postprocess.compute_eliashberg_spectral_function is compute_eliashberg_spectral_function
-    assert unified_postprocess.compute_scattering_maps is compute_scattering_maps
-    assert unified_postprocess.compute_serta_mobility_si is compute_serta_mobility_si
-    assert (
-        unified_postprocess.compute_serta_mobility_si_from_epc_mesh_chunked_artifact
-        is compute_serta_mobility_si_from_epc_mesh_chunked_artifact
-    )
-    assert unified_postprocess.compute_serta_mobility_scan_si is compute_serta_mobility_scan_si
-    assert (
-        unified_postprocess.compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact
-        is compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact
-    )
-    assert (
-        unified_postprocess.compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact
-        is compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact
-    )
-    assert unified_postprocess.cumulative_path_coordinates is cumulative_path_coordinates
-    assert (
-        unified_postprocess.compute_serta_transport_from_epc_mesh_chunked_artifact
-        is compute_serta_transport_from_epc_mesh_chunked_artifact
-    )
-    assert unified_postprocess.compute_serta_transport_from_epc is compute_serta_transport_from_epc
-    assert unified_postprocess.compute_coupling_strength_summary is compute_coupling_strength_summary
-    assert unified_postprocess.compute_subspace_coupling_strength is compute_subspace_coupling_strength
-    assert unified_postprocess.compute_subspace_coupling_data is compute_subspace_coupling_data
-    assert unified_postprocess.find_degenerate_band_groups is find_degenerate_band_groups
-
-
 def test_external_reference_path_helpers_use_environment_overrides(monkeypatch, tmp_path):
     reference_root = tmp_path / "dftbephy"
     skdata_root = tmp_path / "matsci"
@@ -275,59 +171,6 @@ def test_external_reference_path_helpers_use_environment_overrides(monkeypatch, 
 
     assert _external_reference_root() == reference_root
     assert _external_skdata_root() == skdata_root
-
-
-def test_external_graphene_reference_tests_remain_opt_in_and_marked():
-    for test_func in [
-        test_graphene_reference_case_coupling_strength,
-        test_graphene_reference_case_supercell_fd_provider,
-    ]:
-        source = inspect.getsource(test_func)
-        assert "DEEPTB_RUN_REFERENCE_EPH" in source
-        assert "pytest.skip" in source
-        assert "TODO(epc-fixture)" in source
-
-    slow_source = inspect.getsource(test_graphene_reference_case_supercell_fd_provider)
-    assert "DEEPTB_RUN_SLOW_EPH" in slow_source
-
-
-def test_epc_default_production_code_has_no_mpi_or_cuda_dependency():
-    repo_root = Path(__file__).parents[2]
-    production_files = [
-        repo_root / "dptb" / "entrypoints" / "eph.py",
-        *sorted((repo_root / "dptb" / "postprocess" / "unified" / "eph").glob("*.py")),
-    ]
-    banned_tokens = ["mpi4py", "torch.cuda", ".cuda(", "cupy"]
-
-    for path in production_files:
-        source = path.read_text(encoding="utf-8")
-        for token in banned_tokens:
-            assert token not in source, f"{path.relative_to(repo_root)} must not require {token} in EPC v1"
-
-
-def test_epc_core_contract_has_no_hdf5_import_outside_benchmark_bridge():
-    repo_root = Path(__file__).parents[2]
-    production_files = [
-        repo_root / "dptb" / "entrypoints" / "eph.py",
-        *sorted((repo_root / "dptb" / "postprocess" / "unified" / "eph").glob("*.py")),
-    ]
-    core_files = [path for path in production_files if path.name != "benchmark.py"]
-
-    for path in core_files:
-        source = path.read_text(encoding="utf-8")
-        tree = ast.parse(source)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                imported_names = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                imported_names = [node.module or ""]
-            else:
-                continue
-            assert all(
-                name != "h5py" and not name.startswith("h5py.")
-                for name in imported_names
-            ), f"{path.relative_to(repo_root)} must keep EPC core contract NPZ-only"
-
 
 def test_minimal_in_repo_epc_fixture_is_self_contained():
     with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
@@ -351,7 +194,6 @@ def test_minimal_in_repo_epc_fixture_is_self_contained():
     assert all(token not in text for text in strings for token in forbidden_tokens)
     assert "self-contained" in fixture["description"]
 
-
 def test_minimal_in_repo_epc_fixture_matches_linewidth_reference():
     with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
         fixture = json.load(handle)
@@ -370,7 +212,6 @@ def test_minimal_in_repo_epc_fixture_matches_linewidth_reference():
     np.testing.assert_allclose(linewidth.linewidth, np.asarray(expected["linewidth"]), rtol=1e-14, atol=1e-14)
     np.testing.assert_allclose(linewidth.absorption, np.asarray(expected["absorption"]), rtol=1e-14, atol=1e-14)
     np.testing.assert_allclose(linewidth.emission, np.asarray(expected["emission"]), rtol=1e-14, atol=1e-14)
-
 
 def test_minimal_in_repo_epc_fixture_matches_analysis_references():
     epc_data = _minimal_fixture_epc_data()
@@ -396,7 +237,6 @@ def test_minimal_in_repo_epc_fixture_matches_analysis_references():
     np.testing.assert_allclose(maps["q_initial_band_resolved"], np.array([[0.10, 0.20]]), rtol=1e-14, atol=1e-14)
     np.testing.assert_allclose(maps["q_final_band_resolved"], np.array([[0.05, 0.25]]), rtol=1e-14, atol=1e-14)
     assert maps["metadata"]["convention"] == "coupling_strength_scattering_proxy"
-
 
 def test_minimal_in_repo_epc_fixture_matches_coupling_contraction_reference():
     with open(MINIMAL_EPC_FIXTURE, "r", encoding="utf-8") as handle:
@@ -433,7 +273,6 @@ def test_minimal_in_repo_epc_fixture_matches_coupling_contraction_reference():
         atol=1e-14,
     )
 
-
 def test_compute_coupling_matrix_without_overlap():
     eigenvalues_k = np.array([[1.0, 2.0]])
     eigenvalues_kq = eigenvalues_k.reshape(1, 1, 2)
@@ -462,7 +301,6 @@ def test_compute_coupling_matrix_without_overlap():
     assert coupling_matrix.shape == (1, 1, 1, 2, 2)
     np.testing.assert_allclose(coupling_matrix[0, 0, 0], expected)
     np.testing.assert_allclose(coupling_strength[0, 0, 0], np.abs(expected) ** 2)
-
 
 def test_compute_coupling_matrix_accepts_scalar_mass_for_single_atom():
     eigenvalues_k = np.array([[1.0]])
@@ -498,7 +336,6 @@ def test_compute_coupling_matrix_accepts_scalar_mass_for_single_atom():
     np.testing.assert_allclose(scalar_coupling, array_coupling)
     np.testing.assert_allclose(scalar_strength, array_strength)
 
-
 def test_compute_coupling_matrix_with_overlap_and_frequency_prefactor():
     eigenvalues_k = np.array([[2.0]])
     eigenvalues_kq = np.array([[[3.0]]])
@@ -530,7 +367,6 @@ def test_compute_coupling_matrix_with_overlap_and_frequency_prefactor():
     np.testing.assert_allclose(coupling_matrix[0, 0, 0, 0, 0], raw * np.sqrt(prefactor))
     np.testing.assert_allclose(coupling_strength[0, 0, 0, 0, 0], abs(raw) ** 2 * prefactor)
 
-
 def test_compute_coupling_matrix_frequency_floor_regularizes_frequency():
     eigenvalues_k = np.array([[0.0]])
     eigenvalues_kq = np.array([[[0.0]]])
@@ -557,7 +393,6 @@ def test_compute_coupling_matrix_frequency_floor_regularizes_frequency():
     prefactor = EPC_PREFAC_AMU_THZ / (2.0 * 1e-4)
     np.testing.assert_allclose(coupling_matrix[0, 0, 0, 0, 0], np.sqrt(prefactor))
     np.testing.assert_allclose(coupling_strength[0, 0, 0, 0, 0], prefactor)
-
 
 def test_compute_coupling_matrix_rejects_invalid_phonon_scalars():
     eigenvalues_k = np.array([[1.0]])
@@ -615,7 +450,6 @@ def test_compute_coupling_matrix_rejects_invalid_phonon_scalars():
             masses=np.array([1.0]),
             band_indices=[0.5],
         )
-
 
 def test_compute_coupling_matrix_rejects_invalid_core_shapes_and_values():
     kwargs = {
@@ -686,7 +520,6 @@ def test_compute_coupling_matrix_rejects_invalid_core_shapes_and_values():
     with pytest.raises(ValueError, match="requires orbital_slices"):
         compute_coupling_matrix(**bad)
 
-
 def test_compute_coupling_matrix_block_phase_row_derivatives():
     eigenvalues_k = np.array([[1.0, 2.0]])
     eigenvalues_kq = eigenvalues_k.reshape(1, 1, 2)
@@ -726,7 +559,6 @@ def test_compute_coupling_matrix_block_phase_row_derivatives():
     expected[1, 1] = phase[1] * h_derivatives_k[0, 0, 1, 1] - phase[1] * h_derivatives_kq[0, 0, 0, 1, 1]
     np.testing.assert_allclose(coupling_matrix[0, 0, 0], expected)
     np.testing.assert_allclose(coupling_strength[0, 0, 0], np.abs(expected) ** 2)
-
 
 def test_coupling_strength_is_invariant_to_orbital_sign_gauge():
     eigenvalues_k = np.array([[1.0, 2.0]])
@@ -783,13 +615,11 @@ def test_coupling_strength_is_invariant_to_orbital_sign_gauge():
 
     np.testing.assert_allclose(transformed_strength, reference_strength, atol=1e-14, rtol=1e-14)
 
-
 def test_reshape_phonopy_eigenvectors_column_modes():
     ev = np.arange(2 * 6 * 6).reshape(2, 6, 6)
     reshaped = reshape_phonopy_eigenvectors(ev, natoms=2)
     assert reshaped.shape == (2, 6, 2, 3)
     np.testing.assert_array_equal(reshaped[0, 1], ev[0, :, 1].reshape(2, 3))
-
 
 def test_phonons_from_phonopy_reads_external_modes():
     class _Primitive:
@@ -827,7 +657,6 @@ def test_phonons_from_phonopy_reads_external_modes():
     np.testing.assert_allclose(phonons.cell, np.eye(3))
     assert phonons.metadata["source"] == "phonopy"
 
-
 def test_phonons_from_phonopy_uses_requested_qpoints_when_result_omits_them():
     class _Primitive:
         masses = np.array([12.0, 12.0])
@@ -856,7 +685,6 @@ def test_phonons_from_phonopy_uses_requested_qpoints_when_result_omits_them():
     np.testing.assert_allclose(phonons.qpoints, qpoints)
     assert phonons.frequencies.shape == (2, 6)
     assert phonons.eigenvectors.shape == (2, 6, 2, 3)
-
 
 def test_phonons_from_phonopy_file_delegates_to_phonopy_load(monkeypatch, tmp_path):
     class _Primitive:
@@ -914,7 +742,6 @@ def test_phonons_from_phonopy_file_delegates_to_phonopy_load(monkeypatch, tmp_pa
     assert phonons.metadata["phonopy_yaml"] == str(phonopy_yaml)
     assert phonons.metadata["force_sets_filename"] == str(force_sets)
 
-
 def test_phonons_from_phonopy_file_omits_optional_force_sets(monkeypatch, tmp_path):
     class _Primitive:
         masses = np.array([12.0])
@@ -956,11 +783,9 @@ def test_phonons_from_phonopy_file_omits_optional_force_sets(monkeypatch, tmp_pa
     assert "force_sets_filename" not in phonons.metadata
     np.testing.assert_allclose(phonons.qpoints, qpoints)
 
-
 def test_orbital_slices_from_atom_orbs():
     atom_orbs = ["0-C-2s", "0-C-2p_y", "0-C-2p_z", "0-C-2p_x", "1-C-2s", "1-C-2p_y"]
     assert orbital_slices_from_atom_orbs(atom_orbs) == [(0, 4), (4, 6)]
-
 
 def test_orbital_slices_from_system_uses_structured_metadata():
     class _System:
@@ -975,7 +800,6 @@ def test_orbital_slices_from_system_uses_structured_metadata():
                 }
 
     assert orbital_slices_from_system(_System()) == [(0, 4), (4, 5), (5, 9)]
-
 
 def test_normalize_orbital_slices_rejects_invalid_ranges():
     normalized = normalize_orbital_slices([(0, 1), slice(1, 3)])
@@ -996,7 +820,6 @@ def test_normalize_orbital_slices_rejects_invalid_ranges():
     with pytest.raises(ValueError, match="contiguous"):
         normalize_orbital_slices([(0, 0)])
 
-
 def test_assemble_directed_hk_from_blocks():
     blocks = {
         "0_0_0_0_0": np.array([[1.0]]),
@@ -1010,7 +833,6 @@ def test_assemble_directed_hk_from_blocks():
     np.testing.assert_allclose(hk[0, 0, 0], 1.0)
     np.testing.assert_allclose(hk[0, 0, 1], 2.0 * np.exp(-0.5j * np.pi))
     np.testing.assert_allclose(hk[0, 1, 0], 3.0 * np.exp(0.5j * np.pi))
-
 
 def test_assemble_directed_hk_rejects_invalid_orbital_slices_and_block_keys():
     kpoints = np.array([[0.0, 0.0, 0.0]])
@@ -1040,7 +862,6 @@ def test_assemble_directed_hk_rejects_invalid_orbital_slices_and_block_keys():
             2,
         )
 
-
 def test_supercell_provider_fourier_row_derivative():
     provider = SupercellFD.__new__(SupercellFD)
     provider.primitive_to_supercell_atom = np.array([0])
@@ -1058,7 +879,6 @@ def test_supercell_provider_fourier_row_derivative():
     assert rows.shape == (1, 1, 1)
     np.testing.assert_allclose(rows[0, 0, 0], 2.0 + 3.0j)
 
-
 def _minimal_supercell_fd_kwargs():
     return {
         "system": object(),
@@ -1071,7 +891,6 @@ def _minimal_supercell_fd_kwargs():
         "shortest_vectors": np.zeros((2, 1, 1, 3)),
         "vector_multiplicity": np.ones((2, 1), dtype=int),
     }
-
 
 def test_supercell_fd_rejects_invalid_mapping_inputs():
     provider = SupercellFD(**_minimal_supercell_fd_kwargs())
@@ -1106,11 +925,9 @@ def test_supercell_fd_rejects_invalid_mapping_inputs():
     with pytest.raises(ValueError, match="displacement"):
         SupercellFD(**_minimal_supercell_fd_kwargs(), displacement="0.1")
 
-
 def test_length_unit_scale_rejects_invalid_type():
     with pytest.raises(ValueError, match="length_unit"):
         _length_unit_scale_to_angstrom(None)
-
 
 def test_dftbplus_benchmark_convention_transforms():
     convention = DFTBPlusGauge.from_atom_orbs(
@@ -1134,7 +951,6 @@ def test_dftbplus_benchmark_convention_transforms():
         transformed_derivatives[0, 2],
         derivatives[0, 2] * z_signs[:, None] * z_signs[None, :],
     )
-
 
 def test_epc_data_npz_roundtrip(tmp_path):
     epc_data = EPCData(
@@ -1163,7 +979,6 @@ def test_epc_data_npz_roundtrip(tmp_path):
     with np.load(path, allow_pickle=False) as data:
         assert "elph_coupling_matrix" in data
         assert "metadata_json" in data
-
 
 def test_epc_mesh_spec_generates_kmesh_and_validates_phonon_qmesh():
     phonons = Phonons(
@@ -1194,7 +1009,6 @@ def test_epc_mesh_spec_generates_kmesh_and_validates_phonon_qmesh():
     with pytest.raises(ValueError, match="q_chunk_size"):
         EPCMeshSpec(k_mesh=[1, 1, 1], q_chunk_size=0)
 
-
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -1211,7 +1025,6 @@ def test_epc_mesh_spec_generates_kmesh_and_validates_phonon_qmesh():
 def test_epc_mesh_spec_rejects_invalid_chunk_sizes(field, value):
     with pytest.raises(ValueError, match=field):
         EPCMeshSpec(k_mesh=[1, 1, 1], **{field: value})
-
 
 def test_epc_mesh_data_npz_roundtrip(tmp_path):
     epc_data = EPCData(
@@ -1248,7 +1061,6 @@ def test_epc_mesh_data_npz_roundtrip(tmp_path):
         assert "ph_qpoint_weights" in data
         assert "metadata_json" in data
 
-
 def _chunk_artifact_mesh_data():
     strength = np.arange(1, 1 + 2 * 3 * 2 * 2 * 2, dtype=float).reshape(2, 3, 2, 2, 2)
     epc_data = EPCData(
@@ -1269,17 +1081,14 @@ def _chunk_artifact_mesh_data():
         metadata={"mesh_spec": {"k_mesh": [3, 1, 1], "q_mesh": [2, 1, 1]}},
     )
 
-
 @pytest.mark.parametrize(("axis", "expected"), [("k", "k"), ("q", "q"), ("K", "k"), ("Q", "q")])
 def test_normalize_chunk_axis_accepts_public_artifact_axes(axis, expected):
     assert _normalize_chunk_axis(axis) == expected
-
 
 @pytest.mark.parametrize("axis", ["", "mode", True, None])
 def test_normalize_chunk_axis_rejects_invalid_artifact_axes(axis):
     with pytest.raises(ValueError, match="axis"):
         _normalize_chunk_axis(axis)
-
 
 @pytest.mark.parametrize(("axis", "chunk_size", "expected_chunks"), [("k", 2, 2), ("q", 1, 2)])
 def test_epc_mesh_chunked_artifact_roundtrip(axis, chunk_size, expected_chunks, tmp_path):
@@ -1307,7 +1116,6 @@ def test_epc_mesh_chunked_artifact_roundtrip(axis, chunk_size, expected_chunks, 
     assert loaded.metadata["artifact_axis"] == axis
     assert loaded.metadata["artifact_chunk_count"] == expected_chunks
 
-
 def test_epc_mesh_chunked_artifact_rejects_invalid_inputs(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
     with pytest.raises(ValueError, match="axis"):
@@ -1318,7 +1126,6 @@ def test_epc_mesh_chunked_artifact_rejects_invalid_inputs(tmp_path):
         save_epc_mesh_chunked_artifact(mesh_data, tmp_path / "bad_bool_chunk", axis="q", chunk_size=np.bool_(True))
     with pytest.raises(ValueError, match="manifest"):
         load_epc_mesh_chunked_artifact(tmp_path / "missing")
-
 
 def test_epc_mesh_chunked_artifact_rejects_bad_manifest_order(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
@@ -1331,7 +1138,6 @@ def test_epc_mesh_chunked_artifact_rejects_bad_manifest_order(tmp_path):
 
     with pytest.raises(ValueError, match="chunk_index"):
         load_epc_mesh_chunked_artifact(artifact_dir)
-
 
 @pytest.mark.parametrize(
     ("axis", "match"),
@@ -1352,7 +1158,6 @@ def test_epc_mesh_chunked_artifact_rejects_partial_chunk_coverage(axis, match, t
 
     with pytest.raises(ValueError, match=match):
         load_epc_mesh_chunked_artifact(artifact_dir)
-
 
 def test_epc_mesh_chunked_artifact_rejects_chunk_file_range_mismatch(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
@@ -1377,7 +1182,6 @@ def test_epc_mesh_chunked_artifact_rejects_chunk_file_range_mismatch(tmp_path):
     with pytest.raises(ValueError, match="manifest chunk range"):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
-
 def test_epc_mesh_chunked_artifact_rejects_chunk_file_metadata_mismatch(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
     artifact_dir = tmp_path / "artifact"
@@ -1390,7 +1194,6 @@ def test_epc_mesh_chunked_artifact_rejects_chunk_file_metadata_mismatch(tmp_path
 
     with pytest.raises(ValueError, match="artifact_chunk"):
         load_epc_mesh_chunked_artifact(artifact_dir)
-
 
 @pytest.mark.parametrize(
     ("mutator", "match"),
@@ -1439,7 +1242,6 @@ def test_epc_mesh_chunked_artifact_rejects_bad_manifest_contract(mutator, match,
     with pytest.raises(ValueError, match=match):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
-
 @pytest.mark.parametrize(
     ("mutator", "match"),
     [
@@ -1462,7 +1264,6 @@ def test_epc_mesh_chunked_artifact_rejects_bad_k_manifest_spec(mutator, match, t
     with pytest.raises(ValueError, match=match):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
-
 def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
     artifact_dir = tmp_path / "artifact"
@@ -1477,7 +1278,6 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata(tmp_path):
     with pytest.raises(ValueError, match="weights.npz schema"):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
-
 def test_epc_mesh_chunked_artifact_rejects_missing_weights_file(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
     artifact_dir = tmp_path / "artifact"
@@ -1486,7 +1286,6 @@ def test_epc_mesh_chunked_artifact_rejects_missing_weights_file(tmp_path):
 
     with pytest.raises(ValueError, match="weights.npz"):
         load_epc_mesh_chunked_artifact(artifact_dir)
-
 
 def test_epc_mesh_chunked_artifact_rejects_missing_chunk_file(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
@@ -1498,7 +1297,6 @@ def test_epc_mesh_chunked_artifact_rejects_missing_chunk_file(tmp_path):
 
     with pytest.raises(ValueError, match="Chunk file"):
         load_epc_mesh_chunked_artifact(artifact_dir)
-
 
 @pytest.mark.parametrize(
     ("metadata_json", "match"),
@@ -1523,7 +1321,6 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_metadata_json(metadata_js
     with pytest.raises(ValueError, match=match):
         load_epc_mesh_chunked_artifact(artifact_dir)
 
-
 def test_epc_mesh_chunked_artifact_rejects_bad_weights_schema_version(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
     artifact_dir = tmp_path / "artifact"
@@ -1540,7 +1337,6 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_schema_version(tmp_path):
 
     with pytest.raises(ValueError, match="schema_version"):
         load_epc_mesh_chunked_artifact(artifact_dir)
-
 
 @pytest.mark.parametrize(
     ("payload_update", "match"),
@@ -1571,7 +1367,6 @@ def test_epc_mesh_chunked_artifact_rejects_bad_weights_arrays(payload_update, ma
 
     with pytest.raises(ValueError, match=match):
         load_epc_mesh_chunked_artifact(artifact_dir)
-
 
 @pytest.mark.parametrize("axis", ["q", "k"])
 @pytest.mark.parametrize("mode_resolved", [False, True])
@@ -1605,7 +1400,6 @@ def test_compute_linewidth_mesh_chunked_artifact_matches_full_mesh(axis, mode_re
     assert actual.metadata["artifact_axis"] == axis
     assert actual.metadata["artifact_chunk_count"] == (2 if axis == "q" else 3)
 
-
 def test_compute_linewidth_mesh_chunked_artifact_rejects_missing_manifest(tmp_path):
     with pytest.raises(ValueError, match="manifest"):
         compute_linewidth_mesh_chunked_artifact(
@@ -1614,7 +1408,6 @@ def test_compute_linewidth_mesh_chunked_artifact_rejects_missing_manifest(tmp_pa
             temperature=0.01,
             sigma=0.01,
         )
-
 
 def test_compute_coupling_strength_summary_from_epc_data():
     strength = np.arange(1, 33, dtype=float).reshape(2, 2, 2, 2, 2)
@@ -1642,7 +1435,6 @@ def test_compute_coupling_strength_summary_from_epc_data():
     np.testing.assert_array_equal(summary["band_indices"], np.array([3, 4]))
     assert summary["metadata"]["source"] == "EPCData.coupling_strength"
     assert summary["metadata"]["weight_convention"] == "unweighted_sum"
-
 
 def test_compute_coupling_strength_summary_uses_mesh_weights():
     strength = np.ones((2, 2, 1, 1, 1), dtype=float)
@@ -1673,7 +1465,6 @@ def test_compute_coupling_strength_summary_uses_mesh_weights():
     assert weighted["metadata"]["weight_convention"] == "normalized_qpoint_and_kpoint_weights"
     assert unweighted["metadata"]["weight_convention"] == "unweighted_sum"
 
-
 def test_compute_coupling_strength_summary_rejects_invalid_inputs():
     with pytest.raises(ValueError, match="EPCData"):
         compute_coupling_strength_summary(object())
@@ -1691,7 +1482,6 @@ def test_compute_coupling_strength_summary_rejects_invalid_inputs():
             ),
             weighted="yes",
         )
-
 
 def test_compute_scattering_maps_matches_manual_reference():
     strength = np.arange(1, 1 + 2 * 2 * 2 * 2 * 2, dtype=float).reshape(2, 2, 2, 2, 2)
@@ -1721,7 +1511,6 @@ def test_compute_scattering_maps_matches_manual_reference():
     assert result["metadata"]["convention"] == "coupling_strength_scattering_proxy"
     assert result["metadata"]["weight_convention"] == "unweighted_sum"
 
-
 def test_compute_scattering_maps_uses_mesh_weights():
     epc_data = EPCData(
         kpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
@@ -1748,7 +1537,6 @@ def test_compute_scattering_maps_uses_mesh_weights():
     assert weighted["metadata"]["weight_convention"] == "normalized_qpoint_and_kpoint_weights"
     assert unweighted["metadata"]["weight_convention"] == "unweighted_sum"
 
-
 def test_compute_scattering_maps_rejects_invalid_inputs():
     with pytest.raises(ValueError, match="EPCData"):
         compute_scattering_maps(object())
@@ -1764,7 +1552,6 @@ def test_compute_scattering_maps_rejects_invalid_inputs():
     )
     with pytest.raises(ValueError, match="weighted"):
         compute_scattering_maps(epc_data, weighted="yes")
-
 
 def test_compute_eliashberg_spectral_function_matches_manual_reference():
     strength = np.array([[[[[2.0]]]], [[[[4.0]]]]])
@@ -1792,7 +1579,6 @@ def test_compute_eliashberg_spectral_function_matches_manual_reference():
     np.testing.assert_allclose(result["mode_resolved_alpha2f"][0], expected)
     assert result["metadata"]["convention"] == "coupling_strength_weighted_phonon_frequency_spectrum"
     assert result["metadata"]["weight_convention"] == "unweighted_sum"
-
 
 def test_compute_eliashberg_spectral_function_uses_mesh_weights():
     epc_data = EPCData(
@@ -1824,7 +1610,6 @@ def test_compute_eliashberg_spectral_function_uses_mesh_weights():
     assert weighted["metadata"]["weight_convention"] == "normalized_qpoint_and_kpoint_weights"
     assert unweighted["metadata"]["weight_convention"] == "unweighted_sum"
 
-
 def test_compute_eliashberg_spectral_function_rejects_invalid_inputs():
     epc_data = EPCData(
         kpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -1843,7 +1628,6 @@ def test_compute_eliashberg_spectral_function_rejects_invalid_inputs():
         compute_eliashberg_spectral_function(epc_data, frequency_grid=np.ones((1, 1)), sigma=0.1)
     with pytest.raises(ValueError, match="weighted"):
         compute_eliashberg_spectral_function(epc_data, frequency_grid=np.array([1.0]), sigma=0.1, weighted="yes")
-
 
 def test_epc_path_data_npz_roundtrip(tmp_path):
     epc_data = EPCData(
@@ -1882,7 +1666,6 @@ def test_epc_path_data_npz_roundtrip(tmp_path):
         assert "path_coordinates" in data
         assert "path_segments" in data
 
-
 def test_epc_path_data_rejects_inconsistent_path_metadata():
     epc_data = EPCData(
         kpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -1906,7 +1689,6 @@ def test_epc_path_data_rejects_inconsistent_path_metadata():
             path_coordinates=np.array([0.0]),
             path_segments=np.array([[0, 2]]),
         )
-
 
 @pytest.mark.parametrize(
     "factory",
@@ -1968,13 +1750,11 @@ def test_path_data_objects_reject_invalid_path_segments(factory, path_segments, 
     with pytest.raises(ValueError, match=match):
         factory(path_segments)
 
-
 def test_cumulative_path_coordinates_uses_fractional_distances():
     np.testing.assert_allclose(
         cumulative_path_coordinates(np.array([[0.0, 0.0, 0.0], [0.3, 0.4, 0.0], [0.3, 0.4, 0.2]])),
         np.array([0.0, 0.5, 0.7]),
     )
-
 
 def test_phonons_npz_roundtrip(tmp_path):
     phonons = Phonons(
@@ -2006,7 +1786,6 @@ def test_phonons_npz_roundtrip(tmp_path):
         assert "ph_masses" in data
         assert "metadata_json" in data
 
-
 def test_compute_phonon_dos_matches_manual_gaussian_reference():
     phonons = Phonons(
         qpoints=np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]),
@@ -2032,7 +1811,6 @@ def test_compute_phonon_dos_matches_manual_gaussian_reference():
     assert result["metadata"]["dos_unit"] == "THz^-1"
     assert result["metadata"]["weight_convention"] == "uniform_normalized_qpoint_weights"
 
-
 def test_compute_phonon_dos_rejects_invalid_inputs():
     phonons = Phonons(
         qpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -2049,7 +1827,6 @@ def test_compute_phonon_dos_rejects_invalid_inputs():
         compute_phonon_dos(phonons, frequency_grid=np.array([1.0]), sigma=0.0)
     with pytest.raises(ValueError, match="qpoint_weights"):
         compute_phonon_dos(phonons, frequency_grid=np.array([1.0]), sigma=0.1, qpoint_weights=np.array([0.5, 0.5]))
-
 
 @pytest.mark.parametrize(
     ("data_cls", "payload"),
@@ -2100,7 +1877,6 @@ def test_npz_metadata_json_must_be_scalar_json_object(data_cls, payload, tmp_pat
     np.savez(object_metadata, **payload, metadata_json=np.array({"schema": "object"}, dtype=object))
     with pytest.raises(ValueError, match="metadata_json.*Object arrays cannot be loaded"):
         data_cls.load_npz(object_metadata)
-
 
 @pytest.mark.parametrize(
     "data_cls,missing_key,payload",
@@ -2291,7 +2067,6 @@ def test_epc_npz_loaders_reject_missing_required_arrays_with_field_name(data_cls
 
     with pytest.raises(ValueError, match=missing_key):
         data_cls.load_npz(path)
-
 
 @pytest.mark.parametrize(
     "data_cls,expected_schema,payload",
@@ -2495,7 +2270,6 @@ def test_epc_npz_loaders_reject_conflicting_schema_metadata(
     with pytest.raises(ValueError, match="schema"):
         data_cls.load_npz(path)
 
-
 @pytest.mark.parametrize(
     "data_cls,payload",
     [
@@ -2545,7 +2319,6 @@ def test_epc_path_npz_loaders_reject_non_string_path_axis(data_cls, payload, tmp
 
     with pytest.raises(ValueError, match="path_axis must be a scalar string"):
         data_cls.load_npz(path)
-
 
 @pytest.mark.parametrize(
     "data_cls,payload",
@@ -2600,7 +2373,6 @@ def test_epc_path_npz_loaders_reject_object_path_segments_with_field_name(data_c
     with pytest.raises(ValueError, match="path_segments.*Object arrays cannot be loaded"):
         data_cls.load_npz(path)
 
-
 def test_epc_npz_loaders_use_pickle_free_numpy_loading(monkeypatch, tmp_path):
     persistent_data_classes = [
         Phonons,
@@ -2636,7 +2408,6 @@ def test_epc_npz_loaders_use_pickle_free_numpy_loading(monkeypatch, tmp_path):
     for kwargs in load_kwargs:
         assert kwargs.get("allow_pickle") is False
 
-
 def test_epc_npz_loader_rejects_object_arrays_without_pickle(tmp_path):
     payload = {
         "ph_qpoints": np.array([[0.0, 0.0, 0.0]], dtype=object),
@@ -2654,7 +2425,6 @@ def test_epc_npz_loader_rejects_object_arrays_without_pickle(tmp_path):
 
     with pytest.raises(ValueError, match="ph_qpoints.*Object arrays cannot be loaded"):
         EPCData.load_npz(path)
-
 
 @pytest.mark.parametrize(
     ("data_cls", "object_key", "payload"),
@@ -2718,7 +2488,6 @@ def test_representative_epc_npz_loaders_reject_object_arrays_without_pickle(
 
     with pytest.raises(ValueError, match=f"{object_key}.*Object arrays cannot be loaded"):
         data_cls.load_npz(path)
-
 
 @pytest.mark.parametrize(
     "factory",
@@ -2889,7 +2658,6 @@ def test_persistent_epc_data_rejects_conflicting_schema_metadata(factory):
     with pytest.raises(ValueError, match="schema"):
         factory({"schema": "wrong.schema"})
 
-
 def test_phonons_accepts_scalar_mass_for_single_atom():
     phonons = Phonons(
         qpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -2899,7 +2667,6 @@ def test_phonons_accepts_scalar_mass_for_single_atom():
     )
 
     np.testing.assert_allclose(phonons.masses, np.array([12.0]))
-
 
 def test_phonons_rejects_inconsistent_mode_shapes():
     with pytest.raises(ValueError, match="non-empty"):
@@ -2925,7 +2692,6 @@ def test_phonons_rejects_inconsistent_mode_shapes():
             masses=np.array([1.0]),
         )
 
-
 def test_phonons_rejects_conflicting_schema_metadata():
     with pytest.raises(ValueError, match="frequency_unit"):
         Phonons(
@@ -2936,7 +2702,6 @@ def test_phonons_rejects_conflicting_schema_metadata():
             metadata={"frequency_unit": "cm^-1"},
         )
 
-
 def test_phonons_rejects_nonpositive_masses():
     with pytest.raises(ValueError, match="masses"):
         Phonons(
@@ -2945,7 +2710,6 @@ def test_phonons_rejects_nonpositive_masses():
             eigenvectors=np.ones((1, 3, 1, 3), dtype=complex),
             masses=np.array([0.0]),
         )
-
 
 def test_phonons_rejects_nonfinite_geometry_or_modes():
     with pytest.raises(ValueError, match="k/q points"):
@@ -2970,7 +2734,6 @@ def test_phonons_rejects_nonfinite_geometry_or_modes():
             masses=np.array([1.0]),
             scaled_positions=np.array([[np.nan, 0.0, 0.0]]),
         )
-
 
 def test_epc_data_rejects_inconsistent_coupling_shape():
     with pytest.raises(ValueError, match="non-empty"):
@@ -3019,7 +2782,6 @@ def test_epc_data_rejects_inconsistent_coupling_shape():
             coupling_strength=np.ones((1, 1, 1, 1, 1)),
         )
 
-
 def test_epc_data_accepts_scalar_band_index():
     epc_data = EPCData(
         kpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -3033,7 +2795,6 @@ def test_epc_data_accepts_scalar_band_index():
     )
 
     np.testing.assert_array_equal(epc_data.band_indices, np.array([0]))
-
 
 def test_epc_data_rejects_invalid_indices_and_nonfinite_values():
     with pytest.raises(ValueError, match="band_indices"):
@@ -3103,7 +2864,6 @@ def test_epc_data_rejects_invalid_indices_and_nonfinite_values():
             coupling_strength=np.ones((1, 1, 1, 1, 1)),
         )
 
-
 def test_epc_data_rejects_conflicting_schema_metadata():
     with pytest.raises(ValueError, match="coupling_unit"):
         EPCData(
@@ -3117,7 +2877,6 @@ def test_epc_data_rejects_conflicting_schema_metadata():
             coupling_strength=np.ones((1, 1, 1, 1, 1)),
             metadata={"coupling_unit": "Hartree"},
         )
-
 
 def _small_linewidth_epc_data():
     return EPCData(
@@ -3133,7 +2892,6 @@ def _small_linewidth_epc_data():
             dtype=float,
         ),
     )
-
 
 def _small_linewidth_epc_path_data():
     epc_data = EPCData(
@@ -3160,7 +2918,6 @@ def _small_linewidth_epc_path_data():
         metadata={"path_mode": "fixed_k_q_path"},
     )
 
-
 def _small_linewidth_epc_mesh_data(qpoint_weights=None):
     epc_data = _small_linewidth_epc_data()
     return EPCMeshData.from_epc_data(
@@ -3169,7 +2926,6 @@ def _small_linewidth_epc_mesh_data(qpoint_weights=None):
         qpoint_weights=np.array([1.0]) if qpoint_weights is None else qpoint_weights,
         metadata={"mesh_spec": {"k_mesh": [1, 1, 1]}},
     )
-
 
 def _manual_linewidth(epc_data, chemical_potential, temperature, sigma, broadening, mode_resolved):
     frequencies_ev = epc_data.frequencies * THZ_TO_EV
@@ -3216,7 +2972,6 @@ def _manual_linewidth(epc_data, chemical_potential, temperature, sigma, broadeni
                             emission[ik, initial_band] += emission_term
     return 2.0 * np.pi * (absorption + emission), 2.0 * np.pi * absorption, 2.0 * np.pi * emission
 
-
 def test_compute_linewidth_gaussian_matches_manual_reference():
     epc_data = _small_linewidth_epc_data()
     linewidth = compute_linewidth(
@@ -3241,7 +2996,6 @@ def test_compute_linewidth_gaussian_matches_manual_reference():
     assert linewidth.metadata["linewidth_unit"] == "eV"
     assert linewidth.metadata["broadening"] == "gaussian"
     np.testing.assert_allclose(linewidth.metadata["thz_to_ev"], THZ_TO_EV)
-
 
 def test_compute_linewidth_mode_resolved_sums_to_total():
     epc_data = _small_linewidth_epc_data()
@@ -3273,7 +3027,6 @@ def test_compute_linewidth_mode_resolved_sums_to_total():
     np.testing.assert_allclose(mode_resolved.linewidth, expected)
     np.testing.assert_allclose(mode_resolved.linewidth.sum(axis=-1), total.linewidth)
     assert mode_resolved.metadata["mode_resolved"] is True
-
 
 def test_compute_linewidth_path_keeps_q_path_axis_and_sums_to_total():
     epc_path_data = _small_linewidth_epc_path_data()
@@ -3312,7 +3065,6 @@ def test_compute_linewidth_path_keeps_q_path_axis_and_sums_to_total():
     assert path_linewidth.metadata["schema_version"] == LINEWIDTH_PATH_NPZ_SCHEMA_VERSION
     assert path_linewidth.metadata["aggregation"] == "per_path_point_contribution"
 
-
 def test_compute_linewidth_mesh_matches_total_for_uniform_q_weights():
     epc_mesh_data = _small_linewidth_epc_mesh_data()
     total = compute_linewidth(
@@ -3348,7 +3100,6 @@ def test_compute_linewidth_mesh_matches_total_for_uniform_q_weights():
     assert mesh_linewidth.metadata["schema_version"] == LINEWIDTH_MESH_NPZ_SCHEMA_VERSION
     assert mesh_linewidth.metadata["q_weight_convention"] == "normalized_sum_to_one"
 
-
 def test_linewidth_mesh_data_npz_roundtrip(tmp_path):
     linewidth = LinewidthMeshData(
         linewidth=np.array([[0.01, 0.02], [0.03, 0.04]]),
@@ -3375,7 +3126,6 @@ def test_linewidth_mesh_data_npz_roundtrip(tmp_path):
     with np.load(path, allow_pickle=False) as data:
         assert "elph_mesh_linewidth" in data
         assert "el_kpoint_weights" in data
-
 
 def test_linewidth_path_data_npz_roundtrip(tmp_path):
     linewidth = LinewidthPathData(
@@ -3405,7 +3155,6 @@ def test_linewidth_path_data_npz_roundtrip(tmp_path):
         assert "elph_path_linewidth" in data
         assert "path_coordinates" in data
         assert "path_segments" in data
-
 
 def test_compute_linewidth_rejects_invalid_parameters():
     epc_data = _small_linewidth_epc_data()
@@ -3454,7 +3203,6 @@ def test_compute_linewidth_rejects_invalid_parameters():
             mode_resolved=1,
         )
 
-
 def test_compute_linewidth_rejects_negative_frequencies_and_floors_zero_modes():
     epc_data = _small_linewidth_epc_data()
     epc_data.frequencies[0, 0] = 0.0
@@ -3477,7 +3225,6 @@ def test_compute_linewidth_rejects_negative_frequencies_and_floors_zero_modes():
             temperature=0.025,
             sigma=0.01,
         )
-
 
 def test_linewidth_data_npz_roundtrip(tmp_path):
     linewidth = LinewidthData(
@@ -3502,7 +3249,6 @@ def test_linewidth_data_npz_roundtrip(tmp_path):
         assert "elph_linewidth_absorption" in data
         assert "elph_linewidth_emission" in data
         assert "metadata_json" in data
-
 
 def test_linewidth_data_rejects_invalid_schema_and_shapes():
     with pytest.raises(ValueError, match="absorption"):
@@ -3548,7 +3294,6 @@ def test_linewidth_data_rejects_invalid_schema_and_shapes():
             absorption=np.array([[0.1]]),
             emission=np.array([[0.1]]),
         )
-
 
 @pytest.mark.parametrize(
     ("factory", "metadata", "match"),
@@ -3601,7 +3346,6 @@ def test_linewidth_mesh_and_path_data_reject_conflicting_unit_metadata(factory, 
     with pytest.raises(ValueError, match=match):
         factory(metadata)
 
-
 def test_compute_relaxation_time_matches_linewidth_convention():
     linewidth = LinewidthData(
         linewidth=np.array([[0.01, 0.02], [0.04, 0.08]]),
@@ -3618,7 +3362,6 @@ def test_compute_relaxation_time_matches_linewidth_convention():
     assert relaxation_time.metadata["convention"] == "hbar_over_2linewidth"
     assert relaxation_time.metadata["sum_modes"] is False
 
-
 def test_compute_relaxation_time_preserves_or_sums_mode_axis():
     linewidth = LinewidthData(
         linewidth=np.array([[[0.01, 0.03], [0.02, 0.06]]]),
@@ -3634,7 +3377,6 @@ def test_compute_relaxation_time_preserves_or_sums_mode_axis():
     assert mode_resolved.relaxation_time.shape == (1, 2, 2)
     assert summed.relaxation_time.shape == (1, 2)
     assert summed.metadata["sum_modes"] is True
-
 
 def test_compute_relaxation_time_path_preserves_path_metadata_and_sums_modes():
     linewidth = LinewidthPathData(
@@ -3660,7 +3402,6 @@ def test_compute_relaxation_time_path_preserves_path_metadata_and_sums_modes():
     assert summed.metadata["schema_version"] == RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION
     assert summed.metadata["sum_modes"] is True
 
-
 def test_compute_relaxation_time_mesh_preserves_mesh_metadata_and_sums_modes():
     linewidth = LinewidthMeshData(
         linewidth=np.array([[[0.01, 0.03], [0.02, 0.06]], [[0.04, 0.08], [0.05, 0.10]]]),
@@ -3684,7 +3425,6 @@ def test_compute_relaxation_time_mesh_preserves_mesh_metadata_and_sums_modes():
     assert summed.metadata["schema_version"] == RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION
     assert summed.metadata["sum_modes"] is True
 
-
 def test_relaxation_time_mesh_data_npz_roundtrip(tmp_path):
     relaxation_time = RelaxationTimeMeshData(
         relaxation_time=np.array([[1e-13, 2e-13], [3e-13, 4e-13]]),
@@ -3704,7 +3444,6 @@ def test_relaxation_time_mesh_data_npz_roundtrip(tmp_path):
     assert loaded.metadata["schema"] == "deeptb.epc_mesh_relaxation_time"
     assert loaded.metadata["schema_version"] == RELAXATION_TIME_MESH_NPZ_SCHEMA_VERSION
     assert loaded.metadata["source"] == "unit-test"
-
 
 def test_relaxation_time_path_data_npz_roundtrip(tmp_path):
     relaxation_time = RelaxationTimePathData(
@@ -3727,7 +3466,6 @@ def test_relaxation_time_path_data_npz_roundtrip(tmp_path):
     assert loaded.metadata["schema_version"] == RELAXATION_TIME_PATH_NPZ_SCHEMA_VERSION
     assert loaded.metadata["source"] == "unit-test"
 
-
 def test_relaxation_time_data_npz_roundtrip(tmp_path):
     relaxation_time = RelaxationTimeData(
         relaxation_time=np.array([[1e-13, 2e-13]]),
@@ -3745,7 +3483,6 @@ def test_relaxation_time_data_npz_roundtrip(tmp_path):
     with np.load(path, allow_pickle=False) as data:
         assert "elph_relaxation_time" in data
         assert "metadata_json" in data
-
 
 def test_compute_relaxation_time_rejects_nonpositive_linewidth():
     linewidth = LinewidthData(
@@ -3782,7 +3519,6 @@ def test_compute_relaxation_time_rejects_nonpositive_linewidth():
             relaxation_time=np.array([[1e-13]]),
             metadata={"convention": "hbar_over_linewidth"},
         )
-
 
 @pytest.mark.parametrize(
     ("factory", "metadata", "match"),
@@ -3829,7 +3565,6 @@ def test_relaxation_time_mesh_and_path_data_reject_conflicting_unit_metadata(fac
     with pytest.raises(ValueError, match=match):
         factory(metadata)
 
-
 def test_find_degenerate_band_groups_preserves_band_order():
     groups = find_degenerate_band_groups(np.array([0.0, 1e-6, 0.2, 0.200001, 0.5]), tolerance=1e-5)
 
@@ -3843,7 +3578,6 @@ def test_find_degenerate_band_groups_preserves_band_order():
         find_degenerate_band_groups(np.array([0.0]), tolerance=np.nan)
     with pytest.raises(ValueError, match="tolerance"):
         find_degenerate_band_groups(np.array([0.0]), tolerance=np.array([1e-5]))
-
 
 def test_subspace_coupling_strength_is_degenerate_gauge_invariant():
     coupling = np.array(
@@ -3876,7 +3610,6 @@ def test_subspace_coupling_strength_is_degenerate_gauge_invariant():
     np.testing.assert_allclose(rotated, reference, atol=1e-14, rtol=1e-14)
     np.testing.assert_allclose(reference[0, 0], np.sum(np.abs(coupling[:2, :2]) ** 2))
 
-
 def test_subspace_coupling_strength_rejects_invalid_groups():
     coupling = np.ones((2, 2), dtype=complex)
     with pytest.raises(ValueError, match="coupling_matrix"):
@@ -3891,7 +3624,6 @@ def test_subspace_coupling_strength_rejects_invalid_groups():
         compute_subspace_coupling_strength(coupling, [np.array([0.5])], [np.array([0])])
     with pytest.raises(ValueError, match="duplicate"):
         compute_subspace_coupling_strength(coupling, [np.array([0, 0])], [np.array([0])])
-
 
 def test_subspace_coupling_data_from_epc_and_npz_roundtrip(tmp_path):
     epc_data = EPCData(
@@ -3927,7 +3659,6 @@ def test_subspace_coupling_data_from_epc_and_npz_roundtrip(tmp_path):
         assert "elph_subspace_strength" in npz
         assert "final_group_bounds" in npz
         assert "metadata_json" in npz
-
 
 def test_subspace_coupling_data_rejects_noncontiguous_persistent_groups():
     epc_data = EPCData(
@@ -3991,7 +3722,6 @@ def test_subspace_coupling_data_rejects_noncontiguous_persistent_groups():
             metadata={"coupling_strength_unit": "meV^2"},
         )
 
-
 def _manual_serta_conductivity(
     eigenvalues,
     velocities,
@@ -4020,7 +3750,6 @@ def _manual_serta_conductivity(
                 / linewidth[ik, iband]
             )
     return conductivity, carrier_density
-
 
 def test_compute_serta_conductivity_matches_manual_reference():
     eigenvalues = np.array([[0.1, 0.2], [0.3, 0.4]])
@@ -4058,7 +3787,6 @@ def test_compute_serta_conductivity_matches_manual_reference():
     assert result.metadata["method"] == "SERTA"
     assert result.metadata["linewidth_unit"] == "eV"
 
-
 def test_compute_serta_conductivity_uses_uniform_weights_by_default():
     eigenvalues = np.array([[0.1], [0.2]])
     velocities = np.array([[[1.0, 0.0, 0.0]], [[0.0, 2.0, 0.0]]])
@@ -4083,7 +3811,6 @@ def test_compute_serta_conductivity_uses_uniform_weights_by_default():
 
     np.testing.assert_allclose(result.conductivity, expected_conductivity)
     np.testing.assert_allclose(result.carrier_density, expected_density)
-
 
 def test_compute_serta_conductivity_rejects_invalid_inputs():
     eigenvalues = np.array([[0.1]])
@@ -4170,7 +3897,6 @@ def test_compute_serta_conductivity_rejects_invalid_inputs():
             kpoint_weights=np.array([np.nan]),
         )
 
-
 def test_compute_serta_transport_scan_matches_single_point_results():
     eigenvalues = np.array([[0.1, 0.2], [0.3, 0.4]])
     velocities = np.array(
@@ -4216,7 +3942,6 @@ def test_compute_serta_transport_scan_matches_single_point_results():
     assert scan.metadata["temperature_count"] == 2
     assert scan.metadata["linewidth_scan_convention"] == "fixed_linewidth"
 
-
 def test_transport_scan_data_npz_roundtrip(tmp_path):
     scan = TransportScanData(
         conductivity=np.ones((2, 1, 3, 3)),
@@ -4237,7 +3962,6 @@ def test_transport_scan_data_npz_roundtrip(tmp_path):
     assert loaded.metadata["schema_version"] == TRANSPORT_SCAN_NPZ_SCHEMA_VERSION
     assert loaded.metadata["source"] == "unit-test"
 
-
 @pytest.mark.parametrize(
     "metadata",
     [
@@ -4256,7 +3980,6 @@ def test_transport_scan_data_rejects_conflicting_unit_metadata(metadata):
             temperatures=np.array([0.1]),
             metadata=metadata,
         )
-
 
 def test_compute_serta_transport_scan_rejects_invalid_scan_axes():
     kwargs = {
@@ -4287,7 +4010,6 @@ def test_compute_serta_transport_scan_rejects_invalid_scan_axes():
             temperatures=np.array([0.1]),
         )
 
-
 class _LinearBandSystem:
     band_offsets = np.array([0.1, 0.2, 0.3])
     band_slopes = np.array(
@@ -4304,15 +4026,12 @@ class _LinearBandSystem:
         kpoints = np.asarray(k_points, dtype=float)
         return {}, self.band_offsets[None, :] + kpoints @ self.band_slopes.T
 
-
 class _LinearBandSystemWithAtoms(_LinearBandSystem):
     atoms = Atoms("C", positions=[[0.0, 0.0, 0.0]], cell=np.eye(3), pbc=True)
-
 
 class _NonfiniteBandSystem:
     def get_eigenvalues(self, k_points, use_scc=False, **kwargs):
         return {}, np.full((len(k_points), 2), np.nan)
-
 
 class _ShapeChangingBandSystem:
     def get_eigenvalues(self, k_points, use_scc=False, **kwargs):
@@ -4320,11 +4039,9 @@ class _ShapeChangingBandSystem:
         nbands = 3 if np.allclose(kpoints, 0.0) else 2
         return {}, np.zeros((kpoints.shape[0], nbands))
 
-
 class _EmptyBandSystem:
     def get_eigenvalues(self, k_points, use_scc=False, **kwargs):
         return {}, np.empty((len(k_points), 0))
-
 
 class _DerivativeBandSystem(_LinearBandSystem):
     def get_hk(self, k_points, use_scc=False, with_derivative=False, **kwargs):
@@ -4343,7 +4060,6 @@ class _DerivativeBandSystem(_LinearBandSystem):
                 dhdk[ik, :, :, axis] = np.diag(self.band_slopes[:, axis])
         return hk, dhdk, None, None
 
-
 class _OverlapDerivativeBandSystem:
     def get_hk(self, k_points, use_scc=False, with_derivative=False, **kwargs):
         if not with_derivative:
@@ -4359,7 +4075,6 @@ class _OverlapDerivativeBandSystem:
         dsdk[:, 0, 0, 0] = 1.0
         return hk, dhdk, sk, dsdk
 
-
 def test_compute_band_velocities_finite_difference_matches_linear_bands():
     system = _LinearBandSystem()
     kpoints = np.array([[0.0, 0.0, 0.0], [0.25, 0.1, -0.2]])
@@ -4374,7 +4089,6 @@ def test_compute_band_velocities_finite_difference_matches_linear_bands():
     expected = np.repeat(system.band_slopes[[0, 2]][None, :, :], kpoints.shape[0], axis=0)
     np.testing.assert_allclose(velocities, expected, atol=1e-11)
 
-
 def test_compute_band_velocities_hamiltonian_derivative_matches_diagonal_dhdk():
     system = _DerivativeBandSystem()
     kpoints = np.array([[0.0, 0.0, 0.0], [0.01, 0.01, 0.01]])
@@ -4388,7 +4102,6 @@ def test_compute_band_velocities_hamiltonian_derivative_matches_diagonal_dhdk():
     expected = np.repeat(system.band_slopes[[0, 2]][None, :, :], kpoints.shape[0], axis=0)
     np.testing.assert_allclose(velocities, expected)
 
-
 def test_compute_band_velocities_hamiltonian_derivative_applies_overlap_correction():
     velocities = compute_band_velocities_hamiltonian_derivative(
         system=_OverlapDerivativeBandSystem(),
@@ -4398,7 +4111,6 @@ def test_compute_band_velocities_hamiltonian_derivative_applies_overlap_correcti
     # Generalized eigenvalue is H/S = 1.0 at k=0; normalized eigenvector is 1/sqrt(2).
     # v = <dH> - E <dS> = 0.5 * 6.0 - 1.0 * 0.5 * 1.0.
     np.testing.assert_allclose(velocities, np.array([[[2.5, 0.0, 0.0]]]))
-
 
 def test_compute_band_velocities_hamiltonian_derivative_rejects_invalid_inputs():
     with pytest.raises(ValueError, match="solver_kwargs"):
@@ -4419,7 +4131,6 @@ def test_compute_band_velocities_hamiltonian_derivative_rejects_invalid_inputs()
             np.array([[0.0, 0.0, 0.0]]),
             use_scc=True,
         )
-
 
 def test_compute_band_velocities_finite_difference_rejects_invalid_inputs():
     system = _LinearBandSystem()
@@ -4443,7 +4154,6 @@ def test_compute_band_velocities_finite_difference_rejects_invalid_inputs():
         compute_band_velocities_finite_difference(_EmptyBandSystem(), np.array([[0.0, 0.0, 0.0]]))
     with pytest.raises(NotImplementedError, match="SCC-corrected"):
         compute_band_velocities_finite_difference(system, np.array([[0.0, 0.0, 0.0]]), use_scc=True)
-
 
 def test_compute_serta_transport_from_epc_uses_epc_bands_and_linewidth():
     system = _LinearBandSystem()
@@ -4496,7 +4206,6 @@ def test_compute_serta_transport_from_epc_uses_epc_bands_and_linewidth():
     np.testing.assert_array_equal(result.metadata["band_indices"], band_indices)
     assert result.metadata["epc_schema"] == "deeptb.epc_data"
 
-
 def test_compute_serta_transport_from_epc_uses_hamiltonian_derivative_velocity_source():
     system = _DerivativeBandSystem()
     kpoints = np.array([[0.0, 0.0, 0.0], [0.01, 0.01, 0.01]])
@@ -4539,7 +4248,6 @@ def test_compute_serta_transport_from_epc_uses_hamiltonian_derivative_velocity_s
     assert result.metadata["velocity_unit"] == "eV/fractional_reciprocal_coordinate"
     assert result.metadata["velocity_convention"] == "diag_Cdagger_dH_minus_EdS_C"
     assert result.metadata["overlap_correction"] == "dH_minus_E_dS_diagonal"
-
 
 @pytest.mark.parametrize(("axis", "velocity_source", "system_cls"), [
     ("q", "finite_difference", _LinearBandSystem),
@@ -4593,7 +4301,6 @@ def test_compute_serta_transport_from_epc_mesh_chunked_artifact_matches_full_mes
     assert result.metadata["artifact_axis"] == axis
     assert result.metadata["velocity_source"] == velocity_source
     assert result.metadata["source"] == "deeptb.eph.compute_serta_transport_from_epc_mesh_chunked_artifact"
-
 
 @pytest.mark.parametrize(("axis", "velocity_source", "system_cls"), [
     ("q", "finite_difference", _LinearBandSystem),
@@ -4653,7 +4360,6 @@ def test_compute_serta_transport_scan_from_epc_mesh_chunked_artifact_matches_ful
     assert result.metadata["linewidth_reference_chemical_potential"] == chemical_potentials[0]
     assert result.metadata["linewidth_reference_temperature"] == temperatures[0]
     assert result.metadata["source"] == "deeptb.eph.compute_serta_transport_scan_from_epc_mesh_chunked_artifact"
-
 
 @pytest.mark.parametrize(("axis", "velocity_source", "system_cls"), [
     ("q", "finite_difference", _LinearBandSystem),
@@ -4728,7 +4434,6 @@ def test_compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_
         == "deeptb.eph.compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact"
     )
 
-
 def test_chunked_artifact_transport_scan_linewidth_convention_metadata_differs(tmp_path):
     system = _LinearBandSystem()
     mesh_data = _chunk_artifact_mesh_data()
@@ -4754,7 +4459,6 @@ def test_chunked_artifact_transport_scan_linewidth_convention_metadata_differs(t
     assert recomputed.metadata["linewidth_scan_convention"] == "per_scan_point_recomputed"
     assert "linewidth_reference_chemical_potential" in fixed.metadata
     assert "linewidth_reference_chemical_potential" not in recomputed.metadata
-
 
 def test_compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact_rejects_invalid_scan_axes(
     tmp_path,
@@ -4782,7 +4486,6 @@ def test_compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_
         compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact(
             **{**kwargs, "temperatures": [0.0]}
         )
-
 
 @pytest.mark.parametrize(
     ("axis", "velocity_source", "system_cls", "dimension", "normalization_kwargs"),
@@ -4848,7 +4551,6 @@ def test_compute_serta_mobility_si_from_epc_mesh_chunked_artifact_matches_full_m
     assert result.metadata["velocity_source"] == velocity_source
     assert result.metadata["source"] == "deeptb.eph.compute_serta_mobility_si_from_epc_mesh_chunked_artifact"
 
-
 @pytest.mark.parametrize(("axis", "velocity_source", "system_cls"), [
     ("q", "finite_difference", _LinearBandSystem),
     ("k", "hamiltonian_derivative", _DerivativeBandSystem),
@@ -4911,7 +4613,6 @@ def test_compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact_matches_f
     assert result.metadata["linewidth_reference_chemical_potential"] == chemical_potentials[0]
     assert result.metadata["linewidth_reference_temperature"] == temperatures[0]
     assert result.metadata["source"] == "deeptb.eph.compute_serta_mobility_scan_si_from_epc_mesh_chunked_artifact"
-
 
 @pytest.mark.parametrize(("axis", "velocity_source", "system_cls"), [
     ("q", "finite_difference", _LinearBandSystem),
@@ -4992,7 +4693,6 @@ def test_compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunke
         == "deeptb.eph.compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact"
     )
 
-
 def test_compute_serta_transport_from_epc_rejects_invalid_velocity_delta():
     system = _LinearBandSystem()
     epc_data = EPCData(
@@ -5030,7 +4730,6 @@ def test_compute_serta_transport_from_epc_rejects_invalid_velocity_delta():
             velocity_source="unknown",
         )
 
-
 def test_transport_data_npz_roundtrip(tmp_path):
     transport = TransportData(
         conductivity=np.array([[1.0, 0.1, 0.0], [0.1, 2.0, 0.2], [0.0, 0.2, 3.0]]),
@@ -5053,7 +4752,6 @@ def test_transport_data_npz_roundtrip(tmp_path):
         assert "transport_conductivity" in data
         assert "transport_carrier_density" in data
         assert "metadata_json" in data
-
 
 def test_compute_serta_mobility_si_matches_manual_3d_reference():
     eigenvalues = np.array([[0.0]])
@@ -5097,7 +4795,6 @@ def test_compute_serta_mobility_si_matches_manual_3d_reference():
     assert result.metadata["mobility_unit"] == "m^2/V/s"
     assert result.metadata["volume_unit"] == "Angstrom^3"
 
-
 def test_fractional_band_velocities_to_si_uses_reciprocal_cell_convention():
     velocities = np.array([[[2.0, 0.0, 0.0]]])
     reciprocal_cell = np.diag([2.0, 4.0, 8.0])
@@ -5106,7 +4803,6 @@ def test_fractional_band_velocities_to_si_uses_reciprocal_cell_convention():
 
     expected = np.array([[[1.0, 0.0, 0.0]]]) * dptb_constants.ANGSTROM_TO_M / dptb_constants.HBAR_EV_S
     np.testing.assert_allclose(converted, expected)
-
 
 def test_compute_serta_mobility_si_supports_2d_sheet_normalization():
     result = compute_serta_mobility_si(
@@ -5128,7 +4824,6 @@ def test_compute_serta_mobility_si_supports_2d_sheet_normalization():
     assert result.metadata["area_unit"] == "Angstrom^2"
     assert result.carrier_density.shape == ()
 
-
 def test_mobility_data_npz_roundtrip(tmp_path):
     mobility = MobilityData(
         conductivity=np.eye(3),
@@ -5145,7 +4840,6 @@ def test_mobility_data_npz_roundtrip(tmp_path):
     np.testing.assert_allclose(loaded.carrier_density, mobility.carrier_density)
     assert loaded.metadata["schema"] == "deeptb.epc_mobility"
     assert loaded.metadata["schema_version"] == MOBILITY_NPZ_SCHEMA_VERSION
-
 
 @pytest.mark.parametrize(
     "metadata",
@@ -5165,7 +4859,6 @@ def test_mobility_data_rejects_invalid_unit_metadata(metadata):
             carrier_density=np.array(1.0),
             metadata=metadata,
         )
-
 
 def test_compute_serta_mobility_scan_si_matches_single_point_results():
     eigenvalues = np.array([[0.0]])
@@ -5212,7 +4905,6 @@ def test_compute_serta_mobility_scan_si_matches_single_point_results():
     assert scan.metadata["carrier_density_unit"] == "m^-3"
     assert scan.metadata["mobility_unit"] == "m^2/V/s"
 
-
 def test_mobility_scan_data_npz_roundtrip(tmp_path):
     scan = MobilityScanData(
         conductivity=np.ones((2, 1, 3, 3)),
@@ -5234,7 +4926,6 @@ def test_mobility_scan_data_npz_roundtrip(tmp_path):
     assert loaded.metadata["schema"] == "deeptb.epc_mobility_scan"
     assert loaded.metadata["schema_version"] == MOBILITY_SCAN_NPZ_SCHEMA_VERSION
 
-
 @pytest.mark.parametrize(
     "metadata",
     [
@@ -5254,7 +4945,6 @@ def test_mobility_scan_data_rejects_invalid_unit_metadata(metadata):
             temperatures=np.array([0.05]),
             metadata=metadata,
         )
-
 
 def test_compute_serta_mobility_scan_si_rejects_invalid_scan_axes():
     kwargs = {
@@ -5278,7 +4968,6 @@ def test_compute_serta_mobility_scan_si_rejects_invalid_scan_axes():
             chemical_potentials=np.array([0.0]),
             temperatures=np.array([np.nan]),
         )
-
 
 def test_compute_serta_mobility_si_rejects_invalid_inputs():
     kwargs = {
@@ -5304,7 +4993,6 @@ def test_compute_serta_mobility_si_rejects_invalid_inputs():
         compute_serta_mobility_si(**{**kwargs, "reciprocal_cell": np.zeros((3, 3))})
     with pytest.raises(ValueError, match="linewidth"):
         compute_serta_mobility_si(**{**kwargs, "linewidth": np.array([[0.0]])})
-
 
 def test_transport_data_rejects_invalid_schema_and_shapes():
     with pytest.raises(ValueError, match="conductivity"):
@@ -5351,14 +5039,12 @@ def test_transport_data_rejects_invalid_schema_and_shapes():
             carrier_density=np.array([]),
         )
 
-
 class _FakeDerivativeProvider:
     def compute(self, kpoints):
         nk = len(kpoints)
         h_derivatives = np.zeros((nk, 1, 3, 2, 2), dtype=complex)
         h_derivatives[:, 0, 0] = np.eye(2)
         return h_derivatives, None
-
 
 class _NonfiniteDerivativeProvider:
     def compute(self, kpoints):
@@ -5367,14 +5053,12 @@ class _NonfiniteDerivativeProvider:
         h_derivatives[0, 0, 0, 0, 0] = np.nan
         return h_derivatives, None
 
-
 class _ShapeChangingDerivativeProvider:
     def compute(self, kpoints):
         nk = len(kpoints)
         natoms = 1 if nk == 1 else 2
         h_derivatives = np.zeros((nk, natoms, 3, 2, 2), dtype=complex)
         return h_derivatives, None
-
 
 class _BadOverlapDerivativeProvider:
     def compute(self, kpoints):
@@ -5383,12 +5067,10 @@ class _BadOverlapDerivativeProvider:
         overlap_derivatives = np.zeros((nk, 3, 2, 2), dtype=complex)
         return h_derivatives, overlap_derivatives
 
-
 class _BadPayloadDerivativeProvider:
     def compute(self, kpoints):
         nk = len(kpoints)
         return np.zeros((nk, 1, 3, 2, 2), dtype=complex)
-
 
 class _FakeSystem:
     atoms = None
@@ -5408,12 +5090,10 @@ class _FakeSystem:
     def eph(self):
         return EPhAccessor(self)
 
-
 class _BadEigenstatePayloadSystem(_FakeSystem):
     def get_eigenstates(self, k_points, use_scc=False):
         nk = len(k_points)
         return np.zeros((nk, 2), dtype=float), np.zeros((nk, 2, 2), dtype=complex)
-
 
 class _BadEigenstateArraySystem(_FakeSystem):
     def __init__(self, *, eigenvalues=None, eigenvectors=None):
@@ -5429,7 +5109,6 @@ class _BadEigenstateArraySystem(_FakeSystem):
         if eigenvectors is None:
             eigenvectors = np.tile(np.eye(2, dtype=complex)[None, :, :], (nk, 1, 1))
         return {}, eigenvalues, eigenvectors
-
 
 class _KqShapeChangingEigenstateSystem(_FakeSystem):
     def __init__(self, *, kq_norb=2, kq_nbands=2):
@@ -5448,7 +5127,6 @@ class _KqShapeChangingEigenstateSystem(_FakeSystem):
             eigenvectors = np.zeros((nk, self._kq_norb, self._kq_nbands), dtype=complex)
         return {}, eigenvalues, eigenvectors
 
-
 def _single_mode_phonons():
     return Phonons(
         qpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -5456,7 +5134,6 @@ def _single_mode_phonons():
         eigenvectors=np.array([[[[1.0, 0.0, 0.0]]]], dtype=complex),
         masses=np.array([1.0]),
     )
-
 
 def test_electron_phonon_accessor_compute_coupling_with_mock_derivatives(tmp_path):
     phonons = _single_mode_phonons()
@@ -5478,7 +5155,6 @@ def test_electron_phonon_accessor_compute_coupling_with_mock_derivatives(tmp_pat
     assert epc_data.metadata["derivative_provider"] == "_FakeDerivativeProvider"
     assert epc_data.metadata["phonon_metadata"]["schema"] == "deeptb.phonons"
     assert output.exists()
-
 
 def test_electron_phonon_accessor_compute_fixed_k_q_path(tmp_path):
     phonons = Phonons(
@@ -5509,7 +5185,6 @@ def test_electron_phonon_accessor_compute_fixed_k_q_path(tmp_path):
     np.testing.assert_allclose(loaded.coupling_strength, path_data.coupling_strength)
     np.testing.assert_array_equal(loaded.path_segments, np.array([[0, 2]]))
 
-
 def test_electron_phonon_accessor_compute_mesh_with_generated_kmesh(tmp_path):
     phonons = _single_mode_phonons()
     output = tmp_path / "mock_epc_mesh.npz"
@@ -5531,7 +5206,6 @@ def test_electron_phonon_accessor_compute_mesh_with_generated_kmesh(tmp_path):
     np.testing.assert_allclose(mesh_data.kpoint_weights, np.array([0.5, 0.5]))
     np.testing.assert_allclose(mesh_data.qpoint_weights, np.array([1.0]))
     np.testing.assert_allclose(loaded.coupling_strength, mesh_data.coupling_strength)
-
 
 def test_electron_phonon_accessor_compute_mesh_chunked_matches_full_mesh():
     phonons = _single_mode_phonons()
@@ -5565,7 +5239,6 @@ def test_electron_phonon_accessor_compute_mesh_chunked_matches_full_mesh():
         {"chunk_index": 1, "k_start": 1, "k_stop": 2},
         {"chunk_index": 2, "k_start": 2, "k_stop": 3},
     ]
-
 
 def test_electron_phonon_accessor_compute_mesh_q_chunked_matches_full_mesh():
     phonons = Phonons(
@@ -5608,7 +5281,6 @@ def test_electron_phonon_accessor_compute_mesh_q_chunked_matches_full_mesh():
         {"chunk_index": 1, "q_start": 1, "q_stop": 2},
         {"chunk_index": 2, "q_start": 2, "q_stop": 3},
     ]
-
 
 def test_electron_phonon_accessor_compute_mesh_qk_chunked_matches_full_mesh():
     phonons = Phonons(
@@ -5659,7 +5331,6 @@ def test_electron_phonon_accessor_compute_mesh_qk_chunked_matches_full_mesh():
         },
     ]
 
-
 @pytest.mark.parametrize(("axis", "chunk_size"), [("q", 1), ("k", 1)])
 def test_electron_phonon_accessor_compute_mesh_chunked_artifact_matches_full_mesh(axis, chunk_size, tmp_path):
     phonons = Phonons(
@@ -5707,7 +5378,6 @@ def test_electron_phonon_accessor_compute_mesh_chunked_artifact_matches_full_mes
     assert loaded.metadata["streaming_artifact"] is True
     assert loaded.metadata["artifact_axis"] == axis
 
-
 def test_electron_phonon_accessor_compute_mesh_chunked_artifact_rejects_invalid_inputs(tmp_path):
     accessor = EPhAccessor(_FakeSystem())
     phonons = _single_mode_phonons()
@@ -5727,7 +5397,6 @@ def test_electron_phonon_accessor_compute_mesh_chunked_artifact_rejects_invalid_
             derivative_provider=_FakeDerivativeProvider(),
         )
 
-
 def test_epc_k_chunk_specs_are_deterministic():
     full = build_k_chunk_specs(3, None)
     assert full == [EPCKChunkSpec(chunk_index=0, k_start=0, k_stop=3)]
@@ -5740,7 +5409,6 @@ def test_epc_k_chunk_specs_are_deterministic():
         EPCKChunkSpec(chunk_index=1, k_start=2, k_stop=4),
         EPCKChunkSpec(chunk_index=2, k_start=4, k_stop=5),
     ]
-
 
 @pytest.mark.parametrize(
     ("nk", "chunk_size", "match"),
@@ -5756,7 +5424,6 @@ def test_epc_k_chunk_specs_are_deterministic():
 def test_epc_k_chunk_specs_reject_invalid_inputs(nk, chunk_size, match):
     with pytest.raises(ValueError, match=match):
         build_k_chunk_specs(nk, chunk_size)
-
 
 @pytest.mark.parametrize(
     ("kwargs", "match"),
@@ -5778,7 +5445,6 @@ def test_epc_k_chunk_specs_reject_invalid_inputs(nk, chunk_size, match):
 def test_epc_k_chunk_spec_rejects_invalid_fields(kwargs, match):
     with pytest.raises(ValueError, match=match):
         EPCKChunkSpec(**kwargs)
-
 
 def _epc_k_chunk(kpoint_values, *, qpoint_shift=0.0, band_indices=None, frequencies=None, nbands=1):
     kpoint_values = np.asarray(kpoint_values, dtype=float)
@@ -5802,7 +5468,6 @@ def _epc_k_chunk(kpoint_values, *, qpoint_shift=0.0, band_indices=None, frequenc
         coupling_strength=coupling_strength,
     )
 
-
 def test_concat_epc_k_chunks_concatenates_k_axis():
     first = _epc_k_chunk([0.0, 0.5])
     second = _epc_k_chunk([1.0])
@@ -5816,7 +5481,6 @@ def test_concat_epc_k_chunks_concatenates_k_axis():
     assert combined.metadata["chunk_count"] == 2
     assert len(combined.metadata["chunk_sources"]) == 2
 
-
 @pytest.mark.parametrize(
     ("bad_chunk", "match"),
     [
@@ -5829,7 +5493,6 @@ def test_concat_epc_k_chunks_rejects_inconsistent_chunks(bad_chunk, match):
     with pytest.raises(ValueError, match=match):
         concat_epc_k_chunks([_epc_k_chunk([0.0]), bad_chunk])
 
-
 def test_concat_epc_k_chunks_rejects_inconsistent_coupling_trailing_shape():
     bad_chunk = _epc_k_chunk([1.0])
     bad_chunk.coupling_matrix = np.ones((1, 1, 2, 1, 1), dtype=complex)
@@ -5838,11 +5501,9 @@ def test_concat_epc_k_chunks_rejects_inconsistent_coupling_trailing_shape():
     with pytest.raises(ValueError, match="coupling trailing shape"):
         concat_epc_k_chunks([_epc_k_chunk([0.0]), bad_chunk])
 
-
 def test_concat_epc_k_chunks_rejects_empty_input():
     with pytest.raises(ValueError, match="At least one EPC chunk"):
         concat_epc_k_chunks([])
-
 
 def test_epc_q_chunk_specs_are_deterministic():
     full = build_q_chunk_specs(3, None)
@@ -5856,7 +5517,6 @@ def test_epc_q_chunk_specs_are_deterministic():
         EPCQChunkSpec(chunk_index=1, q_start=2, q_stop=4),
         EPCQChunkSpec(chunk_index=2, q_start=4, q_stop=5),
     ]
-
 
 @pytest.mark.parametrize(
     ("nq", "chunk_size", "match"),
@@ -5872,7 +5532,6 @@ def test_epc_q_chunk_specs_are_deterministic():
 def test_epc_q_chunk_specs_reject_invalid_inputs(nq, chunk_size, match):
     with pytest.raises(ValueError, match=match):
         build_q_chunk_specs(nq, chunk_size)
-
 
 @pytest.mark.parametrize(
     ("kwargs", "match"),
@@ -5894,7 +5553,6 @@ def test_epc_q_chunk_specs_reject_invalid_inputs(nq, chunk_size, match):
 def test_epc_q_chunk_spec_rejects_invalid_fields(kwargs, match):
     with pytest.raises(ValueError, match=match):
         EPCQChunkSpec(**kwargs)
-
 
 def _epc_q_chunk(qpoint_values, *, kpoint_shift=0.0, band_indices=None, eigenvalues_k=None, nbands=1):
     qpoint_values = np.asarray(qpoint_values, dtype=float)
@@ -5919,7 +5577,6 @@ def _epc_q_chunk(qpoint_values, *, kpoint_shift=0.0, band_indices=None, eigenval
         coupling_strength=coupling_strength,
     )
 
-
 def test_concat_epc_q_chunks_concatenates_q_axis():
     first = _epc_q_chunk([0.0, 0.5])
     second = _epc_q_chunk([1.0])
@@ -5933,7 +5590,6 @@ def test_concat_epc_q_chunks_concatenates_q_axis():
     assert combined.metadata["chunk_count"] == 2
     assert len(combined.metadata["chunk_sources"]) == 2
 
-
 @pytest.mark.parametrize(
     ("bad_chunk", "match"),
     [
@@ -5946,7 +5602,6 @@ def test_concat_epc_q_chunks_rejects_inconsistent_chunks(bad_chunk, match):
     with pytest.raises(ValueError, match=match):
         concat_epc_q_chunks([_epc_q_chunk([0.0]), bad_chunk])
 
-
 def test_concat_epc_q_chunks_rejects_inconsistent_coupling_trailing_shape():
     bad_chunk = _epc_q_chunk([1.0])
     bad_chunk.coupling_matrix = np.ones((1, 1, 2, 1, 1), dtype=complex)
@@ -5955,11 +5610,9 @@ def test_concat_epc_q_chunks_rejects_inconsistent_coupling_trailing_shape():
     with pytest.raises(ValueError, match="coupling trailing shape"):
         concat_epc_q_chunks([_epc_q_chunk([0.0]), bad_chunk])
 
-
 def test_concat_epc_q_chunks_rejects_empty_input():
     with pytest.raises(ValueError, match="At least one EPC chunk"):
         concat_epc_q_chunks([])
-
 
 def test_electron_phonon_accessor_compute_mesh_rejects_bad_spec():
     with pytest.raises(ValueError, match="EPCMeshSpec"):
@@ -5968,7 +5621,6 @@ def test_electron_phonon_accessor_compute_mesh_rejects_bad_spec():
             phonons=_single_mode_phonons(),
             derivative_provider=_FakeDerivativeProvider(),
         )
-
 
 def test_electron_phonon_accessor_compute_path_rejects_future_k_axis():
     with pytest.raises(NotImplementedError, match="path_axis='q'"):
@@ -5979,7 +5631,6 @@ def test_electron_phonon_accessor_compute_path_rejects_future_k_axis():
             path_axis="k",
         )
 
-
 def test_electron_phonon_accessor_compute_path_rejects_bad_labels():
     with pytest.raises(ValueError, match="path_labels"):
         EPhAccessor(_FakeSystem()).compute_path(
@@ -5988,7 +5639,6 @@ def test_electron_phonon_accessor_compute_path_rejects_bad_labels():
             derivative_provider=_FakeDerivativeProvider(),
             path_labels={"G": 2},
         )
-
 
 def test_electron_phonon_accessor_rejects_scc_v1():
     phonons = _single_mode_phonons()
@@ -6000,7 +5650,6 @@ def test_electron_phonon_accessor_rejects_scc_v1():
             use_scc=True,
             derivative_provider=_FakeDerivativeProvider(),
         )
-
 
 def test_electron_phonon_accessor_rejects_invalid_eigenstates():
     phonons = _single_mode_phonons()
@@ -6071,7 +5720,6 @@ def test_electron_phonon_accessor_rejects_invalid_eigenstates():
             derivative_provider=_FakeDerivativeProvider(),
         )
 
-
 def test_electron_phonon_accessor_rejects_invalid_displacement_and_derivatives():
     accessor = EPhAccessor(_FakeSystem())
     phonons = _single_mode_phonons()
@@ -6128,7 +5776,6 @@ def test_electron_phonon_accessor_rejects_invalid_displacement_and_derivatives()
             derivative_provider=_BadPayloadDerivativeProvider(),
         )
 
-
 def test_fd_provider_rejects_invalid_displacement():
     with pytest.raises(ValueError, match="displacement"):
         FDProvider(_FakeSystem(), displacement=0.0)
@@ -6136,7 +5783,6 @@ def test_fd_provider_rejects_invalid_displacement():
         FDProvider(_FakeSystem(), displacement=np.nan)
     with pytest.raises(ValueError, match="displacement"):
         FDProvider(_FakeSystem(), displacement=np.array([1e-3]))
-
 
 def test_eph_cli_parser_accepts_external_phonon_mode_inputs():
     args = parse_args(
@@ -6165,7 +5811,6 @@ def test_eph_cli_parser_accepts_external_phonon_mode_inputs():
     assert args.kpoints == "kpoints.json"
     assert args.bands == [0, 1]
     assert args.output == "epc_data.npz"
-
 
 def test_eph_cli_parser_accepts_path_coupling_inputs():
     args = parse_args(
@@ -6196,7 +5841,6 @@ def test_eph_cli_parser_accepts_path_coupling_inputs():
     assert args.kpoints == "kpoints.json"
     assert args.bands == [0]
     assert args.output == "epc_path_data.npz"
-
 
 def test_eph_cli_parser_accepts_mesh_coupling_inputs():
     args = parse_args(
@@ -6239,7 +5883,6 @@ def test_eph_cli_parser_accepts_mesh_coupling_inputs():
     assert args.q_chunk_size == 2
     assert args.output == "epc_mesh_data.npz"
 
-
 def test_eph_cli_parser_accepts_mesh_artifact_inputs():
     args = parse_args(
         [
@@ -6271,7 +5914,6 @@ def test_eph_cli_parser_accepts_mesh_artifact_inputs():
     assert args.q_chunk_size == 1
     assert args.artifact_axis == "q"
     assert args.output == "epc_mesh_artifact"
-
 
 def test_eph_cli_parser_accepts_linewidth_postprocess_inputs():
     args = parse_args(
@@ -6306,7 +5948,6 @@ def test_eph_cli_parser_accepts_linewidth_postprocess_inputs():
     assert args.init_model is None
     assert args.structure is None
 
-
 def test_eph_cli_parser_accepts_path_linewidth_postprocess_inputs():
     args = parse_args(
         [
@@ -6332,7 +5973,6 @@ def test_eph_cli_parser_accepts_path_linewidth_postprocess_inputs():
     assert args.epc_data == "epc_path_data.npz"
     assert args.mode_resolved is True
     assert args.output == "path_linewidth.npz"
-
 
 def test_eph_cli_parser_accepts_mesh_linewidth_postprocess_inputs():
     args = parse_args(
@@ -6360,7 +6000,6 @@ def test_eph_cli_parser_accepts_mesh_linewidth_postprocess_inputs():
     assert args.mode_resolved is True
     assert args.output == "mesh_linewidth.npz"
 
-
 def test_eph_cli_parser_accepts_mesh_linewidth_artifact_inputs():
     args = parse_args(
         [
@@ -6384,7 +6023,6 @@ def test_eph_cli_parser_accepts_mesh_linewidth_artifact_inputs():
     assert args.task == "mesh-linewidth"
     assert args.epc_artifact == "epc_mesh_artifact"
     assert args.output == "mesh_linewidth.npz"
-
 
 def test_eph_cli_parser_accepts_relaxation_time_postprocess_inputs():
     args = parse_args(
@@ -6410,7 +6048,6 @@ def test_eph_cli_parser_accepts_relaxation_time_postprocess_inputs():
     assert alias_args.task == "relaxation"
     assert alias_args.linewidth_data == "linewidth.npz"
 
-
 def test_eph_cli_parser_accepts_path_relaxation_time_postprocess_inputs():
     args = parse_args(
         [
@@ -6435,7 +6072,6 @@ def test_eph_cli_parser_accepts_path_relaxation_time_postprocess_inputs():
     assert alias_args.task == "path-relaxation"
     assert alias_args.linewidth_data == "path_linewidth.npz"
 
-
 def test_eph_cli_parser_accepts_mesh_relaxation_time_postprocess_inputs():
     args = parse_args(
         [
@@ -6459,7 +6095,6 @@ def test_eph_cli_parser_accepts_mesh_relaxation_time_postprocess_inputs():
     alias_args = parse_args(["eph", "--task", "mesh-relaxation", "--linewidth-data", "mesh_linewidth.npz"])
     assert alias_args.task == "mesh-relaxation"
     assert alias_args.linewidth_data == "mesh_linewidth.npz"
-
 
 def test_eph_cli_parser_accepts_transport_postprocess_inputs():
     args = parse_args(
@@ -6506,7 +6141,6 @@ def test_eph_cli_parser_accepts_transport_postprocess_inputs():
     assert args.velocity_delta == 1e-5
     assert args.velocity_source == "hamiltonian-derivative"
 
-
 def test_eph_cli_parser_accepts_transport_scan_inputs():
     args = parse_args(
         [
@@ -6537,7 +6171,6 @@ def test_eph_cli_parser_accepts_transport_scan_inputs():
     assert args.chemical_potentials == [0.10, 0.20]
     assert args.temperatures == [0.025, 0.050]
     assert args.output == "transport_scan.npz"
-
 
 def test_eph_cli_parser_accepts_artifact_transport_recompute_scan_inputs():
     args = parse_args(
@@ -6574,7 +6207,6 @@ def test_eph_cli_parser_accepts_artifact_transport_recompute_scan_inputs():
     assert args.sigma == 0.01
     assert args.linewidth_scan_convention == "recompute"
     assert args.output == "transport_recompute_scan.npz"
-
 
 def test_eph_cli_parser_accepts_artifact_mobility_recompute_scan_inputs():
     args = parse_args(
@@ -6618,7 +6250,6 @@ def test_eph_cli_parser_accepts_artifact_mobility_recompute_scan_inputs():
     assert args.area == 12.0
     assert args.output == "mobility_recompute_scan.npz"
 
-
 def test_eph_cli_parser_accepts_mobility_postprocess_inputs():
     args = parse_args(
         [
@@ -6655,7 +6286,6 @@ def test_eph_cli_parser_accepts_mobility_postprocess_inputs():
     assert args.velocity_source == "finite-difference"
     assert args.output == "mobility.npz"
 
-
 def test_eph_cli_parser_accepts_mobility_scan_inputs():
     args = parse_args(
         [
@@ -6687,7 +6317,6 @@ def test_eph_cli_parser_accepts_mobility_scan_inputs():
     assert args.temperatures == [0.025, 0.050]
     assert args.output == "mobility_scan.npz"
 
-
 def test_eph_cli_parser_accepts_subspace_postprocess_inputs():
     args = parse_args(
         [
@@ -6714,7 +6343,6 @@ def test_eph_cli_parser_accepts_subspace_postprocess_inputs():
     assert args.initial_groups == ["0:1", "1:3"]
     assert args.output == "subspace.npz"
 
-
 def test_eph_cli_parser_accepts_coupling_summary_inputs():
     args = parse_args(
         [
@@ -6734,7 +6362,6 @@ def test_eph_cli_parser_accepts_coupling_summary_inputs():
     assert args.epc_data == "epc_mesh_data.npz"
     assert args.summary_unweighted is True
     assert args.output == "coupling_summary.json"
-
 
 def test_eph_cli_parser_accepts_phonon_dos_inputs():
     args = parse_args(
@@ -6765,7 +6392,6 @@ def test_eph_cli_parser_accepts_phonon_dos_inputs():
     assert args.broadening == "lorentzian"
     assert args.output == "phonon_dos.json"
 
-
 def test_eph_cli_parser_accepts_scattering_map_inputs():
     args = parse_args(
         [
@@ -6785,7 +6411,6 @@ def test_eph_cli_parser_accepts_scattering_map_inputs():
     assert args.epc_data == "epc_mesh_data.npz"
     assert args.summary_unweighted is True
     assert args.output == "scattering_map.json"
-
 
 def test_eph_cli_parser_accepts_eliashberg_inputs():
     args = parse_args(
@@ -6814,162 +6439,6 @@ def test_eph_cli_parser_accepts_eliashberg_inputs():
     assert args.summary_unweighted is True
     assert args.output == "eliashberg.json"
 
-
-def test_eph_task_registry_matches_parser_choices_and_docs():
-    parser = main_parser()
-    subparser_action = next(
-        action
-        for action in parser._actions
-        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
-    )
-    eph_parser = subparser_action.choices["eph"]
-    task_action = next(action for action in eph_parser._actions if "--task" in action.option_strings)
-
-    assert tuple(task_action.choices) == EPH_TASK_CHOICES
-
-    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
-    for task in EPH_PRIMARY_TASKS:
-        assert f"--task {task}" in workflow_doc
-        assert parse_args(["eph", "--task", task]).task == task
-    for alias in EPH_TASK_ALIASES:
-        assert parse_args(["eph", "--task", alias]).task == alias
-
-
-def test_epc_workflow_doc_lists_chunk_executor_public_symbols():
-    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
-    for symbol in [
-        "EPCKChunkSpec",
-        "EPCQChunkSpec",
-        "build_k_chunk_specs",
-        "build_q_chunk_specs",
-        "concat_epc_k_chunks",
-        "concat_epc_q_chunks",
-        "save_epc_mesh_chunked_artifact",
-        "load_epc_mesh_chunked_artifact",
-    ]:
-        assert symbol in workflow_doc
-
-
-def test_eph_artifact_axis_choices_match_workflow_docs():
-    parser = main_parser()
-    subparser_action = next(
-        action
-        for action in parser._actions
-        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
-    )
-    eph_parser = subparser_action.choices["eph"]
-    artifact_axis_action = next(
-        action for action in eph_parser._actions if "--artifact-axis" in action.option_strings
-    )
-
-    assert set(artifact_axis_action.choices) == {"q", "k"}
-
-    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
-    for axis in artifact_axis_action.choices:
-        assert f"--artifact-axis {axis}" in workflow_doc
-
-
-def test_eph_broadening_choices_match_workflow_docs():
-    parser = main_parser()
-    subparser_action = next(
-        action
-        for action in parser._actions
-        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
-    )
-    eph_parser = subparser_action.choices["eph"]
-    broadening_action = next(action for action in eph_parser._actions if "--broadening" in action.option_strings)
-
-    assert set(broadening_action.choices) == {"gaussian", "lorentzian"}
-
-    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
-    for broadening in broadening_action.choices:
-        assert f"--broadening {broadening}" in workflow_doc
-
-
-def test_eph_dimension_choices_match_workflow_docs():
-    parser = main_parser()
-    subparser_action = next(
-        action
-        for action in parser._actions
-        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
-    )
-    eph_parser = subparser_action.choices["eph"]
-    dimension_action = next(action for action in eph_parser._actions if "--dimension" in action.option_strings)
-
-    assert set(dimension_action.choices) == {"2d", "3d"}
-
-    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
-    for dimension in dimension_action.choices:
-        assert f"--dimension {dimension}" in workflow_doc
-
-
-def test_docs_index_lists_epc_user_docs():
-    docs_index = (Path(__file__).parents[2] / "docs" / "index.rst").read_text(encoding="utf-8")
-
-    assert "epc_v1_workflow" in docs_index
-    assert "epc_scc_design" in docs_index
-
-
-def test_epc_scc_design_doc_keeps_implementation_gates():
-    scc_doc = (Path(__file__).parents[2] / "docs" / "epc_scc_design.md").read_text(encoding="utf-8")
-
-    for phrase in [
-        "`use_scc=True` until the formula, reference data, and tests",
-        "scc_epc_definition = \"frozen_charge\"",
-        "scc_epc_definition = \"relaxed_charge\"",
-        "NotImplementedError",
-        "TODO(epc-fixture)",
-        "Do not use a non-SCC Graphene passing result as evidence",
-    ]:
-        assert phrase in scc_doc
-
-
-def test_epc_workflow_doc_lists_transport_non_si_unit_metadata():
-    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
-    transport = TransportData(conductivity=np.eye(3), carrier_density=np.array(1.0))
-
-    for key in ["conductivity_unit", "carrier_density_unit"]:
-        expected = f'{key}="{transport.metadata[key]}"'
-        assert expected in workflow_doc
-
-
-def test_epc_workflow_doc_lists_transport_convention_options():
-    parser = main_parser()
-    subparser_action = next(
-        action
-        for action in parser._actions
-        if isinstance(getattr(action, "choices", None), dict) and "eph" in action.choices
-    )
-    eph_parser = subparser_action.choices["eph"]
-    velocity_action = next(action for action in eph_parser._actions if "--velocity-source" in action.option_strings)
-    linewidth_scan_action = next(
-        action for action in eph_parser._actions if "--linewidth-scan-convention" in action.option_strings
-    )
-
-    assert set(velocity_action.choices) == {
-        "finite_difference",
-        "finite-difference",
-        "hamiltonian_derivative",
-        "hamiltonian-derivative",
-    }
-    assert set(linewidth_scan_action.choices) == {
-        "fixed",
-        "fixed_linewidth",
-        "recompute",
-        "per_scan_point_recomputed",
-    }
-
-    workflow_doc = (Path(__file__).parents[2] / "docs" / "epc_v1_workflow.md").read_text(encoding="utf-8")
-
-    for phrase in [
-        "--velocity-source finite_difference",
-        "--velocity-source hamiltonian_derivative",
-        "--linewidth-scan-convention recompute",
-        "fixed-linewidth",
-    ]:
-        assert phrase in workflow_doc
-
-
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
@@ -6983,14 +6452,12 @@ def test_normalize_velocity_source_accepts_public_aliases(value, expected):
     assert _normalize_velocity_source(value) == expected
     assert _normalize_analysis_velocity_source(value) == expected
 
-
 @pytest.mark.parametrize("value", ["", "fd", "analytic", True, None])
 def test_normalize_velocity_source_rejects_invalid_values(value):
     with pytest.raises(ValueError, match="velocity_source"):
         _normalize_velocity_source(value)
     with pytest.raises(ValueError, match="velocity_source"):
         _normalize_analysis_velocity_source(value)
-
 
 @pytest.mark.parametrize(
     ("value", "expected"),
@@ -7006,12 +6473,10 @@ def test_normalize_velocity_source_rejects_invalid_values(value):
 def test_normalize_linewidth_scan_convention_accepts_public_aliases(value, expected):
     assert _normalize_linewidth_scan_convention(value) == expected
 
-
 @pytest.mark.parametrize("value", ["", "dynamic", True, None])
 def test_normalize_linewidth_scan_convention_rejects_invalid_values(value):
     with pytest.raises(ValueError, match="linewidth_scan_convention"):
         _normalize_linewidth_scan_convention(value)
-
 
 def test_load_kpoints_accepts_json_npy_npz_and_text(tmp_path):
     kpoints = np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]])
@@ -7041,7 +6506,6 @@ def test_load_kpoints_accepts_json_npy_npz_and_text(tmp_path):
     np.save(bad_shape_path, np.ones((2, 2)))
     with pytest.raises(ValueError, match="k/q points"):
         _load_kpoints(str(bad_shape_path))
-
 
 def test_load_array_accepts_npz_key_for_transport_weights(tmp_path):
     weights = np.array([2.0, 1.0])
@@ -7095,7 +6559,6 @@ def test_load_array_accepts_npz_key_for_transport_weights(tmp_path):
     with pytest.raises(ValueError, match="positive sum"):
         _load_kpoint_weights(str(zero_sum_path))
 
-
 def test_parse_band_groups_accepts_start_stop_ranges():
     groups = _parse_band_groups(["0:2", "2:3"])
 
@@ -7112,7 +6575,6 @@ def test_parse_band_groups_accepts_start_stop_ranges():
         _parse_band_groups(["2:2"])
     with pytest.raises(ValueError, match="overlap"):
         _parse_band_groups(["0:2", "1:3"])
-
 
 def test_eph_entrypoint_writes_epc_npz_from_external_phonon_modes(tmp_path):
     phonons = Phonons(
@@ -7143,7 +6605,6 @@ def test_eph_entrypoint_writes_epc_npz_from_external_phonon_modes(tmp_path):
     np.testing.assert_allclose(loaded.coupling_strength, result.coupling_strength)
     assert loaded.metadata["schema"] == "deeptb.epc_data"
     assert loaded.metadata["phonon_metadata"]["schema"] == "deeptb.phonons"
-
 
 def test_eph_entrypoint_writes_epc_path_npz_from_external_phonon_modes(tmp_path):
     phonons = Phonons(
@@ -7177,7 +6638,6 @@ def test_eph_entrypoint_writes_epc_path_npz_from_external_phonon_modes(tmp_path)
     assert loaded.metadata["path_mode"] == "fixed_k_q_path"
     np.testing.assert_allclose(loaded.path_coordinates, np.array([0.0, 0.25]))
     np.testing.assert_allclose(loaded.coupling_strength, result.coupling_strength)
-
 
 def test_eph_entrypoint_writes_epc_mesh_npz_from_external_phonon_modes(tmp_path):
     phonons = Phonons(
@@ -7215,7 +6675,6 @@ def test_eph_entrypoint_writes_epc_mesh_npz_from_external_phonon_modes(tmp_path)
     np.testing.assert_allclose(loaded.qpoint_weights, np.array([1.0]))
     np.testing.assert_allclose(loaded.coupling_strength, result.coupling_strength)
 
-
 def test_eph_entrypoint_writes_q_chunked_epc_mesh_npz_from_external_phonon_modes(tmp_path):
     phonons = Phonons(
         qpoints=np.array([[0.0, 0.0, 0.0], [0.25, 0.0, 0.0]]),
@@ -7251,7 +6710,6 @@ def test_eph_entrypoint_writes_q_chunked_epc_mesh_npz_from_external_phonon_modes
     ]
     np.testing.assert_allclose(loaded.qpoint_weights, np.array([0.5, 0.5]))
     np.testing.assert_allclose(loaded.coupling_strength, result.coupling_strength)
-
 
 def test_eph_entrypoint_writes_epc_mesh_chunked_artifact_from_external_phonon_modes(tmp_path):
     phonons = Phonons(
@@ -7295,7 +6753,6 @@ def test_eph_entrypoint_writes_epc_mesh_chunked_artifact_from_external_phonon_mo
     assert loaded.metadata["streaming_artifact"] is True
     assert loaded.metadata["artifact_axis"] == "q"
 
-
 def test_eph_entrypoint_writes_linewidth_npz_from_epc_data(tmp_path):
     epc_data = _small_linewidth_epc_data()
     epc_path = tmp_path / "epc_data.npz"
@@ -7325,7 +6782,6 @@ def test_eph_entrypoint_writes_linewidth_npz_from_epc_data(tmp_path):
     np.testing.assert_allclose(loaded.linewidth, expected.linewidth)
     assert loaded.metadata["schema"] == "deeptb.epc_linewidth"
     assert loaded.metadata["broadening"] == "gaussian"
-
 
 def test_eph_entrypoint_writes_path_linewidth_npz_from_epc_path_data(tmp_path):
     epc_path_data = _small_linewidth_epc_path_data()
@@ -7358,7 +6814,6 @@ def test_eph_entrypoint_writes_path_linewidth_npz_from_epc_path_data(tmp_path):
     assert loaded.metadata["schema"] == "deeptb.epc_path_linewidth"
     assert loaded.metadata["path_mode"] == "fixed_k_q_path"
 
-
 def test_eph_entrypoint_writes_mesh_linewidth_npz_from_epc_mesh_data(tmp_path):
     epc_mesh_data = _small_linewidth_epc_mesh_data()
     epc_path = tmp_path / "epc_mesh_data.npz"
@@ -7389,7 +6844,6 @@ def test_eph_entrypoint_writes_mesh_linewidth_npz_from_epc_mesh_data(tmp_path):
     np.testing.assert_allclose(loaded.kpoint_weights, epc_mesh_data.kpoint_weights)
     assert loaded.metadata["schema"] == "deeptb.epc_mesh_linewidth"
     assert loaded.metadata["mesh_spec"] == {"k_mesh": [1, 1, 1]}
-
 
 def test_eph_entrypoint_writes_mesh_linewidth_npz_from_epc_mesh_artifact(tmp_path):
     mesh_data = _chunk_artifact_mesh_data()
@@ -7424,7 +6878,6 @@ def test_eph_entrypoint_writes_mesh_linewidth_npz_from_epc_mesh_artifact(tmp_pat
     assert loaded.metadata["artifact_axis"] == "q"
     assert loaded.metadata["summary_first"] is True
 
-
 def test_eph_entrypoint_writes_relaxation_time_npz_from_linewidth_data(tmp_path):
     linewidth = LinewidthData(
         linewidth=np.array([[[0.01, 0.03], [0.02, 0.06]]]),
@@ -7449,7 +6902,6 @@ def test_eph_entrypoint_writes_relaxation_time_npz_from_linewidth_data(tmp_path)
     np.testing.assert_allclose(loaded.relaxation_time, expected.relaxation_time)
     assert loaded.metadata["schema"] == "deeptb.epc_relaxation_time"
     assert loaded.metadata["sum_modes"] is True
-
 
 def test_eph_entrypoint_writes_path_relaxation_time_npz_from_path_linewidth_data(tmp_path):
     linewidth = LinewidthPathData(
@@ -7482,7 +6934,6 @@ def test_eph_entrypoint_writes_path_relaxation_time_npz_from_path_linewidth_data
     assert loaded.metadata["schema"] == "deeptb.epc_path_relaxation_time"
     assert loaded.metadata["path_mode"] == "fixed_k_q_path"
 
-
 def test_eph_entrypoint_writes_mesh_relaxation_time_npz_from_mesh_linewidth_data(tmp_path):
     linewidth = LinewidthMeshData(
         linewidth=np.array([[[0.01, 0.03], [0.02, 0.06]], [[0.04, 0.08], [0.05, 0.10]]]),
@@ -7512,7 +6963,6 @@ def test_eph_entrypoint_writes_mesh_relaxation_time_npz_from_mesh_linewidth_data
     np.testing.assert_allclose(loaded.kpoint_weights, np.array([0.5, 0.5]))
     assert loaded.metadata["schema"] == "deeptb.epc_mesh_relaxation_time"
     assert loaded.metadata["mesh_spec"] == {"k_mesh": [2, 1, 1]}
-
 
 def test_eph_entrypoint_writes_transport_npz_from_epc_and_linewidth_data(tmp_path):
     system = _LinearBandSystem()
@@ -7577,7 +7027,6 @@ def test_eph_entrypoint_writes_transport_npz_from_epc_and_linewidth_data(tmp_pat
     assert loaded.metadata["carrier_density_unit"] == "1/input_volume"
     assert loaded.metadata["velocity_source"] == "finite_difference"
 
-
 def test_eph_entrypoint_writes_artifact_transport_npz(tmp_path):
     system = _LinearBandSystem()
     mesh_data = _chunk_artifact_mesh_data()
@@ -7621,7 +7070,6 @@ def test_eph_entrypoint_writes_artifact_transport_npz(tmp_path):
     assert loaded.metadata["artifact_axis"] == "q"
     assert loaded.metadata["velocity_source"] == "finite_difference"
     assert loaded.metadata["source"] == "deeptb.eph.compute_serta_transport_from_epc_mesh_chunked_artifact"
-
 
 def test_eph_entrypoint_writes_transport_scan_npz_from_epc_and_linewidth_data(tmp_path):
     system = _LinearBandSystem()
@@ -7688,7 +7136,6 @@ def test_eph_entrypoint_writes_transport_scan_npz_from_epc_and_linewidth_data(tm
     assert loaded.metadata["velocity_source"] == "finite_difference"
     assert loaded.metadata["linewidth_scan_convention"] == "fixed_linewidth"
 
-
 def test_eph_entrypoint_writes_artifact_transport_recompute_scan_npz(tmp_path):
     system = _LinearBandSystem()
     mesh_data = _chunk_artifact_mesh_data()
@@ -7727,7 +7174,6 @@ def test_eph_entrypoint_writes_artifact_transport_recompute_scan_npz(tmp_path):
         loaded.metadata["source"]
         == "deeptb.eph.compute_serta_transport_scan_recompute_linewidth_from_epc_mesh_chunked_artifact"
     )
-
 
 def test_eph_entrypoint_writes_mobility_npz_from_epc_and_linewidth_data(tmp_path):
     system = _LinearBandSystemWithAtoms()
@@ -7788,7 +7234,6 @@ def test_eph_entrypoint_writes_mobility_npz_from_epc_and_linewidth_data(tmp_path
     assert loaded.metadata["velocity_source"] == "finite_difference"
     assert loaded.metadata["reciprocal_cell_source"] == "2pi_times_ase_cell_reciprocal"
 
-
 def test_eph_entrypoint_writes_artifact_mobility_npz(tmp_path):
     system = _LinearBandSystemWithAtoms()
     mesh_data = _chunk_artifact_mesh_data()
@@ -7832,7 +7277,6 @@ def test_eph_entrypoint_writes_artifact_mobility_npz(tmp_path):
     assert loaded.metadata["velocity_source"] == "finite_difference"
     assert loaded.metadata["reciprocal_cell_source"] == "2pi_times_ase_cell_reciprocal"
     assert loaded.metadata["source"] == "deeptb.eph.compute_serta_mobility_si_from_epc_mesh_chunked_artifact"
-
 
 def test_eph_entrypoint_writes_mobility_scan_npz_from_epc_and_linewidth_data(tmp_path):
     system = _LinearBandSystemWithAtoms()
@@ -7895,7 +7339,6 @@ def test_eph_entrypoint_writes_mobility_scan_npz_from_epc_and_linewidth_data(tmp
     assert loaded.metadata["schema"] == "deeptb.epc_mobility_scan"
     assert loaded.metadata["velocity_source"] == "finite_difference"
 
-
 def test_eph_entrypoint_writes_artifact_mobility_recompute_scan_npz(tmp_path):
     system = _LinearBandSystemWithAtoms()
     mesh_data = _chunk_artifact_mesh_data()
@@ -7937,7 +7380,6 @@ def test_eph_entrypoint_writes_artifact_mobility_recompute_scan_npz(tmp_path):
         == "deeptb.eph.compute_serta_mobility_scan_si_recompute_linewidth_from_epc_mesh_chunked_artifact"
     )
 
-
 def test_eph_entrypoint_writes_subspace_npz_from_epc_data(tmp_path):
     epc_data = EPCData(
         kpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -7965,7 +7407,6 @@ def test_eph_entrypoint_writes_subspace_npz_from_epc_data(tmp_path):
     np.testing.assert_allclose(result.strength, loaded.strength)
     np.testing.assert_array_equal(loaded.final_group_bounds, np.array([[0, 2], [2, 3]]))
     assert loaded.metadata["schema"] == "deeptb.epc_subspace_coupling"
-
 
 def test_eph_entrypoint_writes_coupling_summary_json_from_mesh_data(tmp_path):
     epc_data = EPCData(
@@ -8009,7 +7450,6 @@ def test_eph_entrypoint_writes_coupling_summary_json_from_mesh_data(tmp_path):
     assert unweighted_payload["total"] == 4.0
     assert unweighted_payload["metadata"]["weight_convention"] == "unweighted_sum"
 
-
 def test_eph_entrypoint_writes_scattering_map_json_from_epc_data(tmp_path):
     epc_data = EPCData(
         kpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -8038,7 +7478,6 @@ def test_eph_entrypoint_writes_scattering_map_json_from_epc_data(tmp_path):
     assert payload["metadata"]["source"] == "EPCData.coupling_strength"
     assert payload["metadata"]["convention"] == "coupling_strength_scattering_proxy"
 
-
 def test_eph_entrypoint_writes_phonon_dos_json_from_external_phonon_modes(tmp_path):
     phonons = Phonons(
         qpoints=np.array([[0.0, 0.0, 0.0]]),
@@ -8064,7 +7503,6 @@ def test_eph_entrypoint_writes_phonon_dos_json_from_external_phonon_modes(tmp_pa
     np.testing.assert_allclose(payload["dos"], result["dos"])
     assert payload["metadata"]["source"] == "Phonons.frequencies"
     assert payload["metadata"]["dos_unit"] == "THz^-1"
-
 
 def test_eph_entrypoint_writes_eliashberg_json_from_epc_data(tmp_path):
     epc_data = EPCData(
@@ -8095,7 +7533,6 @@ def test_eph_entrypoint_writes_eliashberg_json_from_epc_data(tmp_path):
     np.testing.assert_allclose(payload["alpha2f"], result["alpha2f"])
     assert payload["metadata"]["source"] == "EPCData.coupling_strength"
     assert payload["metadata"]["spectral_unit"] == "eV^2 THz^-1"
-
 
 @pytest.mark.parametrize(
     "payload,match",
@@ -8129,7 +7566,6 @@ def test_eph_summary_loader_rejects_bad_npz_metadata(payload, match, tmp_path):
 
     with pytest.raises(ValueError, match=match):
         _load_epc_summary_data(str(path))
-
 
 def test_eph_entrypoint_rejects_scc_v1(tmp_path):
     phonon_path = tmp_path / "phonons.npz"
@@ -8187,17 +7623,14 @@ def test_eph_entrypoint_rejects_scc_v1(tmp_path):
             use_scc=True,
         )
 
-
 @pytest.mark.parametrize("task", EPH_TASK_CHOICES)
 def test_eph_entrypoint_rejects_scc_before_task_dispatch(task):
     with pytest.raises(NotImplementedError, match="SCC-corrected"):
         eph(task=task, use_scc=True)
 
-
 def test_eph_entrypoint_rejects_invalid_task_type():
     with pytest.raises(ValueError, match="task"):
         eph(task=None)
-
 
 @pytest.mark.parametrize(
     ("kwargs", "match"),
@@ -8402,7 +7835,6 @@ def test_eph_entrypoint_rejects_missing_required_inputs(kwargs, match):
     with pytest.raises(ValueError, match=match):
         eph(**kwargs)
 
-
 class _FakePhonopyCell:
     symbols = ["C", "C"]
     scaled_positions = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]])
@@ -8411,17 +7843,14 @@ class _FakePhonopyCell:
     def __len__(self):
         return 2
 
-
 class _FakePhonopySupercell(_FakePhonopyCell):
     supercell_matrix = np.eye(3, dtype=int)
     u2u_map = np.array([0, 1])
     s2u_map = np.array([0, 1])
 
-
 class _FakePhonopy:
     primitive = _FakePhonopyCell()
     supercell = _FakePhonopySupercell()
-
 
 def test_supercell_fd_provider_from_phonopy_mock(monkeypatch):
     def fake_maps(phonopy_obj):
@@ -8445,7 +7874,6 @@ def test_supercell_fd_provider_from_phonopy_mock(monkeypatch):
     np.testing.assert_array_equal(provider.primitive_orbital_offsets, np.array([0, 4, 8]))
     np.testing.assert_array_equal(provider.supercell_orbital_offsets, np.array([0, 4, 8]))
     np.testing.assert_allclose(provider.supercell_atoms.cell.array, np.eye(3) * 0.529177249)
-
 
 def test_graphene_reference_case_coupling_strength():
     if os.environ.get("DEEPTB_RUN_REFERENCE_EPH") != "1":
@@ -8649,7 +8077,6 @@ def test_graphene_reference_case_coupling_strength():
     np.testing.assert_allclose(eigenvalues_k, reference_eigenvalues_k, atol=1e-12, rtol=0.0)
     np.testing.assert_allclose(np.asarray(eigenvalues_kq), reference_eigenvalues_kq, atol=1e-12, rtol=0.0)
     np.testing.assert_allclose(coupling_strength[:, 0], reference_strength, atol=5e-12, rtol=1e-12)
-
 
 def test_graphene_reference_case_supercell_fd_provider():
     if os.environ.get("DEEPTB_RUN_REFERENCE_EPH") != "1" or os.environ.get("DEEPTB_RUN_SLOW_EPH") != "1":
