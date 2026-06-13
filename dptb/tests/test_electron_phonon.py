@@ -2255,6 +2255,209 @@ def test_epc_npz_loaders_reject_missing_required_arrays_with_field_name(data_cls
 
 
 @pytest.mark.parametrize(
+    "data_cls,expected_schema,payload",
+    [
+        pytest.param(
+            Phonons,
+            "deeptb.phonons",
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
+                "ph_frequencies": np.array([[1.0]]),
+                "ph_eigenvectors": np.ones((1, 1, 1, 3), dtype=complex),
+                "ph_masses": np.array([1.0]),
+            },
+            id="phonons",
+        ),
+        pytest.param(
+            EPCData,
+            "deeptb.epc_data",
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
+                "ph_frequencies": np.array([[1.0]]),
+                "el_kpoints": np.array([[0.0, 0.0, 0.0]]),
+                "el_band_indices": np.array([0]),
+                "el_eigenvalues_k": np.array([[0.0]]),
+                "el_eigenvalues_kq": np.array([[[0.0]]]),
+                "elph_coupling_matrix": np.ones((1, 1, 1, 1, 1), dtype=complex),
+                "elph_coupling_strength": np.ones((1, 1, 1, 1, 1)),
+            },
+            id="epc-data",
+        ),
+        pytest.param(
+            EPCMeshData,
+            "deeptb.epc_mesh_data",
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
+                "ph_frequencies": np.array([[1.0]]),
+                "ph_qpoint_weights": np.array([1.0]),
+                "el_kpoints": np.array([[0.0, 0.0, 0.0]]),
+                "el_kpoint_weights": np.array([1.0]),
+                "el_band_indices": np.array([0]),
+                "el_eigenvalues_k": np.array([[0.0]]),
+                "el_eigenvalues_kq": np.array([[[0.0]]]),
+                "elph_coupling_matrix": np.ones((1, 1, 1, 1, 1), dtype=complex),
+                "elph_coupling_strength": np.ones((1, 1, 1, 1, 1)),
+            },
+            id="epc-mesh",
+        ),
+        pytest.param(
+            EPCPathData,
+            "deeptb.epc_path_data",
+            {
+                "ph_qpoints": np.array([[0.0, 0.0, 0.0]]),
+                "ph_frequencies": np.array([[1.0]]),
+                "el_kpoints": np.array([[0.0, 0.0, 0.0]]),
+                "el_band_indices": np.array([0]),
+                "el_eigenvalues_k": np.array([[0.0]]),
+                "el_eigenvalues_kq": np.array([[[0.0]]]),
+                "elph_coupling_matrix": np.ones((1, 1, 1, 1, 1), dtype=complex),
+                "elph_coupling_strength": np.ones((1, 1, 1, 1, 1)),
+                "path_axis": np.array("q"),
+                "path_coordinates": np.array([0.0]),
+            },
+            id="epc-path",
+        ),
+        pytest.param(
+            LinewidthData,
+            "deeptb.epc_linewidth",
+            {
+                "elph_linewidth": np.array([[0.1]]),
+                "elph_linewidth_absorption": np.array([[0.0]]),
+                "elph_linewidth_emission": np.array([[0.1]]),
+            },
+            id="linewidth",
+        ),
+        pytest.param(
+            LinewidthMeshData,
+            "deeptb.epc_mesh_linewidth",
+            {
+                "elph_mesh_linewidth": np.array([[0.1]]),
+                "elph_mesh_linewidth_absorption": np.array([[0.0]]),
+                "elph_mesh_linewidth_emission": np.array([[0.1]]),
+                "el_kpoints": np.array([[0.0, 0.0, 0.0]]),
+                "el_kpoint_weights": np.array([1.0]),
+                "el_band_indices": np.array([0]),
+            },
+            id="linewidth-mesh",
+        ),
+        pytest.param(
+            LinewidthPathData,
+            "deeptb.epc_path_linewidth",
+            {
+                "elph_path_linewidth": np.array([[[0.1]]]),
+                "elph_path_linewidth_absorption": np.array([[[0.0]]]),
+                "elph_path_linewidth_emission": np.array([[[0.1]]]),
+                "path_axis": np.array("q"),
+                "path_coordinates": np.array([0.0]),
+                "el_band_indices": np.array([0]),
+            },
+            id="linewidth-path",
+        ),
+        pytest.param(
+            RelaxationTimeData,
+            "deeptb.epc_relaxation_time",
+            {"elph_relaxation_time": np.array([[1.0]])},
+            id="relaxation",
+        ),
+        pytest.param(
+            RelaxationTimeMeshData,
+            "deeptb.epc_mesh_relaxation_time",
+            {
+                "elph_mesh_relaxation_time": np.array([[1.0]]),
+                "el_kpoints": np.array([[0.0, 0.0, 0.0]]),
+                "el_kpoint_weights": np.array([1.0]),
+                "el_band_indices": np.array([0]),
+            },
+            id="relaxation-mesh",
+        ),
+        pytest.param(
+            RelaxationTimePathData,
+            "deeptb.epc_path_relaxation_time",
+            {
+                "elph_path_relaxation_time": np.array([[[1.0]]]),
+                "path_axis": np.array("q"),
+                "path_coordinates": np.array([0.0]),
+                "el_band_indices": np.array([0]),
+            },
+            id="relaxation-path",
+        ),
+        pytest.param(
+            TransportData,
+            "deeptb.epc_transport",
+            {
+                "transport_conductivity": np.eye(3),
+                "transport_carrier_density": np.array(1.0),
+            },
+            id="transport",
+        ),
+        pytest.param(
+            TransportScanData,
+            "deeptb.epc_transport_scan",
+            {
+                "transport_scan_conductivity": np.ones((1, 1, 3, 3)),
+                "transport_scan_carrier_density": np.ones((1, 1)),
+                "chemical_potentials": np.array([0.0]),
+                "temperatures": np.array([0.1]),
+            },
+            id="transport-scan",
+        ),
+        pytest.param(
+            MobilityData,
+            "deeptb.epc_mobility",
+            {
+                "mobility_conductivity": np.eye(3),
+                "mobility_tensor": np.eye(3),
+                "mobility_carrier_density": np.array(1.0),
+            },
+            id="mobility",
+        ),
+        pytest.param(
+            MobilityScanData,
+            "deeptb.epc_mobility_scan",
+            {
+                "mobility_scan_conductivity": np.ones((1, 1, 3, 3)),
+                "mobility_scan_tensor": np.ones((1, 1, 3, 3)),
+                "mobility_scan_carrier_density": np.ones((1, 1)),
+                "chemical_potentials": np.array([0.0]),
+                "temperatures": np.array([0.1]),
+            },
+            id="mobility-scan",
+        ),
+        pytest.param(
+            SubspaceCouplingData,
+            "deeptb.epc_subspace_coupling",
+            {
+                "elph_subspace_strength": np.ones((1, 1)),
+                "final_group_bounds": np.array([[0, 1]]),
+                "initial_group_bounds": np.array([[0, 1]]),
+            },
+            id="subspace",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "bad_metadata",
+    [
+        {"schema": "wrong.schema"},
+        {"schema_version": -1},
+    ],
+)
+def test_epc_npz_loaders_reject_conflicting_schema_metadata(
+    data_cls,
+    expected_schema,
+    payload,
+    bad_metadata,
+    tmp_path,
+):
+    metadata = {"schema": expected_schema, **bad_metadata}
+    path = tmp_path / f"bad_schema_{data_cls.__name__}.npz"
+    np.savez(path, **payload, metadata_json=np.array(json.dumps(metadata)))
+
+    with pytest.raises(ValueError, match="schema"):
+        data_cls.load_npz(path)
+
+
+@pytest.mark.parametrize(
     "data_cls,payload",
     [
         pytest.param(
