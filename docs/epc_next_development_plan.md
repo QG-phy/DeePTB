@@ -912,6 +912,7 @@ For the next implementation wave, the correct preparation is interface-level:
 - External Graphene reference tests now have a guard test requiring env gates and `TODO(epc-fixture)` markers so they cannot silently become default-CI dependencies.
 - Current persistent EPC NPZ loaders now have loader-level guards rejecting conflicting `schema` and `schema_version` metadata.
 - EPC executor chunk settings now have focused guards for Python and NumPy boolean values so boolean inputs cannot be accepted as integer chunk sizes or indices.
+- The mesh artifact `--artifact-axis q|k` parser choices now have workflow-doc drift coverage.
 - Every new persistent data object needs:
   - constructor validation tests
   - NPZ roundtrip tests
