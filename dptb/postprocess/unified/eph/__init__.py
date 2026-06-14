@@ -1,4 +1,5 @@
 from dptb.postprocess.unified.eph.accessor import EPhAccessor
+from dptb.postprocess.unified.eph.benchmark import DFTBPlusGauge
 from dptb.postprocess.unified.eph.analysis import (
     HBAR_EV_S,
     LINEWIDTH_MESH_NPZ_SCHEMA_VERSION,
@@ -86,6 +87,7 @@ __all__ = [
     "EPCPathData",
     "EPhAccessor",
     "FDProvider",
+    "DFTBPlusGauge",
     "EPC_PREFAC_AMU_THZ",
     "EPC_MESH_NPZ_SCHEMA_VERSION",
     "EPC_MESH_CHUNKED_ARTIFACT_SCHEMA_VERSION",

@@ -288,6 +288,12 @@ class SupercellFD:
                     supercell_h_derivatives[primitive_atom_index, cartesian_direction] = (
                         strip_single_k_matrix(as_array(h_plus)) - strip_single_k_matrix(as_array(h_minus))
                     ) / (2.0 * self.displacement)
+                    if (s_plus is None) != (s_minus is None):
+                        raise RuntimeError(
+                            "SupercellFD overlap derivative is inconsistent: exactly one displaced overlap "
+                            f"matrix is missing for primitive_atom_index={primitive_atom_index}, "
+                            f"cartesian_direction={cartesian_direction}."
+                        )
                     if s_plus is not None and s_minus is not None:
                         if supercell_overlap_derivatives is None:
                             supercell_overlap_derivatives = np.zeros_like(supercell_h_derivatives)
@@ -432,10 +438,12 @@ def _phonopy_supercell_maps(phonopy_obj):
         dtype=int,
     )
 
-    primitive_to_supercell_atom = np.zeros((n_primitive_atoms,), dtype=int)
-    primitive_to_supercell_atom[0] = (n_supercells - 1) // 2
-    for atom_index in range(1, n_primitive_atoms):
-        primitive_to_supercell_atom[atom_index] = primitive_to_supercell_atom[atom_index - 1] + n_supercells
+    primitive_to_supercell_atom = _primitive_to_supercell_from_supercell_to_primitive(
+        supercell_to_primitive_atom,
+        n_primitive_atoms,
+        supercell_atom_to_cell=supercell_atom_to_cell,
+        preferred_cell=(n_supercells - 1) // 2,
+    )
 
     shortest_vectors, vector_multiplicity = get_smallest_vectors(
         supercell.cell,
@@ -455,6 +463,34 @@ def _phonopy_supercell_maps(phonopy_obj):
         shortest_vectors,
         np.asarray(vector_multiplicity, dtype=int),
     )
+
+
+def _primitive_to_supercell_from_supercell_to_primitive(
+    supercell_to_primitive_atom: np.ndarray,
+    n_primitive_atoms: int,
+    supercell_atom_to_cell: Optional[np.ndarray] = None,
+    preferred_cell: Optional[int] = None,
+) -> np.ndarray:
+    """Pick one phonopy supercell representative for each primitive atom."""
+    supercell_to_primitive_atom = np.asarray(supercell_to_primitive_atom, dtype=int)
+    if supercell_atom_to_cell is not None:
+        supercell_atom_to_cell = np.asarray(supercell_atom_to_cell, dtype=int)
+        if supercell_atom_to_cell.shape != supercell_to_primitive_atom.shape:
+            raise ValueError("supercell_atom_to_cell must match supercell_to_primitive_atom.")
+    primitive_to_supercell_atom = np.empty((n_primitive_atoms,), dtype=int)
+    for primitive_atom_index in range(n_primitive_atoms):
+        matches = np.flatnonzero(supercell_to_primitive_atom == primitive_atom_index)
+        if matches.size == 0:
+            raise ValueError(
+                "phonopy supercell mapping does not contain a representative for "
+                f"primitive atom {primitive_atom_index}."
+            )
+        if supercell_atom_to_cell is not None and preferred_cell is not None:
+            preferred_matches = matches[supercell_atom_to_cell[matches] == preferred_cell]
+            if preferred_matches.size:
+                matches = preferred_matches
+        primitive_to_supercell_atom[primitive_atom_index] = int(matches[0])
+    return primitive_to_supercell_atom
 
 
 def _orbital_counts_from_symbols(system, symbols) -> np.ndarray:

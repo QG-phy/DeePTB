@@ -1,5 +1,10 @@
 # DeePTB EPC v1 Workflow
 
+当前 PR 的 EPC v1 对齐收尾计划见
+[`epc_v1_alignment_completion_plan.md`](epc_v1_alignment_completion_plan.md)。
+本文档描述当前 DeePTB-native API 和 NPZ/chunked artifact workflow；对齐计划
+定义如何在当前已有功能基础上复现 dftbephy/论文 Graphene EPC 主链路。
+
 This document describes the current electron-phonon coupling workflow. DeePTB
 EPC v1 reads external phonon mode data; it does not compute phonons, force
 constants, forces, stress, or repulsive potentials.
@@ -750,9 +755,7 @@ theory. For `EPCMeshData`, summaries use normalized k/q weights by default; add
 Default EPC tests:
 
 ```bash
-MPLCONFIGDIR=/private/tmp/matplotlib-cache \
-OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-./.venv/bin/python -m pytest dptb/tests/test_electron_phonon.py -q
+uv run pytest dptb/tests/test_epc_*.py -q
 ```
 
 Default tests include a small in-repo synthetic EPC fixture at
@@ -763,10 +766,9 @@ Graphene coupling reference:
 
 ```bash
 DEEPTB_RUN_REFERENCE_EPH=1 \
-MPLCONFIGDIR=/private/tmp/matplotlib-cache \
-OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-./.venv/bin/python -m pytest \
-  dptb/tests/test_electron_phonon.py::test_graphene_reference_case_coupling_strength -q
+DEEPTB_EPH_REFERENCE_ROOT=<path-to-dftbephy> \
+uv run pytest \
+  dptb/tests/test_epc_reference.py::test_graphene_reference_case_coupling_strength -q
 ```
 
 The external reference root can be overridden with:
@@ -778,9 +780,10 @@ The external reference root can be overridden with:
 Slow Graphene supercell finite-difference reference:
 
 ```bash
-DEEPTB_RUN_REFERENCE_EPH=1 DEEPTB_RUN_SLOW_EPH=1 \
-MPLCONFIGDIR=/private/tmp/matplotlib-cache \
-OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-./.venv/bin/python -m pytest \
-  dptb/tests/test_electron_phonon.py::test_graphene_reference_case_supercell_fd_provider -q
+DEEPTB_RUN_REFERENCE_EPH=1 \
+DEEPTB_RUN_SLOW_EPH=1 \
+DEEPTB_EPH_REFERENCE_ROOT=<path-to-dftbephy> \
+DEEPTB_EPH_SKDATA_ROOT=<path-to-matsci-0-3> \
+uv run pytest \
+  dptb/tests/test_epc_reference.py::test_graphene_reference_case_supercell_fd_provider -q
 ```
