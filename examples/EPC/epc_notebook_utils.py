@@ -6,14 +6,25 @@ import numpy as np
 from dptb.postprocess.unified.eph import Phonons
 
 
-def external_path(env_name, description):
+def external_path(env_name, description, candidates=()):
     path = os.environ.get(env_name)
-    if not path:
-        raise FileNotFoundError(f"Set {env_name} to {description}.")
-    resolved = Path(path).expanduser()
-    if not resolved.exists():
-        raise FileNotFoundError(f"{env_name} does not exist: {resolved}")
-    return resolved
+    if path:
+        resolved = Path(path).expanduser()
+        if not resolved.exists():
+            raise FileNotFoundError(f"{env_name} does not exist: {resolved}")
+        return resolved
+
+    tried = []
+    for candidate in candidates:
+        resolved = Path(candidate).expanduser()
+        tried.append(str(resolved))
+        if resolved.exists():
+            return resolved
+
+    message = f"Set {env_name} to {description}."
+    if tried:
+        message += " Also tried: " + ", ".join(tried)
+    raise FileNotFoundError(message)
 
 
 def require_file(path, message):
