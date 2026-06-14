@@ -713,7 +713,7 @@ class NNSK(torch.nn.Module):
                                 rfiorb, rfjorb = ref_forbpair.split("-")
                                 riorb, rjorb = ref_idp.full_basis_to_basis[asym].get(rfiorb), ref_idp.full_basis_to_basis[asym].get(rfjorb)
                                 fiorb, fjorb = idp.basis_to_full_basis[asym].get(riorb), idp.basis_to_full_basis[asym].get(rjorb)
-                                if fiorb and fjorb is not None:
+                                if fiorb is not None and fjorb is not None:
                                     model.onsite_param.data[idp.chemical_symbol_to_type[asym], idp.skonsite_maps[fiorb+"-"+fjorb]] = \
                                         params[ref_idp.chemical_symbol_to_type[asym], ref_idp.skonsite_maps[rfiorb+"-"+rfjorb]]
 
