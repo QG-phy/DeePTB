@@ -34,10 +34,6 @@ KPOINT_KEY = "kpoint"
 HAMILTONIAN_KEY = "hamiltonian"
 HAMILTONIAN_DERIV_KEY = "hamiltonian_derivative" # dH(k)/dk
 
-#: keys under which the assembled global-frame three-center blocks are stored ([n, norb, norb]).
-EDGE_THREECENTER_KEY = "edge_threecenter"   # hopping correction H^(3)_AB, per basis bond
-NODE_THREECENTER_KEY = "node_threecenter"   # onsite correction H^(3)_AA, per atom
-
 OVERLAP_KEY = "overlap"
 OVERLAP_DERIV_KEY = "overlap_derivative"  # dS(k)/dk
 

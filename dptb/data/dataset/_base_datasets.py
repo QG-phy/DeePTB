@@ -29,15 +29,6 @@ from dptb.data.AtomicData import _NESTED_FIELDS
 from ..transforms import TypeMapper
 
 
-# Cache-invalidation key for the on-disk processed dataset. Bump this ONLY when a change to the
-# dataset preparation / serialization format makes previously cached processed datasets incompatible
-# (e.g. new stored fields, changed graph-construction semantics). It is deliberately decoupled from
-# ``dptb.__version__`` so a routine package upgrade does NOT force every dataset to be re-packed when
-# the parameters that actually affect preparation are unchanged. The package version is still recorded
-# in ``params.yaml`` for provenance, it just no longer participates in the cache hash.
-DATASET_FORMAT_VERSION = 1
-
-
 class AtomicDataset(Dataset):
     """The base class for all NequIP datasets."""
 
@@ -88,11 +79,7 @@ class AtomicDataset(Dataset):
         }
         # Add other relevant metadata:
         params["dtype"] = str(self.dtype)
-        # Use a dedicated dataset-format version (bumped only on incompatible format changes) as the
-        # cache key instead of ``dptb.__version__``, so ordinary version bumps don't invalidate an
-        # otherwise-identical processed dataset. The package version is recorded separately for
-        # provenance in ``process()`` (params.yaml), without affecting the cache hash.
-        params["dataset_format_version"] = DATASET_FORMAT_VERSION
+        params["dptb_version"] = dptb.__version__
 
         return params
 
@@ -305,11 +292,7 @@ class AtomicInMemoryDataset(AtomicDataset):
                     data[k] = list(v.unbind())
             torch.save((data, self.include_frames), f)
         with atomic_write(self.processed_paths[1], binary=False) as f:
-            # record the package version for provenance only; it is intentionally NOT part of the
-            # cache key (see DATASET_FORMAT_VERSION), so this does not affect cache invalidation.
-            provenance = self._get_parameters()
-            # provenance["dptb_version"] = dptb.__version__
-            yaml.dump(provenance, f)
+            yaml.dump(self._get_parameters(), f)
 
         logging.info("Cached processed data to disk")
 

@@ -472,11 +472,6 @@ class DefaultDataset(AtomicInMemoryDataset):
         with torch.no_grad():
             typed_dataset = e3h(typed_dataset)
 
-        # when initializing a model we also fit the per-channel radial decay envelope, so always
-        # compute the decay statistics in that case.
-        if model is not None:
-            decay = True
-
         stats = {}
         stats["node"] =  self._E3nodespecies_stat(typed_dataset=typed_dataset)
         stats["edge"] = self._E3edgespecies_stat(typed_dataset=typed_dataset, decay=decay)
@@ -491,27 +486,6 @@ class DefaultDataset(AtomicInMemoryDataset):
             edge_shifts = stats["edge"]["scalar_ave"]
             edge_scales = stats["edge"]["norm_ave"]
             edge_scales[:,scalar_mask] = stats["edge"]["scalar_std"]
-            # guard against degenerate statistics: a nan std (single sample) or an exactly-zero
-            # scale would permanently kill the corresponding output channel (output = shift only,
-            # zero gradient). Fall back to 1.0 for nan and floor tiny scales.
-            node_shifts = torch.nan_to_num(node_shifts, nan=0.0)
-            edge_shifts = torch.nan_to_num(edge_shifts, nan=0.0)
-            node_scales = torch.nan_to_num(node_scales, nan=1.0).clamp_min(1e-6)
-            edge_scales = torch.nan_to_num(edge_scales, nan=1.0).clamp_min(1e-6)
-
-            # radial decay envelope (edge channels only): where a reliable exponential fit exists,
-            # replace the constant per-channel scale by its near-bond value and hand the r-dependence
-            # exp(-kappa (r - r0)) to the prediction head, so the network learns O(1) quantities at
-            # every bond length instead of magnitudes spanning the measured 1e3-1e6x decay window.
-            if "decay_kappa" in stats["edge"] and hasattr(model.edge_prediction_h, "set_decay"):
-                dscale = stats["edge"]["decay_scale"]
-                fitted = torch.isfinite(dscale) & (stats["edge"]["decay_kappa"] > 0)
-                edge_scales[fitted] = dscale[fitted].to(edge_scales.dtype).clamp_min(1e-6)
-                model.edge_prediction_h.set_decay(
-                    kappa=torch.where(fitted, stats["edge"]["decay_kappa"], torch.zeros_like(dscale)),
-                    r0=torch.nan_to_num(stats["edge"]["decay_r0"], nan=0.0),
-                )
-
             model.node_prediction_h.set_scale_shift(scales=node_scales, shifts=node_shifts)
             model.edge_prediction_h.set_scale_shift(scales=edge_scales, shifts=edge_shifts)
 
@@ -580,39 +554,10 @@ class DefaultDataset(AtomicInMemoryDataset):
         
         if decay:
             typed_dataset = with_edge_vectors(typed_dataset)
-            n_irreps = idp.orbpair_irreps.num_irreps
-            # per-(bond-type, irrep) exponential decay fit: |H_ch|(r) ~ scale0 * exp(-kappa (r - r0)),
-            # by least squares on log-norm vs r. kappa=0 / scale0=nan marks "no reliable fit" (channel
-            # absent, too few edges, or too narrow an r window). Irreps kept in ORIGINAL orbpair order.
-            decay_kappa = torch.zeros(len(idp.bond_to_type), n_irreps)
-            decay_r0 = torch.zeros(len(idp.bond_to_type), n_irreps)
-            decay_scale = torch.full((len(idp.bond_to_type), n_irreps), float("nan"))
             decay = {}
             for bt, tp in idp.bond_to_type.items():
                 decay_bt = {}
                 lengths_bt = typed_dataset["edge_lengths"][typed_dataset["edge_type"].flatten().eq(tp)]
-                for i in range(n_irreps):
-                    n = typed_norm[bt][i]
-                    m = torch.isfinite(n) & (n > 1e-12) & torch.isfinite(lengths_bt)
-                    if m.sum() >= 8 and (lengths_bt[m].max() - lengths_bt[m].min()) > 0.5:
-                        r, y = lengths_bt[m], torch.log(n[m])
-                        rc, yc = r - r.mean(), y - y.mean()
-                        slope = (rc * yc).sum() / (rc * rc).sum().clamp_min(1e-12)
-                        kappa = (-slope).clamp(0.0, 20.0)
-                        r0 = r.min()
-                        # anchor the scale at the MEASURED near-bond norm (mean over the edges within
-                        # 0.5 A of the closest), not the extrapolated log-linear intercept: the fit is
-                        # dominated by the many mid/far edges and its extrapolation to r0 can overshoot
-                        # the true near-bond values by ~10x, which mis-whitens the near channels.
-                        near = n[m][r <= r0 + 0.5]
-                        if len(near) >= 3:
-                            scale0 = near.mean()
-                        else:
-                            scale0 = torch.exp(y.mean() + kappa * (r.mean() - r0))
-                        if torch.isfinite(scale0) and scale0 > 0:
-                            decay_kappa[tp, i] = kappa
-                            decay_r0[tp, i] = r0
-                            decay_scale[tp, i] = scale0
                 sorted_lengths, indices = lengths_bt.sort() # from small to large
                 # sort the norms by irrep l
                 sorted_norms = typed_norm[bt][idp.orbpair_irreps.sort().inv, :]
@@ -621,12 +566,9 @@ class DefaultDataset(AtomicInMemoryDataset):
                 decay_bt["edge_length"] = sorted_lengths
                 decay_bt["norm_decay"] = sorted_norms
                 decay[bt] = decay_bt
-
+            
             edge_stats["decay"] = decay
-            edge_stats["decay_kappa"] = decay_kappa
-            edge_stats["decay_r0"] = decay_r0
-            edge_stats["decay_scale"] = decay_scale
-
+        
         return edge_stats
 
     def _E3nodespecies_stat(self, typed_dataset):

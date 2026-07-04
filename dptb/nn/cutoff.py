@@ -53,20 +53,3 @@ def polynomial_cutoff2(
     r_[mid_mask] = 1/r[mid_mask] * (x[mid_mask]**3 * (10 + x[mid_mask] * (-15 + 6 * x[mid_mask])) + 1)
 
     return r_
-
-def boundary_envelope(r: torch.Tensor, r_max, onset: float = 0.95) -> torch.Tensor:
-    """C2-smooth switching envelope: exactly 1 for r <= onset*r_max, smootherstep down to 0 at r_max.
-
-    Used to make cutoff-boundary behaviour continuous: several pathways (message-passing features /
-    additive shifts) are otherwise O(1) discontinuous at the cutoff-activation boundary, and the p=6
-    polynomial cutoff evaluated at r/r_max ~ 1 suffers catastrophic cancellation in float32
-    (absolute noise ~3e-6 vs true values 1e-6..1e-11), so active-set membership can flip between
-    dtypes/platforms and boundary edges pick up O(0.1-1 eV) prediction noise.
-
-    Numerical stability at t -> 1 comes from the exact factorization
-        1 - (10 t^3 - 15 t^4 + 6 t^5) = (1-t)^3 (6 t^2 + 3 t + 1),
-    which is cancellation-free.
-    """
-    t = ((r - onset * r_max) / ((1.0 - onset) * r_max)).clamp(0.0, 1.0)
-    omt = 1.0 - t
-    return omt * omt * omt * (6.0 * t * t + 3.0 * t + 1.0)

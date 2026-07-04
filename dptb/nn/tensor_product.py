@@ -129,7 +129,6 @@ class SO2_Linear(torch.nn.Module):
         latent_dim: int = None,
         radial_channels: list = None,
         extra_m0_outsize: int = 0,
-        so2_gate: bool = False,
     ):
         super(SO2_Linear, self).__init__()
 
@@ -142,24 +141,6 @@ class SO2_Linear(torch.nn.Module):
         self.fc_m0 = Linear(self.irreps_in.num_irreps, self.irreps_out.num_irreps, bias=True)
         for m in range(1, self.irreps_out.lmax + 1):
             self.m_linear.append(SO2_m_Linear(m, self.irreps_in, self.irreps_out))
-
-        # SO(2) gate (QHNetV2, arXiv:2506.09398): inside the bond-local SO(2) frame, gate every
-        # |m|>0 output channel with a sigmoid of the in-frame m=0 components. This injects a
-        # nonlinearity *within the local frame* (the plain SO2_Linear is purely linear per m),
-        # which the QHNetV2 ablations show is a main accuracy driver. Equivariance is preserved:
-        # the gating happens between the rotate-in and rotate-out steps, so the whole op stays
-        # covariant under global rotations.
-        self.so2_gate = so2_gate
-        if so2_gate:
-            self.gate_fc = nn.ModuleList()
-            for m in range(1, self.irreps_out.lmax + 1):
-                n_out_m = sum(mul for mul, (l, p) in self.irreps_out if l >= m)
-                fc = Linear(self.irreps_in.num_irreps, n_out_m, bias=True)
-                # start the gates OPEN (sigmoid(2) ~ 0.88): a zero-init bias would halve every
-                # |m|>0 channel at init (sigmoid(0)=0.5), visibly degrading the starting loss.
-                nn.init.zeros_(fc.weight)
-                nn.init.constant_(fc.bias, 2.0)
-                self.gate_fc.append(fc)
         
         # generate m mask
         self.m_in_mask = torch.zeros(self.irreps_in.lmax+1, self.irreps_in.dim, dtype=torch.bool)
@@ -210,25 +191,17 @@ class SO2_Linear(torch.nn.Module):
             offset += self.dims[l]
     
 
-    def forward(self, x, R, latents=None, wigner=None):
+    def forward(self, x, R, latents=None):
         n, _ = x.shape
 
         if self.radial_emb:
             weights = self.radial_emb(latents)
-
+        
         x_ = torch.zeros_like(x)
+        angle = xyz_to_angles(R[:, [1,2,0]])
 
-        if wigner is not None:
-            # reuse a precomputed batched Wigner-D (computed once per structure for the shared edge
-            # set and passed through all layers); the leading principal block covers any l_max less
-            # than or equal to the one it was built with, since the per-l block offsets agree.
-            D_need = sum(2 * l + 1 for l in range(self.l_max + 1))
-            assert wigner.shape[-1] >= D_need, "provided wigner matrix covers a smaller l_max than needed"
-            wigner_D_all = wigner[:, :D_need, :D_need]
-        else:
-            angle = xyz_to_angles(R[:, [1,2,0]])
-            # Compute Wigner D matrices for all l at once
-            wigner_D_all = batch_wigner_D(self.l_max, angle[0], angle[1], torch.zeros_like(angle[0]), _Jd)
+        # Compute Wigner D matrices for all l at once
+        wigner_D_all = batch_wigner_D(self.l_max, angle[0], angle[1], torch.zeros_like(angle[0]), _Jd)
 
         # 1. group irreps by l
         groups = defaultdict(list)
@@ -258,7 +231,6 @@ class SO2_Linear(torch.nn.Module):
                 x_[:, slice_info] = part.reshape(n, -1)
 
         out = torch.zeros(n, self.irreps_out.dim, dtype=x.dtype, device=x.device)
-        gate_in = x_[:, self.m_in_mask[0]] if self.so2_gate else None
         for m in range(self.irreps_out.lmax+1):
             radial_weight = weights[:, self.m_in_index[m]:self.m_in_index[m+1]].unsqueeze(1) if self.radial_emb else 1.
             if m == 0:
@@ -284,10 +256,6 @@ class SO2_Linear(torch.nn.Module):
                 else:
                     # No radial embedding, just pass through the linear layer.
                     linear_output = self.m_linear[m - 1](x_m_in)
-
-                if self.so2_gate:
-                    # gate the +-m pair with a sigmoid of the in-frame m=0 components (see __init__)
-                    linear_output = linear_output * torch.sigmoid(self.gate_fc[m - 1](gate_in)).unsqueeze(1)
 
                 # 2. Reshape output and add to the result tensor.
                 #    .contiguous() is necessary before .reshape() after a .transpose().

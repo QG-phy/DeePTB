@@ -440,13 +440,12 @@ class EigHamLoss(nn.Module):
 @Loss.register("hamil_abs")
 class HamilLossAbs(nn.Module):
     def __init__(
-            self,
+            self, 
             basis: Dict[str, Union[str, list]]=None,
             idp: Union[OrbitalMapper, None]=None,
             overlap: bool=False,
             onsite_shift: bool=False,
-            trace_weight: float=0.,
-            dtype: Union[str, torch.dtype] = torch.float32,
+            dtype: Union[str, torch.dtype] = torch.float32, 
             device: Union[str, torch.device] = torch.device("cpu"),
             **kwargs,
         ):
@@ -457,15 +456,6 @@ class HamilLossAbs(nn.Module):
         self.overlap = overlap
         self.device = device
         self.onsite_shift = onsite_shift
-        # TraceGrad-style auxiliary supervision (arXiv:2405.05722): additionally supervise the
-        # SO(3)-invariant per-block quantity T = tr(H_b H_b^dagger). In DeePTB's orthonormal CG
-        # (reduced-equivariant) representation this is exactly the sum over an irrep slice of squared
-        # coefficients, so it costs one elementwise square + segment sum. The invariant loss injects
-        # magnitude information that the elementwise loss under-weights for small channels and was
-        # shown to cut Hamiltonian MAE by ~30-40% on DeepH-E3/QHNet baselines. The total loss is
-        # loss_H + mu * loss_T with mu = trace_weight * no_grad(loss_H / loss_T) (auto-balanced).
-        # trace_weight = 0 (default) disables it.
-        self.trace_weight = float(trace_weight)
 
         if basis is not None:
             self.idp = OrbitalMapper(basis, method="e3tb", device=self.device)
@@ -474,26 +464,6 @@ class HamilLossAbs(nn.Module):
         else:
             assert idp is not None, "Either basis or idp should be provided."
             self.idp = idp
-
-        if self.trace_weight > 0:
-            self.idp.get_irreps(no_parity=False)
-            self.irrep_slices = self.idp.orbpair_irreps.slices()
-
-    def _trace_loss(self, pre: torch.Tensor, tgt: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """L1 on the per-irrep-slice invariant T = sum(coeff^2) (= tr(H_b H_b^dagger) per basic block
-        in the orthonormal CG basis), over the masked (present) channels."""
-        zero = torch.zeros(1, dtype=pre.dtype, device=pre.device)
-        loss = pre.new_zeros(())
-        n = 0
-        for s in self.irrep_slices:
-            m = mask[:, s]
-            if not bool(m.any()):
-                continue
-            Tp = torch.where(m, pre[:, s], zero).pow(2).sum(dim=-1)
-            Tt = torch.where(m, tgt[:, s], zero).pow(2).sum(dim=-1)
-            loss = loss + (Tp - Tt).abs().mean()
-            n += 1
-        return loss / max(n, 1)
 
     def forward(self, data: AtomicDataDict, ref_data: AtomicDataDict):
         # mask the data
@@ -528,41 +498,26 @@ class HamilLossAbs(nn.Module):
                     edge_mu_index[data["__slices__"]["edge_index"][i]:data["__slices__"]["edge_index"][i+1]] += i
                 ref_data[AtomicDataDict.EDGE_FEATURES_KEY] = ref_data[AtomicDataDict.EDGE_FEATURES_KEY] + mu[edge_mu_index, None] * ref_data[AtomicDataDict.EDGE_OVERLAP_KEY]
                 
-        nmask = self.idp.mask_to_nrme[data[AtomicDataDict.ATOM_TYPE_KEY].flatten()]
-        pre = data[AtomicDataDict.NODE_FEATURES_KEY][nmask]
-        tgt = ref_data[AtomicDataDict.NODE_FEATURES_KEY][nmask]
+        pre = data[AtomicDataDict.NODE_FEATURES_KEY][self.idp.mask_to_nrme[data[AtomicDataDict.ATOM_TYPE_KEY].flatten()]]
+        tgt = ref_data[AtomicDataDict.NODE_FEATURES_KEY][self.idp.mask_to_nrme[ref_data[AtomicDataDict.ATOM_TYPE_KEY].flatten()]]
         onsite_loss = 0.5*(self.loss1(pre, tgt) + torch.sqrt(self.loss2(pre, tgt)))
 
-        emask = self.idp.mask_to_erme[data[AtomicDataDict.EDGE_TYPE_KEY].flatten()]
-        pre = data[AtomicDataDict.EDGE_FEATURES_KEY][emask]
-        tgt = ref_data[AtomicDataDict.EDGE_FEATURES_KEY][emask]
+        pre = data[AtomicDataDict.EDGE_FEATURES_KEY][self.idp.mask_to_erme[data[AtomicDataDict.EDGE_TYPE_KEY].flatten()]]
+        tgt = ref_data[AtomicDataDict.EDGE_FEATURES_KEY][self.idp.mask_to_erme[ref_data[AtomicDataDict.EDGE_TYPE_KEY].flatten()]]
         hopping_loss = 0.5*(self.loss1(pre, tgt) + torch.sqrt(self.loss2(pre, tgt)))
-
+        
         if self.overlap:
-            pre = data[AtomicDataDict.EDGE_OVERLAP_KEY][emask]
-            tgt = ref_data[AtomicDataDict.EDGE_OVERLAP_KEY][emask]
+            pre = data[AtomicDataDict.EDGE_OVERLAP_KEY][self.idp.mask_to_erme[data[AtomicDataDict.EDGE_TYPE_KEY].flatten()]]
+            tgt = ref_data[AtomicDataDict.EDGE_OVERLAP_KEY][self.idp.mask_to_erme[ref_data[AtomicDataDict.EDGE_TYPE_KEY].flatten()]]
             overlap_loss = 0.5*(self.loss1(pre, tgt) + torch.sqrt(self.loss2(pre, tgt)))
 
-            pre = data[AtomicDataDict.NODE_OVERLAP_KEY][nmask]
-            tgt = ref_data[AtomicDataDict.NODE_OVERLAP_KEY][nmask]
+            pre = data[AtomicDataDict.NODE_OVERLAP_KEY][self.idp.mask_to_nrme[data[AtomicDataDict.ATOM_TYPE_KEY].flatten()]]
+            tgt = ref_data[AtomicDataDict.NODE_OVERLAP_KEY][self.idp.mask_to_nrme[ref_data[AtomicDataDict.ATOM_TYPE_KEY].flatten()]]
             overlap_loss += 0.5*(self.loss1(pre, tgt) + torch.sqrt(self.loss2(pre, tgt)))
 
-            loss_H = (1/3) * (hopping_loss + onsite_loss + overlap_loss)
+            return (1/3) * (hopping_loss + onsite_loss + overlap_loss)
         else:
-            loss_H = 0.5 * (onsite_loss + hopping_loss)
-
-        if self.trace_weight > 0:
-            # TraceGrad-style invariant auxiliary loss, auto-balanced against loss_H.
-            loss_T = self._trace_loss(
-                data[AtomicDataDict.EDGE_FEATURES_KEY], ref_data[AtomicDataDict.EDGE_FEATURES_KEY], emask
-            ) + self._trace_loss(
-                data[AtomicDataDict.NODE_FEATURES_KEY], ref_data[AtomicDataDict.NODE_FEATURES_KEY], nmask
-            )
-            if torch.isfinite(loss_T) and loss_T > 0:
-                mu = self.trace_weight * (loss_H / loss_T).detach()
-                loss_H = loss_H + mu * loss_T
-
-        return loss_H
+            return 0.5 * (onsite_loss + hopping_loss)
 
 @Loss.register("hamil_blas")
 class HamilLossBlas(nn.Module):

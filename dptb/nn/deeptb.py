@@ -169,43 +169,36 @@ class NNENV(nn.Module):
                     self.overlaponsite_param = overlaponsite_param
 
         elif prediction_copy.get("method") == "e3tb":
-            # all e3tb embeddings (incl. trinity) get real per-species/per-bond-type, per-irrep
-            # scale+shift heads so that E3statistics can initialize them from the dataset. This is
-            # essential for convergence: LCAO H targets span many orders of magnitude (onsite scalar
-            # means of O(100 eV) down to sub-meV far hoppings); with identity heads the network had to
-            # learn those scales by gradient descent (the old trinity `lambda x: x` hack), which made
-            # training crawl. With shifts = per-species scalar means and scales = per-channel norms,
-            # the network only learns O(1) whitened residuals in every irrep channel. For trinity the
-            # heads act on the reduced env/3b features; the additive two-body EDGE_ATTRS/NODE_ATTRS
-            # part (added after the block transform) then learns the remaining residual.
-            self.node_prediction_h = E3PerSpeciesScaleShift(
-                field=AtomicDataDict.NODE_FEATURES_KEY,
-                num_types=n_species,
-                irreps_in=self.embedding.out_node_irreps,
-                out_field = AtomicDataDict.NODE_FEATURES_KEY,
-                shifts=0.,
-                scales=1.,
-                dtype=self.dtype,
-                device=self.device,
-                **prediction_copy,
-            )
-
-            _emb_r_max = embedding.get("r_max", None)
-            self.edge_prediction_h = E3PerEdgeSpeciesScaleShift(
-                field=AtomicDataDict.EDGE_FEATURES_KEY,
-                num_types=n_species,
-                irreps_in=self.embedding.out_edge_irreps,
-                out_field = AtomicDataDict.EDGE_FEATURES_KEY,
-                shifts=0.,
-                scales=1.,
-                # envelope the additive shifts near the cutoff so the prediction stays continuous
-                # in r at the cutoff-activation boundary (see E3PerEdgeSpeciesScaleShift).
-                r_max=(_emb_r_max if isinstance(_emb_r_max, (int, float)) else
-                       (max(_emb_r_max.values()) if isinstance(_emb_r_max, dict) else None)),
-                dtype=self.dtype,
-                device=self.device,
-                **prediction_copy,
-            )
+            if embedding.get("method") == "trinity":
+                # hack to pass the dataset operation
+                self.node_prediction_h = lambda x: x
+                self.edge_prediction_h = lambda x: x
+                self.node_prediction_h.set_scale_shift = lambda scales, shifts: 0
+                self.edge_prediction_h.set_scale_shift = lambda scales, shifts: 0
+            else:
+                self.node_prediction_h = E3PerSpeciesScaleShift(
+                    field=AtomicDataDict.NODE_FEATURES_KEY,
+                    num_types=n_species,
+                    irreps_in=self.embedding.out_node_irreps,
+                    out_field = AtomicDataDict.NODE_FEATURES_KEY,
+                    shifts=0.,
+                    scales=1.,
+                    dtype=self.dtype,
+                    device=self.device,
+                    **prediction_copy,
+                )
+                
+                self.edge_prediction_h = E3PerEdgeSpeciesScaleShift(
+                    field=AtomicDataDict.EDGE_FEATURES_KEY,
+                    num_types=n_species,
+                    irreps_in=self.embedding.out_edge_irreps,
+                    out_field = AtomicDataDict.EDGE_FEATURES_KEY,
+                    shifts=0.,
+                    scales=1.,
+                    dtype=self.dtype,
+                    device=self.device,
+                    **prediction_copy,
+                )
 
             if embedding.get("method") == "trinity":
                 self.idp_sk = OrbitalMapper(self.idp.basis, method="sktb", device=self.device)
@@ -369,17 +362,7 @@ class NNENV(nn.Module):
                 common_options[k] = ckpt["config"]["common_options"][k]
         
         model = cls(**model_options, **common_options, transform=transform)
-        try:
-            model.load_state_dict(ckpt["model_state_dict"])
-        except RuntimeError:
-            # older checkpoints (e.g. trinity trained before the prediction heads carried
-            # scale/shift buffers) miss some keys; load what matches and keep defaults
-            # (scales=1, shifts=0 == the old identity behaviour) for the rest. When training,
-            # E3statistics will re-initialize the missing buffers from the dataset afterwards.
-            missing, unexpected = model.load_state_dict(ckpt["model_state_dict"], strict=False)
-            log.warning(f"checkpoint loaded with strict=False: {len(missing)} missing "
-                        f"and {len(unexpected)} unexpected keys (e.g. {missing[:3] + unexpected[:3]}). "
-                        "This is expected when initializing from an older checkpoint.")
+        model.load_state_dict(ckpt["model_state_dict"])
 
         del ckpt
 

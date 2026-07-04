@@ -191,5 +191,3 @@ tools/compat/results*/
 # JetBrains
 .idea/
 CLAUDE.md
-
-test_data/

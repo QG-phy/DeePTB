@@ -24,7 +24,6 @@ from dptb.data.transforms import OrbitalMapper
 from ..type_encode.one_hot import OneHotAtomEncoding
 from dptb.nn.norm import SeperableLayerNorm
 from dptb.data.AtomicDataDict import with_edge_vectors, with_batch
-from dptb.nn.threecenter import ThreeCenterFactorized, EDGE_THREECENTER_KEY, NODE_THREECENTER_KEY
 from math import ceil
 
 @Embedding.register("trinity")
@@ -34,7 +33,7 @@ class Trinity(torch.nn.Module):
             basis: Dict[str, Union[str, list]]=None,
             idp: Union[OrbitalMapper, None]=None,
             # required params
-            mode: str="full",
+            only2b: bool=False,
             n_layers: int=3,
             n_radial_basis: int=10,
             r_max: float=5.0,
@@ -60,13 +59,9 @@ class Trinity(torch.nn.Module):
             dtype: Union[str, torch.dtype] = torch.float32,
             device: Union[str, torch.device] = torch.device("cpu"),
             universal: Optional[bool] = False,
-            three_center: Optional[dict] = None,
-            freeze: Optional[Union[str, List[str]]] = None,
-            so2_gate: bool = False,
-            hermitian: bool = True,
             **kwargs,
             ):
-
+        
         super(Trinity, self).__init__()
 
         irreps_hidden = o3.Irreps(irreps_hidden)
@@ -94,33 +89,7 @@ class Trinity(torch.nn.Module):
                 "mlp_initialization": "uniform"
             },
         self.latent_dim = latent_dim
-        # a single `mode` (Trinity-only; replaces only2b/exclusive) selects the output channels.
-        # Following the original convention the two-body base is *always* produced; the mode toggles
-        # the extra channels on top of it:
-        #   "2b"     : two-body base only
-        #   "3b"/"2b+3b" : add the three-body term
-        #   "full"   : add three-body + env (message passing)
-        assert mode in ("2b", "3b", "2b+3b", "full"), f"unknown trinity mode {mode!r}"
-        self.mode = mode
-        self.use_3b = mode in ("3b", "2b+3b", "full")
-        self.use_env = mode == "full"
-
-        # `freeze` selectively holds trainable blocks fixed (requires_grad=False), ORTHOGONAL to `mode`
-        # (which only controls which channels are *applied* in forward). Any subset of:
-        #   "2b"  : two-body SK term (two_ness)
-        #   "3b"  : three-center term (three_center, if configured)
-        #   "env" : many-body message-passing pathway (init_layer, layers, out_edge, out_node)
-        # This enables progressive training, e.g. train 2b, then freeze ["2b"] and train 3b, then
-        # freeze ["2b","3b"] and train env. If unset (None), keep the historical default: "full"
-        # freezes 2b+3b (train only env), other modes freeze nothing; pass freeze=[] to train all.
-        _FREEZE_CHOICES = ("2b", "3b", "env")
-        if freeze is None:
-            freeze = ["2b", "3b"] if mode == "full" else []
-        elif isinstance(freeze, str):
-            freeze = [freeze]
-        self.freeze = set(freeze)
-        assert self.freeze <= set(_FREEZE_CHOICES), \
-            f"trinity `freeze` must be a subset of {_FREEZE_CHOICES}, got {sorted(self.freeze)}"
+        self.only2b = only2b
             
         self.basis = self.idp.basis
         self.idp.get_irreps(no_parity=False)
@@ -181,6 +150,10 @@ class Trinity(torch.nn.Module):
             dtype=dtype,
         )
 
+        if not self.only2b:
+            for param in self.two_ness.parameters():
+                param.requires_grad = False
+
         self.layers = torch.nn.ModuleList()
         # actually, we can derive the least required irreps_in and out from the idp's node and pair irreps
         last_layer = False
@@ -209,85 +182,14 @@ class Trinity(torch.nn.Module):
                 res_update=res_update,
                 res_update_ratios=res_update_ratios,
                 res_update_ratios_learnable=res_update_ratios_learnable,
-                so2_gate=so2_gate,
                 dtype=dtype,
                 device=device,
                 )
             )
 
-        # Wigner-D cache: every SO2_Linear in every layer rotates with the SAME per-edge Wigner
-        # matrices (they all act on the shared active-edge set); precompute them once per forward
-        # and pass down (2 x n_layers redundant computations saved).
-        self._wigner_lmax = max(irreps_hidden.lmax, orbpair_irreps.lmax)
-
-        # Hermitian symmetrization of the env edge channel. LCAO H is hermitian: for the reversed
-        # edge (j,i,-S) the reduced coefficients of the SAME-shell-pair (io==jo) channels satisfy
-        # r_ji = (-1)^J r_ij exactly (verified numerically against E3Hamiltonian). The two-body SK
-        # and three-center terms satisfy this by construction; the env (message-passing) output does
-        # not, so we enforce it by averaging: r <- (r + (-1)^J r[rev])/2. Channels with io != jo
-        # carry independent physics on the two directions (only io<=jo pairs are stored per directed
-        # edge) and are left untouched. Zero-parameter, exact constraint -> halves the function
-        # space in the constrained subspace. Buffers are non-persistent (derived from idp).
-        self.hermitian = hermitian
-        herm_mask = torch.zeros(self.idp.reduced_matrix_element, dtype=torch.bool)
-        herm_sign = []
-        from dptb.utils.constants import anglrMId
-        self.idp.get_orbpair_maps()
-        for pair, sl in self.idp.orbpair_maps.items():
-            io, jo = pair.split("-")
-            if io != jo:
-                continue
-            l = anglrMId[io[1]]
-            off = sl.start
-            for J in range(0, 2 * l + 1):
-                d = 2 * J + 1
-                herm_mask[off:off + d] = True
-                herm_sign += [float((-1) ** J)] * d
-                off += d
-        self.register_buffer("herm_mask", herm_mask, persistent=False)
-        self.register_buffer("herm_sign", torch.tensor(herm_sign, dtype=self.dtype), persistent=False)
-
         # initilize output_layer
         self.out_edge = Linear(self.layers[-1].irreps_out, self.idp.orbpair_irreps, shared_weights=True, internal_weights=True, biases=True)
         self.out_node = Linear(self.layers[-1].irreps_out, self.idp.orbpair_irreps, shared_weights=True, internal_weights=True, biases=True)
-
-        # additive three-center factorized term H^(3) = sum_C P_AC D_C P_CB, owned entirely by Trinity.
-        # The module (and hence its parameters) is built whenever a `three_center` config is given,
-        # *independent of* `mode`, so a checkpoint always carries the 2b+3b parameters and one can train
-        # progressively 2b -> 2b+3b -> full by reloading and only switching `mode` (the state_dict is
-        # identical across modes). `mode` (via use_3b) merely gates whether the term is *applied* in
-        # forward, and `freeze` whether it trains. Its blocks are added in reduced-equivariant space
-        # (see to_reduced) so the existing NNENV transform picks them up.
-        self.three_center = None
-        if three_center is not None:
-            self.three_center = ThreeCenterFactorized(
-                basis=self.basis,
-                projectors=three_center["projectors"],
-                idp=self.idp,
-                er_max=three_center.get("er_max", 5.0),
-                n_radial_basis=three_center.get("n_radial_basis", 8),
-                latent_channels=three_center.get("latent_channels", [64, 64]),
-                coupling_mode=three_center.get("coupling", "block_diag"),
-                dtype=dtype,
-                device=device,
-            )
-        else:
-            assert not self.use_3b, \
-                f"trinity mode {mode!r} needs a `three_center` config (projectors, er_max, ...)."
-
-        # apply the selective freezing now that every sub-module exists. `mode` still governs which
-        # channels are applied in forward; this only sets requires_grad on the chosen blocks.
-        def _freeze(module):
-            if module is not None:
-                for param in module.parameters():
-                    param.requires_grad = False
-        if "2b" in self.freeze:
-            _freeze(self.two_ness)
-        if "3b" in self.freeze:
-            _freeze(self.three_center)
-        if "env" in self.freeze:
-            for m in [self.init_layer, self.out_edge, self.out_node, *self.layers]:
-                _freeze(m)
 
     @property
     def out_edge_irreps(self):
@@ -296,34 +198,7 @@ class Trinity(torch.nn.Module):
     @property
     def out_node_irreps(self):
         return self.idp.orbpair_irreps
-
-    def _reversed_edges(self, data: AtomicDataDict.Type) -> torch.Tensor:
-        """Index of the reversed partner (j,i,-S) for every directed edge (i,j,S); an edge without a
-        matched partner (should not happen for symmetric neighbour lists) maps to itself."""
-        ei = data[_keys.EDGE_INDEX_KEY]
-        n_atom = data[_keys.POSITIONS_KEY].shape[0]
-        shift = data.get(_keys.EDGE_CELL_SHIFT_KEY, None)
-        if shift is None:
-            S = torch.zeros(ei.shape[1], 3, dtype=torch.long, device=ei.device)
-        else:
-            S = shift.round().long()
-        B, K = 100, 201
-        assert int(S.abs().max()) < B, "edge cell shifts exceed the hermitian-pairing encoding bound"
-        def code(i, j, s):
-            c = i * n_atom + j
-            for k in range(3):
-                c = c * K + (s[:, k] + B)
-            return c
-        c_fwd = code(ei[0].long(), ei[1].long(), S)
-        c_rev = code(ei[1].long(), ei[0].long(), -S)
-        sorted_c, order = torch.sort(c_fwd)
-        pos = torch.searchsorted(sorted_c, c_rev)
-        pos = pos.clamp_max(len(sorted_c) - 1)
-        rev = order[pos]
-        matched = c_fwd[rev] == c_rev
-        rev = torch.where(matched, rev, torch.arange(len(rev), device=rev.device))
-        return rev
-
+    
     def forward(self, data: AtomicDataDict.Type) -> AtomicDataDict.Type:
         data = with_edge_vectors(data, with_lengths=True)
         # data = with_env_vectors(data, with_lengths=True)
@@ -347,77 +222,30 @@ class Trinity(torch.nn.Module):
         data[_keys.EDGE_ATTRS_KEY] = edge_twoness
         data[_keys.EDGE_FEATURES_KEY] = torch.zeros(edge_index.shape[1], self.idp.orbpair_irreps.dim, dtype=self.dtype, device=self.device)
         data[_keys.NODE_FEATURES_KEY] = torch.zeros(atom_type.shape[0], self.idp.orbpair_irreps.dim, dtype=self.dtype, device=self.device)
-        if self.use_env:   # env / many-body message passing (only in "full" mode)
-            # precompute the per-edge Wigner-D matrices once and share them across all SO2_Linear
-            # calls of all layers (they rotate with the same active-edge directions).
-            from dptb.nn.tensor_product import batch_wigner_D, _Jd
-            from e3nn.o3 import xyz_to_angles
-            _R = edge_vector[active_edges]
-            _ang = xyz_to_angles(_R[:, [1, 2, 0]])
-            wigner = batch_wigner_D(self._wigner_lmax, _ang[0], _ang[1], torch.zeros_like(_ang[0]), _Jd)
-            # smooth boundary envelope for the env pathway (see boundary_envelope): exactly 1 below
-            # 0.95*r_max, C2-smooth to 0 at r_max, so the env prediction is continuous in r at the
-            # cutoff and float32 cutoff-coefficient noise cannot reach the output.
-            benv = boundary_envelope(edge_length[active_edges], self.init_layer.r_max)
+        if not self.only2b:
             for layer in self.layers:
                 latents, node_features, edge_features = \
                     layer(
-                        latents,
+                        latents, 
                         node_features,
-                        edge_features,
-                        node_one_hot,
-                        edge_index,
-                        edge_vector,
-                        atom_type,
-                        cutoff_coeffs,
-                        active_edges,
-                        wigner=wigner,
-                        boundary_env=benv,
+                        edge_features, 
+                        node_one_hot, 
+                        edge_index, 
+                        edge_vector, 
+                        atom_type, 
+                        cutoff_coeffs, 
+                        active_edges
                     )
-
+                
 
             data[_keys.NODE_FEATURES_KEY] = self.out_node(node_features)
-            data[_keys.EDGE_FEATURES_KEY] = torch.index_copy(
-                data[_keys.EDGE_FEATURES_KEY], 0, active_edges,
-                self.out_edge(edge_features) * benv.unsqueeze(-1))
-
-        # additive three-center factorized term (3b/2b+3b/full). It produces Hamiltonian blocks, but
-        # Trinity outputs reduced-equivariant features, so we add its CG-decomposition (to_reduced):
-        # NNENV's existing E3Hamiltonian transform then turns (env + three-center) into blocks together,
-        # while the always-present two-body base is added by NNENV from EDGE_ATTRS (original convention).
-        if self.use_3b:
-            assert _keys.ENV_INDEX_KEY in data, \
-                "trinity three_center needs the environment neighbour list; set er_max in the data options."
-            data = self.three_center(data)
-            data[_keys.EDGE_FEATURES_KEY] = data[_keys.EDGE_FEATURES_KEY] + self.three_center.to_reduced(data[EDGE_THREECENTER_KEY])
-            data[_keys.NODE_FEATURES_KEY] = data[_keys.NODE_FEATURES_KEY] + self.three_center.to_reduced(data[NODE_THREECENTER_KEY])
-
-        # enforce hermiticity of the env edge channel exactly: average each same-shell-pair channel
-        # with (-1)^J times its reversed edge. The SK 2b and three-center terms already satisfy the
-        # relation (the sym leaves them invariant), so this only constrains the env output; skipped
-        # in the env-free modes where the features are hermitian by construction.
-        if self.hermitian and self.use_env:
-            rev = self._reversed_edges(data)
-            ef = data[_keys.EDGE_FEATURES_KEY]
-            sym = 0.5 * (ef[:, self.herm_mask] + self.herm_sign * ef[rev][:, self.herm_mask])
-            ef = ef.clone()
-            ef[:, self.herm_mask] = sym
-            data[_keys.EDGE_FEATURES_KEY] = ef
+            data[_keys.EDGE_FEATURES_KEY] = torch.index_copy(data[_keys.EDGE_FEATURES_KEY], 0, active_edges, self.out_edge(edge_features))
 
         return data
     
 @torch.jit.script
 def ShiftedSoftPlus(x: torch.Tensor):
     return torch.nn.functional.softplus(x) - math.log(2.0)
-
-
-# boundary_envelope moved to dptb/nn/cutoff.py (shared with the prediction heads in rescale.py);
-# re-exported here for backwards compatibility. It makes the env pathway continuous at the cutoff:
-# an active edge with cutoff coefficient eps -> 0 would otherwise still receive full-magnitude env
-# features/messages (downstream MLP biases + O(1) spherical harmonics) while an inactive edge gets
-# none (measured: 74/14682 edges on Al66O36 within 25 mA of r_max flipped between float32/float64
-# with up to 0.7 eV output noise).
-from dptb.nn.cutoff import boundary_envelope
 
 class Twoness(torch.nn.Module):
     def __init__(
@@ -703,14 +531,6 @@ class InitLayer(torch.nn.Module):
             edge_sh[prev_mask], weights_e
         )
 
-        # boundary envelope: the MLP biases make edge_features O(1) even when the cutoff coefficient
-        # (hence latents) vanishes, so without this the features are discontinuous at the cutoff
-        # activation boundary (and float32 cutoff noise there turns into O(1) feature noise).
-        # NOTE with a per-bond r_max dict this uses the global max; the residual discontinuity for
-        # smaller per-bond cutoffs is suppressed by their own cutoff_coeffs going to zero well
-        # inside the envelope's support.
-        edge_features = edge_features * boundary_envelope(edge_length[prev_mask], self.r_max).unsqueeze(-1)
-
         node_features = scatter(
             edge_features,
             edge_center[active_edges],
@@ -740,7 +560,6 @@ class UpdateNode(torch.nn.Module):
         res_update_ratios: Optional[List[float]] = None,
         res_update_ratios_learnable: bool = False,
         avg_num_neighbors: Optional[float] = None,
-        so2_gate: bool = False,
         dtype: Union[str, torch.dtype] = torch.float32,
         device: Union[str, torch.device] = torch.device("cpu"),
     ):
@@ -813,7 +632,6 @@ class UpdateNode(torch.nn.Module):
             latent_dim=latent_dim,
             radial_emb=radial_emb,
             radial_channels=radial_channels,
-            so2_gate=so2_gate,
         )
 
         self.lin_post = Linear(
@@ -862,7 +680,7 @@ class UpdateNode(torch.nn.Module):
                 "_res_update_params", res_update_params
             )
 
-    def forward(self, latents, node_features, edge_features, atom_type, node_onehot, edge_index, edge_vector, active_edges, wigner=None, boundary_env=None):
+    def forward(self, latents, node_features, edge_features, atom_type, node_onehot, edge_index, edge_vector, active_edges):
         edge_center = edge_index[0]
         edge_neighbor = edge_index[1]
 
@@ -870,8 +688,8 @@ class UpdateNode(torch.nn.Module):
         message = self.tp(
             torch.cat(
                 [new_node_features[edge_center[active_edges]], self.sln_e(edge_features)]
-                , dim=-1), edge_vector[active_edges], latents[active_edges], wigner=wigner) # full_out_irreps
-
+                , dim=-1), edge_vector[active_edges], latents[active_edges]) # full_out_irreps
+        
         message = self.activation(message)
         message = self.lin_post(message)
         scalars = message[:, :self.irreps_out[0].dim]
@@ -880,14 +698,8 @@ class UpdateNode(torch.nn.Module):
         # weights = self.env_embed_mlps(self.latent_act(latents[active_edges]))
         # weights = torch_geometric.utils.softmax(weights, edge_center[active_edges], num_nodes=node_features.shape[0])
         weights = self.env_embed_mlps(latents[active_edges])
-        weighted = self._env_weighter(message, weights)
-        if boundary_env is not None:
-            # smooth boundary envelope: env_embed_mlps has a bias, so messages from edges whose
-            # cutoff coefficient (hence latents) vanish would otherwise contribute O(1) to the node
-            # sum discontinuously (see boundary_envelope).
-            weighted = weighted * boundary_env.unsqueeze(-1)
         new_node_features = scatter(
-            weighted,
+            self._env_weighter(message, weights),
             edge_center[active_edges],
             dim=0,
         )
@@ -924,7 +736,6 @@ class UpdateEdge(torch.nn.Module):
         res_update: bool = True,
         res_update_ratios: Optional[List[float]] = None,
         res_update_ratios_learnable: bool = False,
-        so2_gate: bool = False,
         dtype: Union[str, torch.dtype] = torch.float32,
         device: Union[str, torch.device] = torch.device("cpu"),
     ):
@@ -968,7 +779,6 @@ class UpdateEdge(torch.nn.Module):
             latent_dim=latent_dim,
             radial_emb=radial_emb,
             radial_channels=radial_channels,
-            so2_gate=so2_gate,
         )
 
         self.latents = ScalarMLPFunction(
@@ -1045,7 +855,7 @@ class UpdateEdge(torch.nn.Module):
                 "_res_update_params", res_update_params
             )
     
-    def forward(self, latents, node_features, node_onehot, edge_features, edge_index, edge_vector, cutoff_coeffs, active_edges, wigner=None):
+    def forward(self, latents, node_features, node_onehot, edge_features, edge_index, edge_vector, cutoff_coeffs, active_edges):
         edge_center = edge_index[0]
         edge_neighbor = edge_index[1]
 
@@ -1057,7 +867,7 @@ class UpdateEdge(torch.nn.Module):
                     self.sln_e(edge_features),
                     new_node_features[edge_neighbor[active_edges]]
                     ]
-                , dim=-1), edge_vector[active_edges], latents[active_edges], wigner=wigner) # full_out_irreps
+                , dim=-1), edge_vector[active_edges], latents[active_edges]) # full_out_irreps
         
         scalars = new_edge_features[:, :self.tp.irreps_out[0].dim]
         assert len(scalars.shape) == 2
@@ -1117,7 +927,6 @@ class Layer(torch.nn.Module):
         res_update: bool = True,
         res_update_ratios: Optional[List[float]] = None,
         res_update_ratios_learnable: bool = False,
-        so2_gate: bool = False,
         dtype: Union[str, torch.dtype] = torch.float32,
         device: Union[str, torch.device] = torch.device("cpu"),
     ):
@@ -1147,7 +956,6 @@ class Layer(torch.nn.Module):
             res_update=res_update,
             res_update_ratios=res_update_ratios,
             res_update_ratios_learnable=res_update_ratios_learnable,
-            so2_gate=so2_gate,
             dtype=dtype,
             device=device,
         )
@@ -1163,14 +971,13 @@ class Layer(torch.nn.Module):
             res_update_ratios=res_update_ratios,
             res_update_ratios_learnable=res_update_ratios_learnable,
             avg_num_neighbors=avg_num_neighbors,
-            so2_gate=so2_gate,
             dtype=dtype,
             device=device,
         )
 
-    def forward(self, latents, node_features, edge_features, node_onehot, edge_index, edge_vector, atom_type, cutoff_coeffs, active_edges, wigner=None, boundary_env=None):
-
-        edge_features, latents = self.edge_update(latents, node_features, node_onehot, edge_features, edge_index, edge_vector, cutoff_coeffs, active_edges, wigner=wigner)
-        node_features = self.node_update(latents, node_features, edge_features, atom_type, node_onehot, edge_index, edge_vector, active_edges, wigner=wigner, boundary_env=boundary_env)
+    def forward(self, latents, node_features, edge_features, node_onehot, edge_index, edge_vector, atom_type, cutoff_coeffs, active_edges):
+        
+        edge_features, latents = self.edge_update(latents, node_features, node_onehot, edge_features, edge_index, edge_vector, cutoff_coeffs, active_edges)
+        node_features = self.node_update(latents, node_features, edge_features, atom_type, node_onehot, edge_index, edge_vector, active_edges)
 
         return latents, node_features, edge_features

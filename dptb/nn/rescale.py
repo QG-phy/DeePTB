@@ -218,7 +218,6 @@ class E3PerEdgeSpeciesScaleShift(torch.nn.Module):
         out_field: Optional[str] = None,
         scales_trainable: bool = False,
         shifts_trainable: bool = False,
-        r_max: Optional[float] = None,
         dtype: Union[str, torch.dtype] = torch.float32,
         device: Union[str, torch.device] = torch.device("cpu"),
         **kwargs,
@@ -227,13 +226,6 @@ class E3PerEdgeSpeciesScaleShift(torch.nn.Module):
         super(E3PerEdgeSpeciesScaleShift, self).__init__()
         self.num_types = num_types
         self.field = field
-        # when r_max is known, the additive shifts are enveloped by boundary_envelope(r, r_max)^2.
-        # The shift is otherwise DISCONTINUOUS at the cutoff-activation boundary: this forward skips
-        # exactly-zero rows (padded/inactive edges), so an inactive edge gets no shift while an
-        # epsilon-active one gets the full per-channel shift (up to ~0.7 eV) — and float32 noise in
-        # the polynomial cutoff flips activation for edges near r_max. With the (squared) envelope
-        # the shift vanishes smoothly where such flips can occur, restoring continuity in r.
-        self.boundary_r_max = float(r_max) if r_max is not None else None
         self.out_field = f"shifted_{field}" if out_field is None else out_field
         self.irreps_in = irreps_in
         self.num_scalar = 0
@@ -261,16 +253,6 @@ class E3PerEdgeSpeciesScaleShift(torch.nn.Module):
 
         self.has_shifts = shifts is not None
         self.has_scales = scales is not None
-
-        # optional data-driven radial decay envelope: the effective per-channel scale becomes
-        # scale_ch * exp(-kappa_ch * (r - r0_ch)). LCAO hopping norms decay near-exponentially with
-        # bond length (measured 1e3-1e6x over a 2-7.4 A window), which a constant per-channel scale
-        # cannot absorb; with the envelope the network only has to learn O(1) values at every r.
-        # kappa=0 (default) makes the envelope exactly 1, i.e. the historical behaviour. Buffers are
-        # always registered so the state_dict layout does not depend on whether statistics were set.
-        self.register_buffer("decay_kappa", torch.zeros(num_types*num_types, irreps_in.num_irreps, dtype=self.dtype, device=self.device))
-        self.register_buffer("decay_r0", torch.zeros(num_types*num_types, irreps_in.num_irreps, dtype=self.dtype, device=self.device))
-
         if scales is not None:
             scales = torch.as_tensor(scales, dtype=self.dtype, device=device)
             if len(scales.reshape(-1)) == 1:
@@ -310,13 +292,7 @@ class E3PerEdgeSpeciesScaleShift(torch.nn.Module):
             else:
                 self.register_buffer("shifts", shifts)
 
-    def set_decay(self, kappa: torch.Tensor, r0: torch.Tensor):
-        """Set the per-(bond-type, irrep) radial decay envelope exp(-kappa*(r-r0)); kappa=0 disables
-        a channel's envelope. Fitted from dataset statistics (see E3statistics)."""
-        assert kappa.shape == (self.num_types*self.num_types, self.irreps_in.num_irreps), f"Invalid shape of decay kappa {kappa.shape}"
-        assert r0.shape == kappa.shape, f"Invalid shape of decay r0 {r0.shape}"
-        self.decay_kappa.copy_(kappa.to(dtype=self.dtype, device=self.device).clamp_min(0.0))
-        self.decay_r0.copy_(r0.to(dtype=self.dtype, device=self.device))
+
 
     def forward(self, data: AtomicDataDict.Type) -> AtomicDataDict.Type:
 
@@ -336,24 +312,11 @@ class E3PerEdgeSpeciesScaleShift(torch.nn.Module):
         ), "in_field doesnt seem to have correct per-edge shape"
 
         if self.has_scales:
-            scales = self.scales[species_idx]
-            if bool((self.decay_kappa > 0).any()):
-                # radial decay envelope: scale_ch(r) = scale_ch * exp(-kappa_ch * (r - r0_ch))
-                assert AtomicDataDict.EDGE_LENGTH_KEY in data, \
-                    "decay envelope needs edge lengths; call with_edge_vectors(with_lengths=True) first"
-                r = data[AtomicDataDict.EDGE_LENGTH_KEY][mask].unsqueeze(-1)
-                scales = scales * torch.exp(-self.decay_kappa[species_idx] * (r - self.decay_r0[species_idx]))
-            in_field = scales[:, self.scale_index].view(-1, self.irreps_in.dim) * in_field
+            in_field = self.scales[species_idx][:,self.scale_index].view(-1, self.irreps_in.dim) * in_field
         if self.has_shifts:
             shifts = self.shifts[species_idx][:,self.shift_index[self.shift_index>=0]].view(-1, self.num_scalar)
-            if self.boundary_r_max is not None:
-                assert AtomicDataDict.EDGE_LENGTH_KEY in data, \
-                    "shift boundary envelope needs edge lengths; call with_edge_vectors(with_lengths=True) first"
-                from dptb.nn.cutoff import boundary_envelope
-                env = boundary_envelope(data[AtomicDataDict.EDGE_LENGTH_KEY][mask], self.boundary_r_max)
-                shifts = shifts * (env * env).unsqueeze(-1)
             in_field[:, self.shift_index>=0] = shifts + in_field[:, self.shift_index>=0]
-
+        
         data[self.out_field][mask] = in_field
 
         return data
